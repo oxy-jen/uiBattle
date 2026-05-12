@@ -1,0 +1,502 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="profile-page">
+    <div class="profile-container">
+        <div class="profile-header">
+            <div class="profile-avatar-large">{{ target_user.username[0].upper() }}</div>
+            <h1>{{ target_user.username }}</h1>
+            <p class="member-since">Member since {{ target_user.created_at.strftime('%B %d, %Y') if target_user.created_at else 'Unknown' }}</p>
+            {% if target_user.id == current_user.id %}
+            <span class="badge-profile">You</span>
+            {% endif %}
+        </div>
+        
+        <div class="profile-stats-grid">
+            <div class="stat-card-dark">
+                <i class="fas fa-bullseye"></i>
+                <div class="stat-value">{{ "%.1f"|format(target_user.best_accuracy) }}%</div>
+                <div class="stat-label">Best Accuracy</div>
+            </div>
+            <div class="stat-card-dark">
+                <i class="fas fa-swords"></i>
+                <div class="stat-value">{{ target_user.matches_played }}</div>
+                <div class="stat-label">Matches Played</div>
+            </div>
+            <div class="stat-card-dark">
+                <i class="fas fa-trophy"></i>
+                <div class="stat-value">{{ target_user.total_wins }}</div>
+                <div class="stat-label">Total Wins</div>
+            </div>
+            <div class="stat-card-dark">
+                <i class="fas fa-chart-line"></i>
+                <div class="stat-value">#{{ rank if rank else '—' }}</div>
+                <div class="stat-label">Global Rank</div>
+            </div>
+        </div>
+        
+        <!-- Simple Tabs -->
+        <div class="profile-tabs">
+            <button class="profile-tab-btn active" onclick="showTab(event, 'matches')">
+                <i class="fas fa-history"></i> Recent Matches
+            </button>
+            
+            <button class="profile-tab-btn" onclick="showTab(event, 'stats')">
+                <i class="fas fa-chart-bar"></i> Detailed Stats
+            </button>
+            
+            <button class="profile-tab-btn" onclick="showTab(event, 'achievements')">
+                <i class="fas fa-medal"></i> Achievements
+            </button>
+        </div>
+        
+        <!-- Tab 1: Recent Matches -->
+        <div id="tab-matches" class="profile-tab-content active">
+            <div class="profile-section">
+                <h3><i class="fas fa-history"></i> Recent Matches</h3>
+                <div class="matches-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Challenge</th>
+                                <th>Type</th>
+                                <th>Accuracy</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="matches-tbody">
+                            {% for match in recent_matches %}
+                            <tr>
+                                <td>{{ match.submitted_at.strftime('%Y-%m-%d %H:%M') if match.submitted_at else '—' }}</td>
+                                <td>{{ match.challenge.title if match.challenge else 'Unknown' }}</td>
+                                <td><span class="type-badge-small">{{ match.challenge.challenge_type|upper if match.challenge else '—' }}</span></td>
+                                <td class="accuracy-cell {% if match.accuracy >= 80 %}high{% elif match.accuracy >= 50 %}mid{% else %}low{% endif %}">
+                                    {{ "%.1f"|format(match.accuracy) }}%
+                                </td>
+                                <td>{% if match.is_forfeit %}Forfeit{% else %}Completed{% endif %}</td>
+                                <td>
+                                    <button class="btn-icon" onclick="viewMatch({{ match.id }})">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if recent_matches|length == 0 %}
+                    <p class="no-data">No matches played yet.</p>
+                    {% endif %}
+                </div>
+                {% if recent_matches|length >= 10 %}
+                <button class="btn-load-more" onclick="loadAllMatches()">Load All Matches <i class="fas fa-chevron-down"></i></button>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Tab 2: Detailed Stats -->
+        <div id="tab-stats" class="profile-tab-content">
+            <div class="profile-section">
+                <h3><i class="fas fa-chart-bar"></i> Detailed Statistics</h3>
+                <div class="detailed-stats-grid" id="detailed-stats">
+                    <div class="stat-detail-card">
+                        <span class="stat-detail-label">Win Rate</span>
+                        <span class="stat-detail-value" id="win-rate">--</span>
+                    </div>
+                    <div class="stat-detail-card">
+                        <span class="stat-detail-label">Average Accuracy</span>
+                        <span class="stat-detail-value" id="avg-accuracy">--</span>
+                    </div>
+                    <div class="stat-detail-card">
+                        <span class="stat-detail-label">Best Streak</span>
+                        <span class="stat-detail-value" id="best-streak">--</span>
+                    </div>
+                    <div class="stat-detail-card">
+                        <span class="stat-detail-label">Total Submissions</span>
+                        <span class="stat-detail-value" id="total-submissions">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="profile-section">
+                <h3><i class="fas fa-chart-pie"></i> Challenge Type Breakdown</h3>
+                <div class="type-breakdown">
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">🖼 Image Challenges</span>
+                        <div class="breakdown-bar">
+                            <div class="breakdown-fill image-fill" id="image-fill" style="width: 0%"></div>
+                        </div>
+                        <span class="breakdown-percent" id="image-percent">0%</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">🖥 HTML Challenges</span>
+                        <div class="breakdown-bar">
+                            <div class="breakdown-fill html-fill" id="html-fill" style="width: 0%"></div>
+                        </div>
+                        <span class="breakdown-percent" id="html-percent">0%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab 3: Achievements -->
+        <div id="tab-achievements" class="profile-tab-content">
+            <div class="profile-section">
+                <h3><i class="fas fa-medal"></i> Achievements & Badges</h3>
+                <div class="achievements-grid" id="achievements-grid">
+                    <div class="achievement-card locked" id="ach-first-match">
+                        <i class="fas fa-flag-checkered"></i>
+                        <h4>First Blood</h4>
+                        <p>Complete your first match</p>
+                    </div>
+                    <div class="achievement-card locked" id="ach-perfect-score">
+                        <i class="fas fa-star"></i>
+                        <h4>Perfect Score</h4>
+                        <p>Achieve 100% accuracy</p>
+                    </div>
+                    <div class="achievement-card locked" id="ach-win-streak">
+                        <i class="fas fa-fire"></i>
+                        <h4>On Fire</h4>
+                        <p>Win 3 matches in a row</p>
+                    </div>
+                    <div class="achievement-card locked" id="ach-veteran">
+                        <i class="fas fa-shield-alt"></i>
+                        <h4>Veteran</h4>
+                        <p>Play 10 matches</p>
+                    </div>
+                    <div class="achievement-card locked" id="ach-master">
+                        <i class="fas fa-crown"></i>
+                        <h4>Master Coder</h4>
+                        <p>Reach 90%+ accuracy 5 times</p>
+                    </div>
+                    <div class="achievement-card locked" id="ach-html-master">
+                        <i class="fab fa-html5"></i>
+                        <h4>HTML Master</h4>
+                        <p>Win 5 HTML challenges</p>
+                    </div>
+                    <div class="achievement-card locked" id="ach-css-artist">
+                        <i class="fab fa-css3-alt"></i>
+                        <h4>CSS Artist</h4>
+                        <p>Win 5 Image challenges</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="profile-actions">
+            <a href="/dashboard" class="btn-secondary"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="/leaderboard" class="btn-primary"><i class="fas fa-trophy"></i> Leaderboard</a>
+        </div>
+    </div>
+</div>
+
+<!-- Match Details Modal -->
+<div id="match-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-panel); border-radius:16px; width:90%; max-width:600px; max-height:80vh; overflow:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 20px; border-bottom:1px solid var(--border-default);">
+            <h3>Match Details</h3>
+            <button onclick="closeModal()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+        </div>
+        <div id="match-modal-body" style="padding:20px;">Loading...</div>
+    </div>
+</div>
+
+<style>
+.profile-page { min-height: 100vh; background: linear-gradient(135deg, #0a0a0f 0%, #12121a 100%); padding: 40px; }
+.profile-container { max-width: 1000px; margin: 0 auto; }
+.profile-header { text-align: center; margin-bottom: 40px; }
+.profile-avatar-large { width: 120px; height: 120px; background: linear-gradient(135deg, #00fff5, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 56px; font-weight: 700; margin: 0 auto 20px; box-shadow: 0 0 30px rgba(0,255,245,0.3); }
+.profile-header h1 { font-family: 'Rajdhani', sans-serif; font-size: 36px; margin-bottom: 5px; }
+.member-since { color: var(--text-muted); }
+.badge-profile { display: inline-block; padding: 4px 12px; background: var(--neon-cyan); color: var(--bg-primary); border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 10px; }
+
+.profile-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
+.stat-card-dark { background: rgba(26,26,46,0.85); backdrop-filter: blur(16px); border-radius: 16px; padding: 20px; text-align: center; border: 1px solid var(--border-default); }
+.stat-card-dark i { font-size: 28px; color: var(--neon-cyan); margin-bottom: 10px; }
+.stat-card-dark .stat-value { font-size: 32px; font-weight: 700; font-family: 'Rajdhani', sans-serif; }
+
+.profile-tabs { display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 1px solid var(--border-default); flex-wrap: wrap; }
+.profile-tab-btn { background: none; border: none; padding: 12px 24px; color: var(--text-secondary); font-family: 'Rajdhani', sans-serif; font-weight: 600; cursor: pointer; font-size: 14px; }
+.profile-tab-btn.active { color: var(--neon-cyan); border-bottom: 2px solid var(--neon-cyan); }
+
+.profile-tab-content { display: none; }
+.profile-tab-content.active { display: block; }
+
+.profile-section { background: rgba(26,26,46,0.85); backdrop-filter: blur(16px); border-radius: 20px; padding: 25px; margin-bottom: 30px; border: 1px solid var(--border-default); }
+.profile-section h3 { margin-bottom: 20px; color: var(--neon-cyan); font-size: 18px; }
+
+.matches-table { overflow-x: auto; }
+.matches-table table { width: 100%; border-collapse: collapse; }
+.matches-table th, .matches-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-default); }
+.type-badge-small { padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; background: rgba(124,58,237,0.3); color: #a78bfa; }
+.accuracy-cell.high { color: var(--success); font-weight: bold; }
+.accuracy-cell.mid { color: var(--warning); font-weight: bold; }
+.accuracy-cell.low { color: var(--danger); font-weight: bold; }
+.btn-icon { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 5px 10px; border-radius: 5px; }
+.btn-icon:hover { background: var(--bg-secondary); color: var(--neon-cyan); }
+
+.detailed-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+.stat-detail-card { background: var(--bg-secondary); border-radius: 12px; padding: 15px; text-align: center; border: 1px solid var(--border-default); }
+.stat-detail-label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 8px; }
+.stat-detail-value { font-size: 28px; font-weight: 700; color: var(--neon-cyan); }
+
+.type-breakdown { margin-top: 15px; }
+.breakdown-item { margin-bottom: 15px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+.breakdown-label { width: 150px; font-size: 14px; }
+.breakdown-bar { flex: 1; height: 30px; background: var(--bg-secondary); border-radius: 15px; overflow: hidden; }
+.breakdown-fill { height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-size: 12px; font-weight: 600; }
+.image-fill { background: linear-gradient(90deg, var(--neon-cyan), #00aaff); }
+.html-fill { background: linear-gradient(90deg, var(--neon-purple), #a78bfa); }
+.breakdown-percent { width: 50px; text-align: right; font-weight: 600; }
+
+.achievements-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+.achievement-card { background: var(--bg-secondary); border-radius: 16px; padding: 20px; text-align: center; border: 1px solid var(--border-default); opacity: 0.5; }
+.achievement-card.unlocked { opacity: 1; border-color: var(--neon-gold); background: linear-gradient(135deg, rgba(255,215,0,0.1), rgba(255,215,0,0.05)); }
+.achievement-card.unlocked i { color: var(--neon-gold); }
+.achievement-card i { font-size: 40px; margin-bottom: 10px; }
+.achievement-card h4 { margin-bottom: 8px; font-size: 16px; }
+.achievement-card p { font-size: 11px; color: var(--text-muted); }
+
+.profile-actions { display: flex; justify-content: center; gap: 20px; margin-top: 20px; }
+.btn-load-more { margin-top: 20px; width: 100%; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 8px; color: var(--text-secondary); cursor: pointer; }
+.btn-load-more:hover { border-color: var(--neon-cyan); color: var(--neon-cyan); }
+.no-data { text-align: center; padding: 40px; color: var(--text-muted); }
+
+@media (max-width: 768px) {
+    .profile-stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .detailed-stats-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+const PROFILE_USER_ID = {{ target_user.id }};
+
+// Tab switching
+function showTab(event, tabName) {
+
+    // Remove active class from all buttons
+    document.querySelectorAll('.profile-tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // Activate clicked button
+    event.target.classList.add('active');
+
+    // Hide all tabs
+    document.querySelectorAll('.profile-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+
+    // Show selected tab
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // Load extra data
+    if (tabName === 'stats') {
+        loadDetailedStats();
+    }
+
+    if (tabName === 'achievements') {
+        loadAchievements();
+    }
+}
+
+// Load detailed stats
+async function loadDetailedStats() {
+    try {
+        const response = await fetch(`/api/user/${PROFILE_USER_ID}/stats`);
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('win-rate').textContent = data.win_rate + '%';
+            document.getElementById('avg-accuracy').textContent = data.avg_accuracy + '%';
+            document.getElementById('best-streak').textContent = data.best_streak;
+            document.getElementById('total-submissions').textContent = data.total_submissions;
+            
+            const total = data.image_count + data.html_count;
+            if (total > 0) {
+                const imagePercent = (data.image_count / total) * 100;
+                const htmlPercent = (data.html_count / total) * 100;
+                document.getElementById('image-fill').style.width = imagePercent + '%';
+                document.getElementById('html-fill').style.width = htmlPercent + '%';
+                document.getElementById('image-percent').textContent = Math.round(imagePercent) + '%';
+                document.getElementById('html-percent').textContent = Math.round(htmlPercent) + '%';
+                document.getElementById('image-fill').textContent = Math.round(imagePercent) + '%';
+                document.getElementById('html-fill').textContent = Math.round(htmlPercent) + '%';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading stats:', error);
+    }
+}
+
+// Load achievements
+async function loadAchievements() {
+    try {
+        const response = await fetch(`/api/user/${PROFILE_USER_ID}/matches/all`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const matches = data.matches;
+            const matchCount = matches.length;
+            
+            // Reset all achievements
+            document.querySelectorAll('.achievement-card').forEach(card => {
+                card.classList.remove('unlocked');
+                card.classList.add('locked');
+            });
+            
+            // First match
+            if (matchCount >= 1) {
+                document.getElementById('ach-first-match').classList.remove('locked');
+                document.getElementById('ach-first-match').classList.add('unlocked');
+            }
+            
+            // Perfect score
+            const hasPerfect = matches.some(m => m.accuracy >= 99.9);
+            if (hasPerfect) {
+                document.getElementById('ach-perfect-score').classList.remove('locked');
+                document.getElementById('ach-perfect-score').classList.add('unlocked');
+            }
+            
+            // Win streak
+            let currentStreak = 0;
+            let bestStreak = 0;
+            matches.forEach(m => {
+                if (m.accuracy >= 50) {
+                    currentStreak++;
+                    bestStreak = Math.max(bestStreak, currentStreak);
+                } else {
+                    currentStreak = 0;
+                }
+            });
+            if (bestStreak >= 3) {
+                document.getElementById('ach-win-streak').classList.remove('locked');
+                document.getElementById('ach-win-streak').classList.add('unlocked');
+            }
+            
+            // Veteran
+            if (matchCount >= 10) {
+                document.getElementById('ach-veteran').classList.remove('locked');
+                document.getElementById('ach-veteran').classList.add('unlocked');
+            }
+            
+            // Master
+            const highAccuracyCount = matches.filter(m => m.accuracy >= 90).length;
+            if (highAccuracyCount >= 5) {
+                document.getElementById('ach-master').classList.remove('locked');
+                document.getElementById('ach-master').classList.add('unlocked');
+            }
+            
+            // HTML Master
+            const htmlWins = matches.filter(m => m.type === 'HTML' && m.accuracy >= 50).length;
+            if (htmlWins >= 5) {
+                document.getElementById('ach-html-master').classList.remove('locked');
+                document.getElementById('ach-html-master').classList.add('unlocked');
+            }
+            
+            // CSS Artist
+            const imageWins = matches.filter(m => m.type === 'IMAGE' && m.accuracy >= 50).length;
+            if (imageWins >= 5) {
+                document.getElementById('ach-css-artist').classList.remove('locked');
+                document.getElementById('ach-css-artist').classList.add('unlocked');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading achievements:', error);
+    }
+}
+
+// View match details
+async function viewMatch(matchId) {
+    const modal = document.getElementById('match-modal');
+    const modalBody = document.getElementById('match-modal-body');
+    
+    modal.style.display = 'flex';
+    modalBody.innerHTML = 'Loading match details...';
+    
+    try {
+        const response = await fetch(`/api/match/${matchId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            modalBody.innerHTML = `
+                <p><strong>Challenge:</strong> ${escapeHtml(data.challenge)}</p>
+                <p><strong>Accuracy:</strong> <span style="color: ${data.accuracy >= 80 ? '#00cc66' : data.accuracy >= 50 ? '#ffaa00' : '#ff2244'}">${data.accuracy}%</span></p>
+                <p><strong>Date:</strong> ${data.date}</p>
+                <p><strong>Status:</strong> ${data.is_forfeit ? 'Forfeit' : 'Completed'}</p>
+                <hr>
+                <p><strong>HTML Code:</strong></p>
+                <pre style="background:#1a1a2e; padding:10px; border-radius:8px; overflow-x:auto; font-size:11px;">${escapeHtml(data.html_code || 'No HTML code')}</pre>
+                <p><strong>CSS Code:</strong></p>
+                <pre style="background:#1a1a2e; padding:10px; border-radius:8px; overflow-x:auto; font-size:11px;">${escapeHtml(data.css_code || 'No CSS code')}</pre>
+            `;
+        } else {
+            modalBody.innerHTML = '<p>Failed to load match details</p>';
+        }
+    } catch (error) {
+        modalBody.innerHTML = '<p>Error loading match details</p>';
+    }
+}
+
+// Load all matches
+async function loadAllMatches() {
+    const btn = event.target;
+    btn.innerHTML = 'Loading...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch(`/api/user/${PROFILE_USER_ID}/matches/all`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const tbody = document.getElementById('matches-tbody');
+            tbody.innerHTML = '';
+            
+            data.matches.forEach(match => {
+                const accuracyClass = match.accuracy >= 80 ? 'high' : match.accuracy >= 50 ? 'mid' : 'low';
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${escapeHtml(match.date)}</td>
+                        <td>${escapeHtml(match.challenge)}</td>
+                        <td><span class="type-badge-small">${escapeHtml(match.type)}</span></td>
+                        <td class="accuracy-cell ${accuracyClass}">${match.accuracy}%</td>
+                        <td>${match.status}</td>
+                        <td><button class="btn-icon" onclick="viewMatch(${match.id})"><i class="fas fa-eye"></i></button></td>
+                    </tr>
+                `;
+            });
+            btn.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading matches:', error);
+        btn.innerHTML = 'Load All Matches <i class="fas fa-chevron-down"></i>';
+        btn.disabled = false;
+    }
+}
+
+function closeModal() {
+    document.getElementById('match-modal').style.display = 'none';
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Close modal on outside click
+document.getElementById('match-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeModal();
+    }
+});
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadDetailedStats();
+    loadAchievements();
+});
+</script>
+{% endblock %}

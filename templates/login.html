@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="login-container">
+    <div class="animated-bg"></div>
+    
+    <div class="login-card">
+        <div class="login-left">
+            <div class="brand-icon">⚔️</div>
+            <h1 class="brand-title">UI BATTLE ARENA</h1>
+            <p class="brand-subtitle">Where Code Meets Competition</p>
+            
+            <div class="stats-row" id="live-stats">
+                <div class="stat-card">
+                    <i class="fas fa-door-open"></i>
+                    <span class="stat-value" id="stat-rooms">0</span>
+                    <span class="stat-label">Active Rooms</span>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-code-branch"></i>
+                    <span class="stat-value" id="stat-challenges">0</span>
+                    <span class="stat-label">Total Challenges</span>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-users"></i>
+                    <span class="stat-value" id="stat-players">0</span>
+                    <span class="stat-label">Total Players</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="login-right">
+            <div class="form-tabs">
+                <button class="form-tab active" data-form="login">LOGIN</button>
+                <button class="form-tab" data-form="register">REGISTER</button>
+            </div>
+            
+            <form id="login-form" class="auth-form active">
+                <div class="input-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="login-username" placeholder="Username" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn-primary">ENTER THE ARENA <i class="fas fa-arrow-right"></i></button>
+            </form>
+            
+            <form id="register-form" class="auth-form">
+                <div class="input-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="reg-username" placeholder="Username" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="reg-password" placeholder="Password" required>
+                </div>
+                <div class="role-toggle">
+                    <span class="role-label">🎮 Player</span>
+                    <label class="switch">
+                        <input type="checkbox" id="reg-role">
+                        <span class="slider round"></span>
+                    </label>
+                    <span class="role-label">👑 Admin</span>
+                </div>
+                <button type="submit" class="btn-primary">CREATE ACCOUNT <i class="fas fa-user-plus"></i></button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+async function loadStats() {
+    try {
+        const res = await fetch('/room/list');
+        const rooms = await res.json();
+        document.getElementById('stat-rooms').textContent = rooms.length || 0;
+    } catch(e) {}
+    
+    try {
+        const res = await fetch('/api/leaderboard');
+        const players = await res.json();
+        document.getElementById('stat-players').textContent = players.length || 0;
+    } catch(e) {}
+    
+    document.getElementById('stat-challenges').textContent = "{{ challenge_count|default(0) }}";
+}
+
+loadStats();
+
+document.querySelectorAll('.form-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.form-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(`${tab.dataset.form}-form`).classList.add('active');
+    });
+});
+
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const response = await fetch('/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            username: document.getElementById('login-username').value,
+            password: document.getElementById('login-password').value
+        })
+    });
+    const data = await response.json();
+    if (data.success) {
+        window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
+    } else {
+        showToast('Invalid credentials', 'error');
+    }
+});
+
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const response = await fetch('/auth/register', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            username: document.getElementById('reg-username').value,
+            password: document.getElementById('reg-password').value,
+            role: document.getElementById('reg-role').checked ? 'admin' : 'player'
+        })
+    });
+    const data = await response.json();
+    if (data.success) {
+        window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
+    } else {
+        showToast('Registration failed', 'error');
+    }
+});
+</script>
+{% endblock %}

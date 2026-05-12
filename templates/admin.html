@@ -1,0 +1,1122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-sidebar">
+        <div class="sidebar-brand">⚔️ UI BATTLE</div>
+        <nav class="sidebar-nav">
+            <a href="#" data-section="overview" class="active"><i class="fas fa-chart-line"></i> Overview</a>
+            <a href="#" data-section="create"><i class="fas fa-plus-circle"></i> Create Challenge</a>
+            <a href="#" data-section="rooms"><i class="fas fa-door-open"></i> Manage Rooms</a>
+            <a href="#" data-section="players"><i class="fas fa-users"></i> Manage Players</a>
+            <a href="#" data-section="challenges"><i class="fas fa-code-branch"></i> Manage Challenges</a>
+            <a href="#" data-section="competitions"><i class="fas fa-trophy"></i> Competitions</a>
+            <a href="#" data-section="broadcast"><i class="fas fa-broadcast-tower"></i> Broadcast</a>
+        </nav>
+    </div>
+    
+    <div class="admin-main">
+        <div class="admin-header">
+            <h1>GOD MODE ACTIVE</h1>
+            <div class="admin-user">
+                <i class="fas fa-crown"></i> {{ user.username }}
+            </div>
+        </div>
+        
+        <!-- Overview Section -->
+        <div id="section-overview" class="admin-section active">
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <i class="fas fa-door-open"></i>
+                    <span class="stat-num">{{ rooms|length }}</span>
+                    <span>Active Rooms</span>
+                </div>
+                <div class="stat-box">
+                    <i class="fas fa-code-branch"></i>
+                    <span class="stat-num">{{ challenges|length }}</span>
+                    <span>Challenges</span>
+                </div>
+                <div class="stat-box">
+                    <i class="fas fa-users"></i>
+                    <span class="stat-num">{{ players|length }}</span>
+                    <span>Total Players</span>
+                </div>
+                <div class="stat-box">
+                    <i class="fas fa-trophy"></i>
+                    <span class="stat-num">{{ total_matches|default(0) }}</span>
+                    <span>Total Matches</span>
+                </div>
+                <div class="stat-box">
+                    <i class="fas fa-chart-line"></i>
+                    <span class="stat-num">{{ avg_accuracy|default(0) }}%</span>
+                    <span>Avg Accuracy</span>
+                </div>
+                <div class="stat-box">
+                    <i class="fas fa-fire"></i>
+                    <span class="stat-num">{{ active_players|default(0) }}</span>
+                    <span>Online Now</span>
+                </div>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="recent-activity">
+                <h3><i class="fas fa-clock"></i> Recent Activity</h3>
+                <div class="activity-list" id="activity-list">
+                    {% for activity in recent_activities|default([]) %}
+                    <div class="activity-item">
+                        <i class="fas fa-user"></i>
+                        <span>{{ activity.username }}</span>
+                        <span>{{ activity.action }}</span>
+                        <span class="activity-time">{{ activity.time }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Create Challenge Section -->
+        <div id="section-create" class="admin-section">
+            <div class="form-card">
+                <div class="challenge-type-toggle">
+                    <button class="type-btn active" data-type="image">🖼 IMAGE CHALLENGE</button>
+                    <button class="type-btn" data-type="html">🖥 HTML CHALLENGE</button>
+                </div>
+                
+                <form id="create-challenge-form" enctype="multipart/form-data">
+                    <input type="hidden" id="challenge-type" name="challenge_type" value="image">
+                    
+                    <div class="form-group">
+                        <label>Challenge Name *</label>
+                        <input type="text" id="title" name="title" required>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Difficulty</label>
+                            <select id="difficulty" name="difficulty">
+                                <option>Easy</option>
+                                <option>Medium</option>
+                                <option>Hard</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Time Limit (seconds)</label>
+                            <input type="number" id="time-limit" name="time_limit" value="120" min="30">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="description" name="description" rows="3" placeholder="Describe the challenge..."></textarea>
+                    </div>
+                    
+                    <div id="image-fields" class="type-fields">
+                        <div class="form-group">
+                            <label>Target UI Image *</label>
+                            <input type="file" id="target-image" name="target_image" accept="image/*" required>
+                            <div id="image-preview" class="image-preview"></div>
+                        </div>
+                    </div>
+                    
+                    <div id="html-fields" class="type-fields" style="display:none;">
+                        <div class="form-group">
+                            <label>Target HTML — This is the structure players will style *</label>
+                            <textarea id="target-html" name="target_html" rows="8" placeholder="<div class='container'>\n  <div class='box'></div>\n</div>"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Target CSS (optional) — Base styles</label>
+                            <textarea id="target-css" name="target_css" rows="5" placeholder="body {\n  margin: 0;\n  background: #f0f0f0;\n}"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="html-locked" checked> Lock HTML for players (read-only)
+                            </label>
+                            <small class="help-text">When locked, players can only edit CSS/JS. When unlocked, they can modify the HTML structure.</small>
+                        </div>
+                        <button type="button" id="preview-target" class="btn-secondary">🔍 Preview Target</button>
+                        <div id="html-preview" class="preview-frame" style="display:none;">
+                            <div class="preview-header">Live Preview:</div>
+                            <iframe id="preview-iframe" sandbox="allow-scripts" style="width:100%;height:300px;border:none;background:#fff;"></iframe>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary">CREATE & LAUNCH ROOM <i class="fas fa-rocket"></i></button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Manage Rooms Section -->
+        <div id="section-rooms" class="admin-section">
+            <div class="section-toolbar">
+                <input type="text" id="room-search" placeholder="Search rooms..." class="search-input">
+                <select id="room-filter" class="filter-select">
+                    <option value="all">All Rooms</option>
+                    <option value="waiting">Waiting</option>
+                    <option value="running">Running</option>
+                    <option value="paused">Paused</option>
+                    <option value="ended">Ended</option>
+                </select>
+                <button onclick="refreshRooms()" class="btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>
+            </div>
+            <div class="rooms-table">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Challenge</th>
+                            <th>Type</th>
+                            <th>P1</th>
+                            <th>P2</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rooms-tbody">
+                        {% for room in rooms %}
+                        <tr data-room-id="{{ room.id }}" data-status="{{ room.status }}">
+                            <td class="room-code-cell">{{ room.room_code }}</td>
+                            <td>{{ room.challenge.title if room.challenge else '—' }}</td>
+                            <td><span class="badge {% if room.challenge.challenge_type == 'html' %}html-badge{% else %}image-badge{% endif %}">
+                                {{ room.challenge.challenge_type|upper if room.challenge else '—' }}
+                            </span></td>
+                            <td>{{ room.player1.username if room.player1 else 'Empty' }}</td>
+                            <td>{{ room.player2.username if room.player2 else 'Empty' }}</td>
+                            <td><span class="status-badge status-{{ room.status }}">{{ room.status }}</span></td>
+                            <td class="room-actions">
+                                <button onclick="roomAction({{ room.id }}, 'start')" class="action-btn start" title="Start">▶</button>
+                                <button onclick="roomAction({{ room.id }}, 'pause')" class="action-btn pause" title="Pause">⏸</button>
+                                <button onclick="roomAction({{ room.id }}, 'resume')" class="action-btn resume" title="Resume">▶</button>
+                                <button onclick="roomAction({{ room.id }}, 'end')" class="action-btn end" title="End">⏹</button>
+                                <button onclick="roomAction({{ room.id }}, 'add_time')" class="action-btn time" title="+30s">+30s</button>
+                                <button onclick="kickPlayer({{ room.id }}, '{{ room.player1.username if room.player1 else '' }}')" class="action-btn kick" title="Kick P1">🚫1</button>
+                                <button onclick="kickPlayer({{ room.id }}, '{{ room.player2.username if room.player2 else '' }}')" class="action-btn kick" title="Kick P2">🚫2</button>
+                                <button onclick="deleteRoom({{ room.id }})" class="action-btn delete" title="Delete Room">🗑</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Manage Players Section -->
+        <div id="section-players" class="admin-section">
+            <div class="section-toolbar">
+                <input type="text" id="player-search" placeholder="Search players..." class="search-input">
+                <select id="player-filter" class="filter-select">
+                    <option value="all">All Players</option>
+                    <option value="admin">Admins</option>
+                    <option value="player">Regular Players</option>
+                </select>
+                <button onclick="refreshPlayers()" class="btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>
+            </div>
+            
+            <div class="players-table-container">
+                <table class="players-table">
+                    <thead>
+                        <tr>
+                            <th>Avatar</th>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Matches</th>
+                            <th>Best Accuracy</th>
+                            <th>Wins</th>
+                            <th>Win Rate</th>
+                            <th>Joined</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="players-tbody">
+                        {% for p in players %}
+                        <tr data-user-id="{{ p.id }}" data-role="{{ p.role }}">
+                            <td><div class="table-avatar">{{ p.username[0].upper() }}</div></td>
+                            <td class="username-cell">{{ p.username }}</td>
+                            <td><span class="role-badge {% if p.role == 'admin' %}admin-role{% else %}player-role{% endif %}">{{ p.role }}</span></td>
+                            <td>{{ p.matches_played }}</td>
+                            <td class="accuracy-cell {% if p.best_accuracy >= 80 %}high{% elif p.best_accuracy >= 50 %}mid{% else %}low{% endif %}">
+                                {{ "%.1f"|format(p.best_accuracy) }}%
+                            </td>
+                            <td>{{ p.total_wins }}</td>
+                            <td>{% if p.matches_played > 0 %}{{ "%.1f"|format((p.total_wins / p.matches_played) * 100) }}%{% else %}0%{% endif %}</td>
+                            <td>{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '—' }}</td>
+                            <td class="player-actions">
+                                <button onclick="viewPlayerProfile({{ p.id }})" class="action-btn view" title="View Profile"><i class="fas fa-user"></i></button>
+                                <button onclick="viewPlayerMatches({{ p.id }}, '{{ p.username }}')" class="action-btn matches" title="View Matches">📊</button>
+                                {% if p.role != 'admin' or p.id != user.id %}
+                                <button onclick="deleteUser({{ p.id }}, '{{ p.username }}')" class="action-btn delete-user" title="Delete User">🗑</button>
+                                {% endif %}
+                                {% if p.role != 'admin' %}
+                                <button onclick="toggleAdminRole({{ p.id }}, '{{ p.username }}')" class="action-btn promote" title="Make Admin">👑</button>
+                                {% else %}
+                                <button onclick="toggleAdminRole({{ p.id }}, '{{ p.username }}')" class="action-btn demote" title="Remove Admin">⭐</button>
+                                {% endif %}
+                                <button onclick="resetPlayerStats({{ p.id }}, '{{ p.username }}')" class="action-btn reset-stats" title="Reset Stats">🔄</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Player Stats Modal -->
+            <div id="player-stats-modal" class="modal" style="display:none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modal-player-name">Player Stats</h3>
+                        <span class="close-modal" onclick="closeModal()">&times;</span>
+                    </div>
+                    <div class="modal-body" id="modal-body">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ========== MANAGE CHALLENGES SECTION ========== -->
+        <div id="section-challenges" class="admin-section">
+            <div class="section-header">
+                <h3><i class="fas fa-code-branch"></i> Manage Challenges</h3>
+                <button onclick="location.reload()" class="btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>
+            </div>
+            <div class="challenges-table-container">
+                <table class="challenges-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Title</th>
+                            <th>Type</th>
+                            <th>Difficulty</th>
+                            <th>Time Limit</th>
+                            <th>Created</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for challenge in all_challenges|default(challenges) %}
+                        <tr>
+                            <td>{{ challenge.id }}</td>
+                            <td class="challenge-title">{{ challenge.title }}</td>
+                            <td>
+                                <span class="badge {% if challenge.challenge_type == 'html' %}html-badge{% else %}image-badge{% endif %}">
+                                    {% if challenge.challenge_type == 'html' %}🖥 HTML{% else %}🖼 IMAGE{% endif %}
+                                </span>
+                            </td>
+                            <td>{{ challenge.difficulty }}</td>
+                            <td>{{ challenge.time_limit }}s</td>
+                            <td class="date-cell">{{ challenge.created_at.strftime('%Y-%m-%d') if challenge.created_at else '—' }}</td>
+                            <td>
+                                <span class="status-badge {% if challenge.is_active %}status-active{% else %}status-inactive{% endif %}">
+                                    {% if challenge.is_active %}Active{% else %}Inactive{% endif %}
+                                </span>
+                            </td>
+                            <td class="challenge-actions">
+                                {% if challenge.is_active %}
+                                <button onclick="deleteChallenge({{ challenge.id }}, '{{ challenge.title }}')" class="action-btn delete-challenge" title="Delete Challenge">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                                {% else %}
+                                <button onclick="restoreChallenge({{ challenge.id }})" class="action-btn restore" title="Restore Challenge">
+                                    <i class="fas fa-undo-alt"></i> Restore
+                                </button>
+                                {% endif %}
+                                <button onclick="viewChallengeDetails({{ challenge.id }})" class="action-btn view-details" title="View Details">
+                                    <i class="fas fa-eye"></i> View
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Competitions Section -->
+        <div id="section-competitions" class="admin-section">
+            <div class="competitions-header">
+                <h3><i class="fas fa-trophy"></i> Competition Statistics</h3>
+                <button onclick="exportData()" class="btn-secondary"><i class="fas fa-download"></i> Export Data</button>
+            </div>
+            
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="stat-icon">🏆</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ top_player.username if top_player else '—' }}</span>
+                        <span class="stat-label">Top Player</span>
+                        <span class="stat-sub">{{ "%.1f"|format(top_player.best_accuracy) if top_player else '0' }}% accuracy</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚡</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ highest_score|default(0) }}%</span>
+                        <span class="stat-label">Highest Score</span>
+                        <span class="stat-sub">All time record</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ total_submissions|default(0) }}</span>
+                        <span class="stat-label">Total Submissions</span>
+                        <span class="stat-sub">Code entries</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🎯</div>
+                    <div class="stat-info">
+                        <span class="stat-value">{{ avg_response_time|default(0) }}s</span>
+                        <span class="stat-label">Avg Response</span>
+                        <span class="stat-sub">Submission time</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Leaderboard Table -->
+            <div class="leaderboard-container">
+                <h4><i class="fas fa-chart-line"></i> Global Leaderboard</h4>
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Player</th>
+                            <th>Best Accuracy</th>
+                            <th>Matches</th>
+                            <th>Wins</th>
+                            <th>Win Rate</th>
+                            <th>Last Active</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in players_sorted|default(players) %}
+                        <tr>
+                            <td class="rank-cell">
+                                {% if loop.index == 1 %}🥇
+                                {% elif loop.index == 2 %}🥈
+                                {% elif loop.index == 3 %}🥉
+                                {% else %}#{{ loop.index }}{% endif %}
+                            </td>
+                            <td class="player-cell">
+                                <div class="player-avatar-small">{{ p.username[0].upper() }}</div>
+                                {{ p.username }}
+                            </td>
+                            <td class="accuracy-cell {% if p.best_accuracy >= 80 %}high{% elif p.best_accuracy >= 50 %}mid{% else %}low{% endif %}">
+                                {{ "%.1f"|format(p.best_accuracy) }}%
+                            </td>
+                            <td>{{ p.matches_played }}</td>
+                            <td>{{ p.total_wins }}</td>
+                            <td>{% if p.matches_played > 0 %}{{ "%.1f"|format((p.total_wins / p.matches_played) * 100) }}%{% else %}0%{% endif %}</td>
+                            <td class="date-cell">{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Broadcast Section -->
+        <div id="section-broadcast" class="admin-section">
+            <div class="broadcast-card">
+                <h3><i class="fas fa-broadcast-tower"></i> System Broadcast</h3>
+                <div class="form-group">
+                    <label>Target Room (optional)</label>
+                    <input type="number" id="broadcast-room-id" placeholder="Leave empty for all rooms">
+                    <small>Specific room ID or broadcast to all active rooms</small>
+                </div>
+                <div class="form-group">
+                    <label>Announcement Message</label>
+                    <textarea id="broadcast-message" placeholder="Enter your announcement here..." rows="4"></textarea>
+                </div>
+                <div class="broadcast-actions">
+                    <button onclick="broadcastMessage()" class="btn-primary"><i class="fas fa-paper-plane"></i> Send Broadcast</button>
+                    <button onclick="broadcastToAll()" class="btn-secondary"><i class="fas fa-globe"></i> Broadcast to All</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Challenge Details Modal -->
+        <div id="challenge-details-modal" class="modal" style="display:none;">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h3 id="challenge-modal-title">Challenge Details</h3>
+                    <span class="close-modal" onclick="closeChallengeModal()">&times;</span>
+                </div>
+                <div class="modal-body" id="challenge-modal-body">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Additional admin styles */
+.section-toolbar {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: var(--bg-panel);
+    border-radius: 12px;
+}
+
+.search-input, .filter-select {
+    padding: 8px 15px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    color: white;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.search-input { flex: 1; }
+
+.player-actions {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.action-btn.view { background: var(--neon-cyan); color: var(--bg-primary); }
+.action-btn.matches { background: var(--neon-purple); color: white; }
+.action-btn.delete-user { background: var(--danger); color: white; }
+.action-btn.promote { background: var(--neon-gold); color: var(--bg-primary); }
+.action-btn.demote { background: var(--warning); color: var(--bg-primary); }
+.action-btn.reset-stats { background: var(--text-muted); color: white; }
+.action-btn.delete { background: var(--danger); color: white; }
+
+/* Challenges Table Styles */
+.challenges-table-container {
+    overflow-x: auto;
+    margin-top: 20px;
+}
+
+.challenges-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-panel);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.challenges-table th,
+.challenges-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-default);
+}
+
+.challenges-table th {
+    background: var(--bg-secondary);
+    color: var(--neon-cyan);
+    font-weight: 600;
+}
+
+.challenge-title {
+    font-weight: 600;
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.challenge-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-btn.delete-challenge {
+    background: var(--danger);
+    color: white;
+}
+
+.action-btn.restore {
+    background: var(--success);
+    color: white;
+}
+
+.action-btn.view-details {
+    background: var(--neon-cyan);
+    color: var(--bg-primary);
+}
+
+.status-badge.status-active {
+    background: rgba(0,204,102,0.2);
+    color: var(--success);
+}
+
+.status-badge.status-inactive {
+    background: rgba(255,34,68,0.2);
+    color: var(--danger);
+}
+
+.modal-large {
+    max-width: 800px;
+    width: 90%;
+}
+
+.table-avatar {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+}
+
+.role-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.admin-role { background: rgba(255,215,0,0.2); color: var(--neon-gold); }
+.player-role { background: rgba(0,255,245,0.2); color: var(--neon-cyan); }
+
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-panel);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow: auto;
+    border: 1px solid var(--border-default);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-default);
+}
+
+.close-modal {
+    font-size: 28px;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.close-modal:hover { color: var(--danger); }
+
+.modal-body { padding: 20px; }
+
+.stats-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    background: var(--bg-panel);
+    border-radius: 12px;
+    border: 1px solid var(--border-default);
+}
+
+.stat-icon { font-size: 40px; }
+.stat-info { flex: 1; }
+.stat-value { font-size: 24px; font-weight: 700; display: block; color: var(--neon-cyan); }
+.stat-label { font-size: 12px; color: var(--text-muted); }
+.stat-sub { font-size: 11px; color: var(--text-secondary); }
+
+.leaderboard-container {
+    background: var(--bg-panel);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.leaderboard-container h4 {
+    margin-bottom: 15px;
+    color: var(--neon-cyan);
+}
+
+.broadcast-card {
+    background: var(--bg-panel);
+    border-radius: 12px;
+    padding: 25px;
+}
+
+.broadcast-actions {
+    display: flex;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.recent-activity {
+    background: var(--bg-panel);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.recent-activity h3 {
+    margin-bottom: 15px;
+    color: var(--neon-cyan);
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-default);
+}
+
+.activity-time {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.players-table-container {
+    overflow-x: auto;
+}
+
+.players-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.players-table th, .players-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-default);
+}
+
+.players-table th {
+    color: var(--neon-cyan);
+    font-weight: 600;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th, .data-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-default);
+}
+</style>
+
+<script>
+let adminHtmlEditor, adminCssEditor;
+
+function initAdminEditors() {
+    const htmlTextarea = document.getElementById('target-html');
+    const cssTextarea = document.getElementById('target-css');
+    
+    if (htmlTextarea) {
+        adminHtmlEditor = CodeMirror.fromTextArea(htmlTextarea, {
+            mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, tabSize: 2
+        });
+    }
+    if (cssTextarea) {
+        adminCssEditor = CodeMirror.fromTextArea(cssTextarea, {
+            mode: 'css', theme: 'dracula', lineNumbers: true, tabSize: 2
+        });
+    }
+}
+
+// Challenge type toggle
+document.querySelectorAll('.type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const type = btn.dataset.type;
+        document.getElementById('challenge-type').value = type;
+        document.getElementById('image-fields').style.display = type === 'image' ? 'block' : 'none';
+        document.getElementById('html-fields').style.display = type === 'html' ? 'block' : 'none';
+    });
+});
+
+// Create challenge form
+document.getElementById('create-challenge-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData();
+    formData.append('challenge_type', document.getElementById('challenge-type').value);
+    formData.append('title', document.getElementById('title').value);
+    formData.append('difficulty', document.getElementById('difficulty').value);
+    formData.append('time_limit', document.getElementById('time-limit').value);
+    formData.append('description', document.getElementById('description').value);
+    
+    if (document.getElementById('challenge-type').value === 'image') {
+        const file = document.getElementById('target-image').files[0];
+        if (file) formData.append('target_image', file);
+        else { showToast('Please select an image', 'error'); return; }
+    } else {
+        formData.append('target_html', adminHtmlEditor ? adminHtmlEditor.getValue() : '');
+        formData.append('target_css', adminCssEditor ? adminCssEditor.getValue() : '');
+        formData.append('html_locked', document.getElementById('html-locked').checked);
+    }
+    
+    const res = await fetch('/admin/create_challenge', {method: 'POST', body: formData});
+    const data = await res.json();
+    if (data.success) {
+        showToast(`Room created! Code: ${data.room_code}`, 'success');
+        setTimeout(() => location.reload(), 1500);
+    } else {
+        showToast(data.error || 'Error creating challenge', 'error');
+    }
+});
+
+// Image preview
+document.getElementById('target-image')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            document.getElementById('image-preview').innerHTML = `<img src="${event.target.result}" style="max-width:100%;max-height:150px;border-radius:8px;">`;
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+// Preview HTML challenge
+document.getElementById('preview-target')?.addEventListener('click', () => {
+    const html = adminHtmlEditor ? adminHtmlEditor.getValue() : '';
+    const css = adminCssEditor ? adminCssEditor.getValue() : '';
+    const previewDiv = document.getElementById('html-preview');
+    const iframe = document.getElementById('preview-iframe');
+    previewDiv.style.display = 'block';
+    iframe.srcdoc = `<!DOCTYPE html><html><head><style>${css}</style></head><body>${html}</body></html>`;
+});
+
+// Room actions
+window.roomAction = async (roomId, action) => {
+    const res = await fetch(`/admin/room/${roomId}/action`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action})
+    });
+    if (res.ok) {
+        showToast(`${action} command sent`, 'success');
+        setTimeout(() => location.reload(), 1000);
+    }
+};
+
+// Delete room
+window.deleteRoom = async (roomId) => {
+    if (!confirm('Delete this room? All data will be lost.')) return;
+    const res = await fetch(`/admin/room/${roomId}/delete`, {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'}
+    });
+    if (res.ok) {
+        showToast('Room deleted', 'success');
+        setTimeout(() => location.reload(), 1000);
+    }
+};
+
+// Kick player
+window.kickPlayer = async (roomId, username) => {
+    if (!username || username === 'Empty') return;
+    if (!confirm(`Kick ${username} from the room?`)) return;
+    const res = await fetch('/admin/kick', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({room_id: roomId, username: username})
+    });
+    if (res.ok) {
+        showToast(`${username} kicked`, 'warning');
+        setTimeout(() => location.reload(), 1000);
+    }
+};
+
+// Delete challenge
+window.deleteChallenge = async (challengeId, challengeTitle) => {
+    if (!confirm(`⚠️ Delete challenge "${challengeTitle}"?\n\nThis will mark the challenge as inactive.`)) return;
+    
+    const res = await fetch(`/admin/challenge/${challengeId}/delete`, {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'}
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast(`Challenge "${challengeTitle}" deleted`, 'success');
+        setTimeout(() => location.reload(), 1000);
+    } else {
+        showToast(data.error || 'Failed to delete challenge', 'error');
+    }
+};
+
+// Restore challenge
+window.restoreChallenge = async (challengeId) => {
+    if (!confirm('Restore this challenge?')) return;
+    
+    const res = await fetch(`/admin/challenge/${challengeId}/restore`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast('Challenge restored', 'success');
+        setTimeout(() => location.reload(), 1000);
+    }
+};
+
+// View challenge details
+window.viewChallengeDetails = async (challengeId) => {
+    const modal = document.getElementById('challenge-details-modal');
+    const modalBody = document.getElementById('challenge-modal-body');
+    const modalTitle = document.getElementById('challenge-modal-title');
+    
+    modal.style.display = 'flex';
+    modalBody.innerHTML = '<div class="loading">Loading...</div>';
+    
+    const res = await fetch(`/admin/challenge/${challengeId}/details`);
+    const data = await res.json();
+    
+    if (data.success) {
+        modalTitle.textContent = data.title;
+        modalBody.innerHTML = `
+            <div class="detail-card"><span class="detail-label">Type</span><span class="detail-value">${data.challenge_type.toUpperCase()}</span></div>
+            <div class="detail-card"><span class="detail-label">Difficulty</span><span class="detail-value">${data.difficulty}</span></div>
+            <div class="detail-card"><span class="detail-label">Time Limit</span><span class="detail-value">${data.time_limit}s</span></div>
+            <div class="detail-card"><span class="detail-label">Description</span><span class="detail-value">${data.description || 'No description'}</span></div>
+            ${data.challenge_type === 'image' ? 
+                `<div class="detail-card"><span class="detail-label">Target Image</span><div><img src="${data.target_image_url}" style="max-width:100%; border-radius:8px;"></div></div>` : 
+                `<div class="detail-card"><span class="detail-label">HTML Locked</span><span class="detail-value">${data.html_locked ? 'Yes' : 'No'}</span></div>
+                 <div class="code-preview"><strong>Target HTML:</strong><pre><code>${escapeHtml(data.target_html || 'No HTML')}</code></pre></div>
+                 <div class="code-preview"><strong>Target CSS:</strong><pre><code>${escapeHtml(data.target_css || 'No CSS')}</code></pre></div>`
+            }
+        `;
+    }
+};
+
+// Delete user
+window.deleteUser = async (userId, username) => {
+    if (!confirm(`⚠️ Delete user "${username}"? This cannot be undone!`)) return;
+    
+    const res = await fetch(`/admin/user/${userId}/delete`, {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'}
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast(`User ${username} deleted`, 'success');
+        setTimeout(() => location.reload(), 1000);
+    } else {
+        showToast(data.error || 'Failed to delete user', 'error');
+    }
+};
+
+// Toggle admin role
+window.toggleAdminRole = async (userId, username) => {
+    const action = confirm(`Make ${username} an admin?`) ? 'promote' : 'demote';
+    const res = await fetch(`/admin/user/${userId}/role`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: action})
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast(`Role updated for ${username}`, 'success');
+        setTimeout(() => location.reload(), 1000);
+    }
+};
+
+// Reset player stats
+window.resetPlayerStats = async (userId, username) => {
+    if (!confirm(`Reset all stats for ${username}?`)) return;
+    
+    const res = await fetch(`/admin/user/${userId}/reset-stats`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    });
+    const data = await res.json();
+    if (data.success) {
+        showToast(`Stats reset for ${username}`, 'success');
+        setTimeout(() => location.reload(), 1000);
+    }
+};
+
+// View player profile
+window.viewPlayerProfile = async (userId) => {
+    const modal = document.getElementById('player-stats-modal');
+    const modalBody = document.getElementById('modal-body');
+    const modalTitle = document.getElementById('modal-player-name');
+    
+    modal.style.display = 'flex';
+    modalBody.innerHTML = '<div class="loading">Loading...</div>';
+    
+    const res = await fetch(`/admin/user/${userId}/stats`);
+    const data = await res.json();
+    
+    if (data.success) {
+        modalTitle.textContent = `${data.username}'s Stats`;
+        modalBody.innerHTML = `
+            <div class="detail-card"><span class="detail-label">Username</span><span class="detail-value">${data.username}</span></div>
+            <div class="detail-card"><span class="detail-label">Role</span><span class="detail-value">${data.role}</span></div>
+            <div class="detail-card"><span class="detail-label">Matches</span><span class="detail-value">${data.matches_played}</span></div>
+            <div class="detail-card"><span class="detail-label">Best Accuracy</span><span class="detail-value">${data.best_accuracy}%</span></div>
+            <div class="detail-card"><span class="detail-label">Total Wins</span><span class="detail-value">${data.total_wins}</span></div>
+            <div class="detail-card"><span class="detail-label">Win Rate</span><span class="detail-value">${data.win_rate}%</span></div>
+            <div class="detail-card"><span class="detail-label">Member Since</span><span class="detail-value">${data.joined_date}</span></div>
+        `;
+    }
+};
+
+// View player matches
+window.viewPlayerMatches = async (userId, username) => {
+    const modal = document.getElementById('player-stats-modal');
+    const modalBody = document.getElementById('modal-body');
+    const modalTitle = document.getElementById('modal-player-name');
+    
+    modal.style.display = 'flex';
+    modalBody.innerHTML = '<div class="loading">Loading...</div>';
+    modalTitle.textContent = `${username}'s Matches`;
+    
+    const res = await fetch(`/admin/user/${userId}/matches`);
+    const data = await res.json();
+    
+    if (data.success && data.matches.length) {
+        modalBody.innerHTML = `
+            <table class="data-table">
+                <thead><tr><th>Date</th><th>Challenge</th><th>Accuracy</th><th>Result</th></tr></thead>
+                <tbody>
+                    ${data.matches.map(m => `<tr>
+                        <td>${m.date}</td>
+                        <td>${m.challenge}</td>
+                        <td class="${m.accuracy >= 80 ? 'high' : m.accuracy >= 50 ? 'mid' : 'low'}">${m.accuracy}%</td>
+                        <td>${m.is_winner ? '🏆 Win' : '❌ Loss'}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        `;
+    } else {
+        modalBody.innerHTML = '<p>No matches found.</p>';
+    }
+};
+
+// Broadcast
+window.broadcastMessage = async () => {
+    const message = document.getElementById('broadcast-message').value;
+    const roomId = document.getElementById('broadcast-room-id').value;
+    if (!message) { showToast('Enter a message', 'warning'); return; }
+    
+    const socket = io();
+    socket.emit('broadcast_message', {message: message, room_id: roomId || null});
+    showToast('Broadcast sent', 'success');
+    document.getElementById('broadcast-message').value = '';
+};
+
+window.broadcastToAll = async () => {
+    const message = document.getElementById('broadcast-message').value;
+    if (!message) { showToast('Enter a message', 'warning'); return; }
+    
+    const socket = io();
+    socket.emit('broadcast_message', {message: message, room_id: null});
+    showToast('Broadcast sent to all rooms', 'success');
+    document.getElementById('broadcast-message').value = '';
+};
+
+// Export data
+window.exportData = async () => {
+    const res = await fetch('/admin/export-data');
+    const data = await res.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ui-battle-arena-export-${new Date().toISOString()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Data exported', 'success');
+};
+
+// Filter functions
+function filterPlayers() {
+    const search = document.getElementById('player-search')?.value.toLowerCase() || '';
+    const filter = document.getElementById('player-filter')?.value || 'all';
+    const rows = document.querySelectorAll('#players-tbody tr');
+    
+    rows.forEach(row => {
+        const username = row.querySelector('.username-cell')?.textContent.toLowerCase() || '';
+        const role = row.dataset.role || '';
+        let show = true;
+        if (search && !username.includes(search)) show = false;
+        if (filter !== 'all' && role !== filter) show = false;
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+function filterRooms() {
+    const search = document.getElementById('room-search')?.value.toLowerCase() || '';
+    const filter = document.getElementById('room-filter')?.value || 'all';
+    const rows = document.querySelectorAll('#rooms-tbody tr');
+    
+    rows.forEach(row => {
+        const code = row.querySelector('.room-code-cell')?.textContent.toLowerCase() || '';
+        const status = row.dataset.status || '';
+        let show = true;
+        if (search && !code.includes(search)) show = false;
+        if (filter !== 'all' && status !== filter) show = false;
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+window.refreshRooms = () => location.reload();
+window.refreshPlayers = () => location.reload();
+window.closeModal = () => document.getElementById('player-stats-modal').style.display = 'none';
+window.closeChallengeModal = () => document.getElementById('challenge-details-modal').style.display = 'none';
+
+// Close modals on outside click
+document.getElementById('player-stats-modal')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('player-stats-modal')) closeModal();
+});
+document.getElementById('challenge-details-modal')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('challenge-details-modal')) closeChallengeModal();
+});
+
+// Navigation
+document.querySelectorAll('.sidebar-nav a').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.sidebar-nav a').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+        document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+        document.getElementById(`section-${link.dataset.section}`).classList.add('active');
+    });
+});
+
+// Event listeners for search/filter
+document.getElementById('player-search')?.addEventListener('input', filterPlayers);
+document.getElementById('player-filter')?.addEventListener('change', filterPlayers);
+document.getElementById('room-search')?.addEventListener('input', filterRooms);
+document.getElementById('room-filter')?.addEventListener('change', filterRooms);
+
+initAdminEditors();
+</script>
+{% endblock %}

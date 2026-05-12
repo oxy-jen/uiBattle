@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="leaderboard-page">
+    <div class="leaderboard-header">
+        <h1><i class="fas fa-trophy"></i> GLOBAL LEADERBOARD</h1>
+        <p>Top UI Battle Arena competitors</p>
+    </div>
+    
+    <div class="leaderboard-table-container">
+        <table class="leaderboard-table">
+            <thead>
+                <tr>
+                    <th>RANK</th>
+                    <th></th>
+                    <th>USERNAME</th>
+                    <th>BEST ACCURACY</th>
+                    <th>MATCHES</th>
+                    <th>WINS</th>
+                    <th>JOINED</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for player in players %}
+                <tr {% if player.id == user.id %}class="current-user-row"{% endif %}>
+                    <td class="rank-cell">
+                        {% if loop.index == 1 %}🥇
+                        {% elif loop.index == 2 %}🥈
+                        {% elif loop.index == 3 %}🥉
+                        {% else %}#{{ loop.index }}{% endif %}
+                    </td>
+                    <td><div class="leaderboard-avatar">{{ player.username[0].upper() }}</div></td>
+                    <td class="username-cell">{{ player.username }}</td>
+                    <td class="accuracy-cell {% if player.best_accuracy >= 80 %}high{% elif player.best_accuracy >= 50 %}mid{% else %}low{% endif %}">
+                        {{ "%.1f"|format(player.best_accuracy) }}%
+                    </td>
+                    <td>{{ player.matches_played }}</td>
+                    <td>{{ player.total_wins }}</td>
+                    <td class="joined-cell">{{ player.created_at.strftime('%Y-%m-%d') if player.created_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="leaderboard-footer">
+        <a href="/dashboard" class="btn-secondary"><i class="fas fa-home"></i> Back to Dashboard</a>
+    </div>
+</div>
+
+<style>
+.leaderboard-page { min-height: 100vh; background: linear-gradient(135deg, #0a0a0f 0%, #12121a 100%); padding: 40px; }
+.leaderboard-header { text-align: center; margin-bottom: 40px; }
+.leaderboard-header h1 { font-family: 'Rajdhani', sans-serif; font-size: 48px; background: linear-gradient(135deg, #ffd700, #ffaa00); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.leaderboard-table-container { max-width: 1000px; margin: 0 auto; background: rgba(26,26,46,0.85); backdrop-filter: blur(16px); border-radius: 20px; overflow: hidden; border: 1px solid var(--border-default); }
+.leaderboard-table { width: 100%; border-collapse: collapse; }
+.leaderboard-table th { padding: 15px 20px; text-align: left; font-family: 'Rajdhani', sans-serif; font-weight: 600; color: var(--neon-cyan); border-bottom: 1px solid var(--border-bright); }
+.leaderboard-table td { padding: 12px 20px; border-bottom: 1px solid var(--border-default); }
+.current-user-row { background: rgba(0,255,245,0.1); border-left: 3px solid var(--neon-cyan); }
+.rank-cell { font-size: 18px; font-weight: 700; }
+.leaderboard-avatar { width: 36px; height: 36px; background: linear-gradient(135deg, #00fff5, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.username-cell { font-weight: 600; }
+.accuracy-cell { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px; }
+.accuracy-cell.high { color: var(--success); }
+.accuracy-cell.mid { color: var(--warning); }
+.accuracy-cell.low { color: var(--danger); }
+.joined-cell { color: var(--text-muted); font-size: 13px; }
+.leaderboard-footer { text-align: center; margin-top: 30px; }
+</style>
+{% endblock %}

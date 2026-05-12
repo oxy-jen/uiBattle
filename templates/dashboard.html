@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard">
+    <nav class="navbar">
+        <div class="nav-brand">
+            <i class="fas fa-code-branch"></i>
+            <span>UI BATTLE ARENA</span>
+        </div>
+        <div class="nav-right">
+            <div class="user-menu">
+                <div class="avatar">{{ user.username[0].upper() }}</div>
+                <span>{{ user.username }}</span>
+                <i class="fas fa-chevron-down"></i>
+            </div>
+            <a href="/auth/logout" class="logout-btn"><i class="fas fa-sign-out-alt"></i></a>
+        </div>
+    </nav>
+    
+    <div class="dashboard-content">
+        <div class="hero-stats">
+            <div class="stat-card-large">
+                <i class="fas fa-trophy"></i>
+                <div class="stat-value">{{ "%.1f"|format(user.best_accuracy) }}%</div>
+                <div class="stat-label">Best Accuracy</div>
+            </div>
+            <div class="stat-card-large">
+                <i class="fas fa-swords"></i>
+                <div class="stat-value">{{ user.matches_played }}</div>
+                <div class="stat-label">Matches Played</div>
+            </div>
+            <div class="stat-card-large">
+                <i class="fas fa-globe"></i>
+                <div class="stat-value">#{{ global_rank if global_rank else '—' }}</div>
+                <div class="stat-label">Global Rank</div>
+            </div>
+        </div>
+        
+        <div class="dashboard-grid">
+            <div class="panel">
+                <div class="panel-header">
+                    <h3><i class="fas fa-gamepad"></i> ACTIVE ROOMS</h3>
+                </div>
+                <div class="rooms-grid">
+                    {% for room in rooms %}
+                    <div class="room-card" data-room-id="{{ room.id }}">
+                        <div class="room-header">
+                            <span class="room-code">{{ room.room_code }}</span>
+                            <span class="room-type-badge {% if room.challenge_type == 'html' %}html-type{% else %}image-type{% endif %}">
+                                {% if room.challenge_type == 'html' %}🖥 HTML{% else %}🖼 IMAGE{% endif %}
+                            </span>
+                        </div>
+                        <div class="room-title">{{ room.challenge_title }}</div>
+                        <div class="room-players">
+                            <div class="player-slot"><i class="fas fa-user"></i> {{ room.player1 }}</div>
+                            <div class="player-slot"><i class="fas fa-user"></i> {{ room.player2 }}</div>
+                        </div>
+                        <div class="room-status status-{{ room.status }}">{{ room.status|upper }}</div>
+                        <button class="btn-join" onclick="joinRoom({{ room.id }})">JOIN BATTLE <i class="fas fa-arrow-right"></i></button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="panel">
+                <div class="panel-header">
+                    <h3><i class="fas fa-crown"></i> TOP PLAYERS</h3>
+                </div>
+                <div class="leaderboard-preview">
+                    {% for p in top_players %}
+                    <div class="leaderboard-row">
+                        <span class="rank">#{{ loop.index }}</span>
+                        <div class="avatar-small">{{ p.username[0].upper() }}</div>
+                        <span class="name">{{ p.username }}</span>
+                        <span class="score">{{ "%.1f"|format(p.best_accuracy) }}%</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="panel">
+                <div class="panel-header">
+                    <h3><i class="fas fa-history"></i> RECENT MATCHES</h3>
+                </div>
+                <div class="matches-list">
+                    {% for match in recent_matches %}
+                    <div class="match-row">
+                        <span class="match-date">{{ match.submitted_at.strftime('%m/%d') if match.submitted_at else '—' }}</span>
+                        <span class="match-accuracy {% if match.accuracy >= 80 %}high{% elif match.accuracy >= 50 %}mid{% else %}low{% endif %}">
+                            {{ "%.1f"|format(match.accuracy) }}%
+                        </span>
+                        <i class="fas fa-chevron-right"></i>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function joinRoom(roomId) {
+    fetch('/room/join', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({room_id: roomId})
+    }).then(res => res.json()).then(data => {
+        if (data.success) {
+            window.location.href = `/arena/${data.room_id}`;
+        } else {
+            showToast(data.error || 'Cannot join room', 'error');
+        }
+    });
+}
+</script>
+{% endblock %}
