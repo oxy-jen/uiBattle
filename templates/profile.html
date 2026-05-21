@@ -257,8 +257,8 @@
 </div>
 
 <!-- Match Details Modal -->
-<div id="match-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center;">
-    <div style="background:var(--bg-panel); border-radius:16px; width:90%; max-width:600px; max-height:80vh; overflow:auto;">
+<div id="match-modal" style="display:none; position:fixed; inset:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2147483001; align-items:center; justify-content:center; padding:18px;">
+    <div style="background:var(--bg-panel); border-radius:16px; width:90%; max-width:600px; max-height:calc(100dvh - 36px); overflow:auto; position:relative; z-index:2147483002;">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 20px; border-bottom:1px solid var(--border-default);">
             <h3>Match Details</h3>
             <button onclick="closeModal()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>

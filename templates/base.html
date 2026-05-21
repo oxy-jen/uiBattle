@@ -134,25 +134,39 @@
                     <strong>Two-step verification</strong>
                     <span id="two-factor-status">{{ 'Enabled' if user.two_factor_enabled else 'Off' }}</span>
                 </div>
-                <p>Use Google Authenticator, Microsoft Authenticator, 1Password, Authy, or any app that supports 6-digit TOTP codes.</p>
+                <p>Use any authenticator that creates 6-digit TOTP codes. On a computer, copy the setup key into a desktop password manager or authenticator, then paste the generated code below.</p>
                 <label>
                     Current password
                     <input id="two-factor-current-password" type="password" autocomplete="current-password">
                 </label>
                 <div class="two-factor-setup" id="two-factor-setup" hidden>
+                    <div class="two-factor-qr-wrap" id="two-factor-qr-wrap" hidden>
+                        <img id="two-factor-qr" alt="Two-step setup QR code">
+                    </div>
                     <label>
-                        Secret key
+                        Setup key
                         <input id="two-factor-secret" type="text" readonly>
                     </label>
-                    <small>Add this key in your authenticator app, then enter the current 6-digit code.</small>
+                    <div class="two-factor-inline-actions">
+                        <button class="profile-menu-link" id="two-factor-copy-secret-btn" type="button"><i class="fas fa-copy"></i> Copy setup key</button>
+                        <a class="profile-menu-link" id="two-factor-open-app-link" href="#" hidden><i class="fas fa-up-right-from-square"></i> Open authenticator</a>
+                    </div>
+                    <small>In your authenticator, choose add account, setup key/manual entry, paste this key, then enter the 6-digit code it generates.</small>
                     <label>
-                        Verification code
-                        <input id="two-factor-code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+                        Verification or recovery code
+                        <input id="two-factor-code" type="text" inputmode="numeric" maxlength="14" autocomplete="one-time-code">
                     </label>
+                </div>
+                <div class="two-factor-recovery" id="two-factor-recovery" hidden>
+                    <strong>Recovery codes</strong>
+                    <p>Save these one-time codes somewhere private. They let you sign in if your authenticator is unavailable.</p>
+                    <div class="two-factor-recovery-grid" id="two-factor-recovery-grid"></div>
+                    <button class="profile-menu-link" id="two-factor-copy-recovery-btn" type="button"><i class="fas fa-copy"></i> Copy recovery codes</button>
                 </div>
                 <div class="profile-menu-actions">
                     <button class="profile-menu-link" id="two-factor-setup-btn" type="button"><i class="fas fa-qrcode"></i> Setup 2FA</button>
                     <button class="profile-menu-save" id="two-factor-enable-btn" type="button" hidden><i class="fas fa-check"></i> Enable</button>
+                    <button class="profile-menu-link" id="two-factor-recovery-btn" type="button"><i class="fas fa-key"></i> New recovery codes</button>
                     <button class="profile-menu-logout" id="two-factor-disable-btn" type="button"><i class="fas fa-ban"></i> Disable</button>
                 </div>
             </div>

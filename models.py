@@ -15,6 +15,7 @@ class User(db.Model):
     google_sub = db.Column(db.String(255), unique=True, nullable=True)
     two_factor_secret = db.Column(db.String(64), nullable=True)
     two_factor_enabled = db.Column(db.Boolean, default=False)
+    two_factor_recovery_hashes = db.Column(db.Text, nullable=True)
     role = db.Column(db.String(10), default='player')
     matches_played = db.Column(db.Integer, default=0)
     best_accuracy = db.Column(db.Float, default=0.0)

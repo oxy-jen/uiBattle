@@ -1122,17 +1122,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: var(--popup-overlay-layer, 2147483001);
+    padding: 18px;
 }
 
 .modal-content {
+    position: relative;
+    z-index: var(--popup-dialog-layer, 2147483002);
     background: var(--bg-panel);
     border-radius: 16px;
     width: 90%;
     max-width: 600px;
-    max-height: 80vh;
+    max-height: calc(100dvh - 36px);
     overflow: auto;
     border: 1px solid var(--border-default);
+    box-shadow: 0 28px 90px rgba(0,0,0,0.58), 0 0 0 1px rgba(56,189,248,0.18);
 }
 
 .modal-header {

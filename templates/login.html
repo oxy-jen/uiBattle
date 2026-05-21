@@ -60,9 +60,13 @@
             </form>
 
             <form id="two-factor-login-form" class="auth-form {% if pending_two_factor %}active{% endif %}">
+                <div class="auth-help-panel">
+                    <strong>Two-step verification</strong>
+                    <span>Open your authenticator and paste the current 6-digit code here. If your phone is unavailable, enter one saved recovery code.</span>
+                </div>
                 <div class="input-group">
                     <i class="fas fa-shield-halved"></i>
-                    <input type="text" id="login-2fa-code" placeholder="6-digit verification code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required>
+                    <input type="text" id="login-2fa-code" placeholder="Verification or recovery code" inputmode="text" maxlength="14" autocomplete="one-time-code" required>
                 </div>
                 <button type="submit" class="btn-primary">VERIFY LOGIN <i class="fas fa-check"></i></button>
                 <button type="button" class="btn-secondary" id="back-to-login-btn">Back to login</button>

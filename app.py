@@ -10,6 +10,7 @@ import secrets
 import time
 import json
 import re
+import io
 import base64
 import hashlib
 import hmac
@@ -18,9 +19,16 @@ import urllib.parse
 import urllib.request
 from functools import wraps
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 from PIL import Image
 import threading
+
+try:
+    import qrcode
+    import qrcode.image.svg
+except ImportError:
+    qrcode = None
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
@@ -245,10 +253,50 @@ def verify_totp(secret, code, window=1):
     counter = int(time.time()) // 30
     return any(hmac.compare_digest(_totp_digest(secret, counter + step), code) for step in range(-window, window + 1))
 
+def normalize_recovery_code(code):
+    return re.sub(r'[^A-Z0-9]', '', str(code or '').upper())
+
+def make_recovery_code():
+    raw = secrets.token_hex(6).upper()
+    return '-'.join(raw[index:index + 4] for index in range(0, len(raw), 4))
+
+def generate_recovery_codes(count=8):
+    codes = [make_recovery_code() for _ in range(count)]
+    hashes = [generate_password_hash(normalize_recovery_code(code)) for code in codes]
+    return codes, hashes
+
+def get_recovery_hashes(user):
+    try:
+        hashes = json.loads(user.two_factor_recovery_hashes or '[]')
+    except (TypeError, ValueError):
+        hashes = []
+    return hashes if isinstance(hashes, list) else []
+
+def verify_and_consume_recovery_code(user, code):
+    normalized = normalize_recovery_code(code)
+    if len(normalized) < 8:
+        return False
+    hashes = get_recovery_hashes(user)
+    for index, recovery_hash in enumerate(hashes):
+        if check_password_hash(recovery_hash, normalized):
+            del hashes[index]
+            user.two_factor_recovery_hashes = json.dumps(hashes)
+            return True
+    return False
+
 def totp_otpauth_uri(user, secret):
     label = urllib.parse.quote(f'UI Battle Arena:{user.username}')
     issuer = urllib.parse.quote('UI Battle Arena')
     return f'otpauth://totp/{label}?secret={secret}&issuer={issuer}&digits=6&period=30'
+
+def qr_data_uri(value):
+    if not qrcode:
+        return None
+    image = qrcode.make(value, image_factory=qrcode.image.svg.SvgPathImage)
+    stream = io.BytesIO()
+    image.save(stream)
+    encoded = base64.b64encode(stream.getvalue()).decode('ascii')
+    return f'data:image/svg+xml;base64,{encoded}'
 
 def fetch_json_url(url, payload=None, headers=None):
     data = None
@@ -272,6 +320,7 @@ def ensure_schema_upgrades():
         'google_sub': 'ALTER TABLE users ADD COLUMN google_sub VARCHAR(255)',
         'two_factor_secret': 'ALTER TABLE users ADD COLUMN two_factor_secret VARCHAR(64)',
         'two_factor_enabled': 'ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT 0',
+        'two_factor_recovery_hashes': 'ALTER TABLE users ADD COLUMN two_factor_recovery_hashes TEXT',
         'leaderboard_unlocked_at': 'ALTER TABLE users ADD COLUMN leaderboard_unlocked_at DATETIME',
         'leaderboard_awarded': 'ALTER TABLE users ADD COLUMN leaderboard_awarded BOOLEAN DEFAULT 0',
         'leaderboard_awarded_at': 'ALTER TABLE users ADD COLUMN leaderboard_awarded_at DATETIME',
@@ -1056,10 +1105,18 @@ def verify_login_2fa():
     user = db.session.get(User, user_id) if user_id else None
     if not user:
         return jsonify({'success': False, 'error': 'Login session expired. Sign in again.'}), 401
-    if not verify_totp(user.two_factor_secret, data.get('code')):
-        return jsonify({'success': False, 'error': 'Invalid verification code'}), 401
+    code = data.get('code')
+    used_recovery_code = False
+    if not verify_totp(user.two_factor_secret, code):
+        used_recovery_code = verify_and_consume_recovery_code(user, code)
+        if not used_recovery_code:
+            return jsonify({'success': False, 'error': 'Invalid verification or recovery code'}), 401
+        db.session.commit()
     complete_login(user)
-    return jsonify({'success': True, 'role': user.role})
+    response = {'success': True, 'role': user.role}
+    if used_recovery_code:
+        response['message'] = 'Recovery code accepted. Generate a new set from Account security soon.'
+    return jsonify(response)
 
 @app.route('/auth/register', methods=['POST'])
 def register():
@@ -2566,10 +2623,12 @@ def account_2fa_setup():
     if not user.two_factor_secret:
         user.two_factor_secret = generate_totp_secret()
         db.session.commit()
+    otpauth_uri = totp_otpauth_uri(user, user.two_factor_secret)
     return jsonify({
         'success': True,
         'secret': user.two_factor_secret,
-        'otpauth_uri': totp_otpauth_uri(user, user.two_factor_secret),
+        'otpauth_uri': otpauth_uri,
+        'qr_data_uri': qr_data_uri(otpauth_uri),
         'enabled': bool(user.two_factor_enabled)
     })
 
@@ -2582,9 +2641,13 @@ def account_2fa_enable():
         return jsonify({'success': False, 'error': 'Start two-step setup first'}), 400
     if not verify_totp(user.two_factor_secret, data.get('code')):
         return jsonify({'success': False, 'error': 'Invalid verification code'}), 400
+    recovery_codes = []
+    if not get_recovery_hashes(user):
+        recovery_codes, recovery_hashes = generate_recovery_codes()
+        user.two_factor_recovery_hashes = json.dumps(recovery_hashes)
     user.two_factor_enabled = True
     db.session.commit()
-    return jsonify({'success': True, 'enabled': True})
+    return jsonify({'success': True, 'enabled': True, 'recovery_codes': recovery_codes})
 
 @app.route('/api/account/2fa/disable', methods=['POST'])
 @login_required
@@ -2597,8 +2660,23 @@ def account_2fa_disable():
         return jsonify({'success': False, 'error': 'Invalid verification code'}), 400
     user.two_factor_enabled = False
     user.two_factor_secret = None
+    user.two_factor_recovery_hashes = None
     db.session.commit()
     return jsonify({'success': True, 'enabled': False})
+
+@app.route('/api/account/2fa/recovery-codes', methods=['POST'])
+@login_required
+def account_2fa_recovery_codes():
+    user = get_current_user()
+    data = request.get_json() or {}
+    if not user.two_factor_enabled:
+        return jsonify({'success': False, 'error': 'Enable two-step verification first'}), 400
+    if not user.check_password(data.get('current_password') or ''):
+        return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
+    recovery_codes, recovery_hashes = generate_recovery_codes()
+    user.two_factor_recovery_hashes = json.dumps(recovery_hashes)
+    db.session.commit()
+    return jsonify({'success': True, 'recovery_codes': recovery_codes})
 
 @app.route('/api/user/<int:user_id>/matches/all')
 @login_required
@@ -3134,24 +3212,33 @@ def api_challenge_status(room_id):
 
 
 # ========== MAIN ==========
-if __name__ == '__main__':
+def initialize_runtime_database(create_dev_admin=False):
     with app.app_context():
         db.create_all()
         ensure_schema_upgrades()
-        
+
         admin = User.query.filter_by(role='admin').first()
-        if not admin:
+        admin_password = os.environ.get('ADMIN_PASSWORD')
+        if not admin and (admin_password or create_dev_admin):
             admin = User(username='admin', role='admin')
-            admin.set_password('admin123')
+            admin.set_password(admin_password or 'admin123')
             db.session.add(admin)
             db.session.commit()
             print("=" * 50)
             print("Admin created successfully!")
             print("Username: admin")
-            print("Password: admin123")
+            if create_dev_admin and not admin_password:
+                print("Password: admin123")
+            else:
+                print("Password: from ADMIN_PASSWORD")
             print("=" * 50)
-        else:
+        elif create_dev_admin:
             print("Admin user already exists")
+
+initialize_runtime_database(create_dev_admin=False)
+
+if __name__ == '__main__':
+    initialize_runtime_database(create_dev_admin=True)
     
     port = int(os.environ.get('PORT', 5001))
 

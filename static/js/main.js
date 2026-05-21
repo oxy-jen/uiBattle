@@ -54,6 +54,8 @@ function showToast(message, type = 'info') {
         </div>
     `;
     document.body.appendChild(toast);
+    const visibleToasts = document.querySelectorAll('.toast');
+    toast.style.setProperty('--toast-offset', `${Math.max(0, visibleToasts.length - 1) * 74}px`);
     
     setTimeout(() => {
         toast.classList.add('show');
@@ -72,12 +74,16 @@ if (!document.getElementById('global-ui-styles')) {
     toastStyles.textContent = `
     .toast {
         position: fixed;
-        bottom: 20px;
-        right: 20px;
-        z-index: 10000;
+        top: calc(18px + env(safe-area-inset-top, 0px) + var(--toast-offset, 0px));
+        left: 50%;
+        right: auto;
+        bottom: auto;
+        width: min(460px, calc(100vw - 28px));
+        z-index: 2147483000 !important;
         opacity: 0;
-        transform: translateY(100%);
+        transform: translate(-50%, -18px);
         transition: all 0.3s ease;
+        pointer-events: none;
     }
     .confirm-overlay {
         position: fixed;
@@ -86,10 +92,13 @@ if (!document.getElementById('global-ui-styles')) {
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 11000;
+        z-index: 2147483001 !important;
+        padding: 18px;
     }
     .confirm-box {
         width: min(420px, 90%);
+        max-height: calc(100dvh - 36px);
+        overflow: auto;
         background: var(--bg-panel);
         border: 1px solid var(--border-default);
         border-radius: 8px;
@@ -137,7 +146,7 @@ if (!document.getElementById('global-ui-styles')) {
     .confirm-actions .confirm-no { background: var(--bg-secondary); color: white; }
     .toast.show {
         opacity: 1;
-        transform: translateY(0);
+        transform: translate(-50%, 0);
     }
     .toast-content {
         background: var(--bg-panel);
@@ -404,20 +413,37 @@ function initTwoFactorSettings() {
     const setupBtn = document.getElementById('two-factor-setup-btn');
     const enableBtn = document.getElementById('two-factor-enable-btn');
     const disableBtn = document.getElementById('two-factor-disable-btn');
+    const recoveryBtn = document.getElementById('two-factor-recovery-btn');
     const setupPanel = document.getElementById('two-factor-setup');
     const secretInput = document.getElementById('two-factor-secret');
     const codeInput = document.getElementById('two-factor-code');
     const currentPasswordInput = document.getElementById('two-factor-current-password');
     const status = document.getElementById('two-factor-status');
+    const qrWrap = document.getElementById('two-factor-qr-wrap');
+    const qrImage = document.getElementById('two-factor-qr');
+    const openAppLink = document.getElementById('two-factor-open-app-link');
+    const copySecretBtn = document.getElementById('two-factor-copy-secret-btn');
+    const recoveryPanel = document.getElementById('two-factor-recovery');
+    const recoveryGrid = document.getElementById('two-factor-recovery-grid');
+    const copyRecoveryBtn = document.getElementById('two-factor-copy-recovery-btn');
+    let latestRecoveryCodes = [];
 
     function syncState(enabled) {
         box.dataset.enabled = enabled ? 'true' : 'false';
         if (status) status.textContent = enabled ? 'Enabled' : 'Off';
         if (setupBtn) setupBtn.hidden = enabled;
         if (disableBtn) disableBtn.hidden = !enabled;
+        if (recoveryBtn) recoveryBtn.hidden = !enabled;
         if (enableBtn) enableBtn.hidden = true;
         if (setupPanel) setupPanel.hidden = true;
         if (codeInput) codeInput.value = '';
+    }
+
+    function showRecoveryCodes(codes) {
+        latestRecoveryCodes = Array.isArray(codes) ? codes : [];
+        if (!recoveryPanel || !recoveryGrid || latestRecoveryCodes.length === 0) return;
+        recoveryGrid.innerHTML = latestRecoveryCodes.map((code) => `<code>${escapeHtml(code)}</code>`).join('');
+        recoveryPanel.hidden = false;
     }
 
     syncState(box.dataset.enabled === 'true');
@@ -438,12 +464,35 @@ function initTwoFactorSettings() {
             const data = await response.json();
             if (!response.ok || !data.success) throw new Error(data.error || 'Could not start two-step setup');
             if (secretInput) secretInput.value = data.secret;
+            if (qrImage && data.qr_data_uri) {
+                qrImage.src = data.qr_data_uri;
+                if (qrWrap) qrWrap.hidden = false;
+            } else if (qrWrap) {
+                qrWrap.hidden = true;
+            }
+            if (openAppLink && data.otpauth_uri) {
+                openAppLink.href = data.otpauth_uri;
+                openAppLink.hidden = false;
+            }
             if (setupPanel) setupPanel.hidden = false;
+            if (recoveryPanel) recoveryPanel.hidden = true;
             if (enableBtn) enableBtn.hidden = false;
             codeInput?.focus();
-            showToast('Add the secret key to your authenticator app', 'info');
+            showToast('Copy the setup key into your authenticator, then enter its code', 'info');
         } catch (error) {
             showToast(error.message || 'Could not start two-step setup', 'error');
+        }
+    });
+
+    copySecretBtn?.addEventListener('click', async () => {
+        const secret = secretInput?.value || '';
+        if (!secret) return;
+        try {
+            await navigator.clipboard.writeText(secret);
+            showToast('Setup key copied', 'success');
+        } catch (error) {
+            secretInput?.select();
+            showToast('Select and copy the setup key', 'info');
         }
     });
 
@@ -457,9 +506,42 @@ function initTwoFactorSettings() {
             const data = await response.json();
             if (!response.ok || !data.success) throw new Error(data.error || 'Could not enable two-step verification');
             syncState(true);
-            showToast('Two-step verification enabled', 'success');
+            showRecoveryCodes(data.recovery_codes);
+            showToast('Two-step verification enabled. Save your recovery codes.', 'success');
         } catch (error) {
             showToast(error.message || 'Could not enable two-step verification', 'error');
+        }
+    });
+
+    recoveryBtn?.addEventListener('click', async () => {
+        const currentPassword = currentPasswordInput?.value || '';
+        if (!currentPassword) {
+            showToast('Enter your current password first', 'error');
+            currentPasswordInput?.focus();
+            return;
+        }
+        try {
+            const response = await fetch('/api/account/2fa/recovery-codes', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({current_password: currentPassword})
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'Could not create recovery codes');
+            showRecoveryCodes(data.recovery_codes);
+            showToast('New recovery codes created. Old codes no longer work.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not create recovery codes', 'error');
+        }
+    });
+
+    copyRecoveryBtn?.addEventListener('click', async () => {
+        if (latestRecoveryCodes.length === 0) return;
+        try {
+            await navigator.clipboard.writeText(latestRecoveryCodes.join('\n'));
+            showToast('Recovery codes copied', 'success');
+        } catch (error) {
+            showToast('Copy the visible recovery codes before leaving this page', 'info');
         }
     });
 
@@ -486,6 +568,7 @@ function initTwoFactorSettings() {
             const data = await response.json();
             if (!response.ok || !data.success) throw new Error(data.error || 'Could not disable two-step verification');
             syncState(false);
+            if (recoveryPanel) recoveryPanel.hidden = true;
             showToast('Two-step verification disabled', 'success');
         } catch (error) {
             showToast(error.message || 'Could not disable two-step verification', 'error');
