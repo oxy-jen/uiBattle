@@ -3,46 +3,130 @@
 {% block content %}
 <div class="leaderboard-page">
     <div class="leaderboard-header">
-        <h1><i class="fas fa-trophy"></i> GLOBAL LEADERBOARD</h1>
-        <p>Top UI Battle Arena competitors</p>
+        <h1><i class="fas fa-trophy"></i> POWER LEADERBOARD</h1>
+        <p>Ranked from real match wins, streaks, accuracy, and battle volume.</p>
     </div>
-    
+
+    {% if current_row and not current_row.leaderboard_unlocked %}
+    <div class="leaderboard-lock-banner">
+        <i class="fas fa-lock"></i>
+        <div>
+            <strong>Leaderboard access locked</strong>
+            <span>Win {{ streak_target }} matches in a row or receive an admin award to unlock it on your profile. Your best streak is {{ current_row.record.best_streak }}.</span>
+        </div>
+    </div>
+    {% elif current_row %}
+    <div class="leaderboard-lock-banner unlocked">
+        <i class="fas fa-unlock"></i>
+        <div>
+            <strong>Leaderboard unlocked</strong>
+            <span>{{ current_row.unlock_reason }} earned this profile badge.</span>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if award_card %}
+    <section class="leaderboard-award-section">
+        <div id="leaderboard-award-card" class="leaderboard-award-card" style="--award-color: {{ award_card.color }};">
+            <div class="award-card-border">
+                <div class="award-card-top">
+                    <span>UI Battle Arena</span>
+                    <span>Official Admin Certificate</span>
+                    <strong>{{ award_card.card_id }}</strong>
+                </div>
+                <div class="award-medal"><i class="fas fa-ranking-star"></i></div>
+                <p class="award-label">Certificate of Achievement</p>
+                <p class="award-presented">This certifies that</p>
+                <h2>{{ award_card.username }}</h2>
+                <p class="award-details">
+                    has been officially recognized for <strong>{{ award_card.reason }}</strong>.
+                    {{ award_card.details }}
+                </p>
+                <div class="award-reason">{{ award_card.award_type }}</div>
+                <dl class="award-stats">
+                    <div><dt>Rank</dt><dd>#{{ award_card.rank or '-' }}</dd></div>
+                    <div><dt>Power</dt><dd>{{ "%.1f"|format(award_card.power_score) }}</dd></div>
+                    <div><dt>Wins</dt><dd>{{ award_card.wins }}</dd></div>
+                    <div><dt>Matches</dt><dd>{{ award_card.matches_played }}</dd></div>
+                    <div><dt>Best Streak</dt><dd>{{ award_card.best_streak }}</dd></div>
+                    <div><dt>Best Accuracy</dt><dd>{{ "%.1f"|format(award_card.best_accuracy) }}%</dd></div>
+                </dl>
+                <div class="award-footer">
+                    <div class="award-verify">
+                        <span>Issued</span>
+                        <strong>{{ award_card.date.strftime('%B %d, %Y') if award_card.date else '' }}</strong>
+                    </div>
+                    <div class="award-signatures">
+                        <div class="award-signature-line">
+                            <span></span>
+                            <strong>Authorized Signature</strong>
+                            <small>Administrator</small>
+                        </div>
+                        <div class="award-signature-line">
+                            <span></span>
+                            <strong>Official Seal / Signature</strong>
+                            <small>UI Battle Arena</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="award-card-actions">
+            <button type="button" class="btn-primary" onclick="downloadLeaderboardAwardCard()"><i class="fas fa-download"></i> Download Award Card</button>
+            <button type="button" class="btn-secondary" onclick="printLeaderboardAwardCard()"><i class="fas fa-print"></i> Print Card</button>
+        </div>
+    </section>
+    {% endif %}
+
     <div class="leaderboard-table-container">
         <table class="leaderboard-table">
             <thead>
                 <tr>
-                    <th>RANK</th>
-                    <th></th>
-                    <th>USERNAME</th>
-                    <th>BEST ACCURACY</th>
-                    <th>MATCHES</th>
-                    <th>WINS</th>
-                    <th>JOINED</th>
+                    <th>Rank</th>
+                    <th>Player</th>
+                    <th>Power</th>
+                    <th>Wins</th>
+                    <th>Win Rate</th>
+                    <th>Best Streak</th>
+                    <th>Best Accuracy</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
-                {% for player in players %}
-                <tr {% if player.id == user.id %}class="current-user-row"{% endif %}>
+                {% for row in leaderboard_rows %}
+                {% set player = row.user %}
+                {% set record = row.record %}
+                <tr class="{% if player.id == user.id %}current-user-row {% endif %}rank-row-{{ loop.index if loop.index <= 3 else 'other' }}">
                     <td class="rank-cell">
-                        {% if loop.index == 1 %}🥇
-                        {% elif loop.index == 2 %}🥈
-                        {% elif loop.index == 3 %}🥉
-                        {% else %}#{{ loop.index }}{% endif %}
+                        {% if loop.index <= 3 %}
+                            <i class="fas fa-medal"></i> #{{ loop.index }}
+                        {% else %}
+                            #{{ loop.index }}
+                        {% endif %}
                     </td>
-                    <td><div class="leaderboard-avatar">{{ player.username[0].upper() }}</div></td>
-                    <td class="username-cell">{{ player.username }}</td>
-                    <td class="accuracy-cell {% if player.best_accuracy >= 80 %}high{% elif player.best_accuracy >= 50 %}mid{% else %}low{% endif %}">
-                        {{ "%.1f"|format(player.best_accuracy) }}%
+                    <td class="player-cell">
+                        <div class="leaderboard-avatar">{{ player.username[0].upper() }}</div>
+                        <a href="{{ url_for('profile', user_id=player.id) }}">{{ player.username }}</a>
                     </td>
-                    <td>{{ player.matches_played }}</td>
-                    <td>{{ player.total_wins }}</td>
-                    <td class="joined-cell">{{ player.created_at.strftime('%Y-%m-%d') if player.created_at else '—' }}</td>
+                    <td class="power-cell">{{ "%.1f"|format(record.power_score) }}</td>
+                    <td>{{ record.wins }} / {{ record.matches_played }}</td>
+                    <td>{{ "%.1f"|format(record.win_rate) }}%</td>
+                    <td><i class="fas fa-fire"></i> {{ record.best_streak }}</td>
+                    <td class="accuracy-cell {% if record.best_accuracy >= 80 %}high{% elif record.best_accuracy >= 50 %}mid{% else %}low{% endif %}">
+                        {{ "%.1f"|format(record.best_accuracy) }}%
+                    </td>
+                    <td>
+                        <span class="unlock-pill {% if row.leaderboard_unlocked %}open{% else %}locked{% endif %}">
+                            <i class="fas {% if row.leaderboard_unlocked %}fa-unlock{% else %}fa-lock{% endif %}"></i>
+                            {{ row.unlock_reason }}
+                        </span>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    
+
     <div class="leaderboard-footer">
         <a href="/dashboard" class="btn-secondary"><i class="fas fa-home"></i> Back to Dashboard</a>
     </div>
@@ -50,21 +134,77 @@
 
 <style>
 .leaderboard-page { min-height: 100vh; background: linear-gradient(135deg, #0a0a0f 0%, #12121a 100%); padding: 40px; }
-.leaderboard-header { text-align: center; margin-bottom: 40px; }
-.leaderboard-header h1 { font-family: 'Rajdhani', sans-serif; font-size: 48px; background: linear-gradient(135deg, #ffd700, #ffaa00); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.leaderboard-table-container { max-width: 1000px; margin: 0 auto; background: rgba(26,26,46,0.85); backdrop-filter: blur(16px); border-radius: 20px; overflow: hidden; border: 1px solid var(--border-default); }
-.leaderboard-table { width: 100%; border-collapse: collapse; }
-.leaderboard-table th { padding: 15px 20px; text-align: left; font-family: 'Rajdhani', sans-serif; font-weight: 600; color: var(--neon-cyan); border-bottom: 1px solid var(--border-bright); }
-.leaderboard-table td { padding: 12px 20px; border-bottom: 1px solid var(--border-default); }
+.leaderboard-header { text-align: center; margin-bottom: 28px; }
+.leaderboard-header h1 { font-family: 'Rajdhani', sans-serif; font-size: 46px; color: #ffd166; }
+.leaderboard-header p { color: var(--text-secondary); }
+.leaderboard-lock-banner { max-width: 1000px; margin: 0 auto 22px; display: flex; gap: 14px; align-items: center; padding: 16px 18px; background: rgba(255, 170, 0, 0.1); border: 1px solid rgba(255, 209, 102, 0.35); border-radius: 8px; color: var(--text-primary); }
+.leaderboard-lock-banner.unlocked { background: rgba(0, 255, 136, 0.08); border-color: rgba(0, 255, 136, 0.35); }
+.leaderboard-lock-banner i { color: #ffd166; font-size: 24px; }
+.leaderboard-lock-banner.unlocked i { color: var(--success); }
+.leaderboard-lock-banner span { display: block; color: var(--text-secondary); margin-top: 4px; }
+.leaderboard-table-container { max-width: 1100px; margin: 0 auto; background: rgba(26,26,46,0.85); backdrop-filter: blur(16px); border-radius: 8px; overflow: auto; border: 1px solid var(--border-default); }
+.leaderboard-table { width: 100%; border-collapse: collapse; min-width: 900px; }
+.leaderboard-table th { padding: 15px 18px; text-align: left; font-family: 'Rajdhani', sans-serif; font-weight: 600; color: var(--neon-cyan); border-bottom: 1px solid var(--border-bright); }
+.leaderboard-table td { padding: 13px 18px; border-bottom: 1px solid var(--border-default); }
 .current-user-row { background: rgba(0,255,245,0.1); border-left: 3px solid var(--neon-cyan); }
 .rank-cell { font-size: 18px; font-weight: 700; }
-.leaderboard-avatar { width: 36px; height: 36px; background: linear-gradient(135deg, #00fff5, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; }
-.username-cell { font-weight: 600; }
-.accuracy-cell { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px; }
+.rank-row-1 .rank-cell { color: var(--neon-gold); }
+.rank-row-2 .rank-cell { color: var(--neon-silver); }
+.rank-row-3 .rank-cell { color: var(--neon-bronze); }
+.player-cell { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.player-cell a { color: var(--text-primary); text-decoration: none; }
+.leaderboard-avatar { width: 36px; height: 36px; background: linear-gradient(135deg, #00fff5, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; }
+.power-cell { color: #ffd166; font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+.accuracy-cell { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
 .accuracy-cell.high { color: var(--success); }
 .accuracy-cell.mid { color: var(--warning); }
 .accuracy-cell.low { color: var(--danger); }
-.joined-cell { color: var(--text-muted); font-size: 13px; }
+.unlock-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border-default); color: var(--text-secondary); white-space: nowrap; }
+.unlock-pill.open { color: var(--success); border-color: rgba(0, 255, 136, 0.35); background: rgba(0, 255, 136, 0.08); }
+.unlock-pill.locked { color: var(--warning); border-color: rgba(255, 170, 0, 0.35); background: rgba(255, 170, 0, 0.08); }
+.leaderboard-award-section { max-width: 980px; margin: 0 auto 28px; display: grid; gap: 14px; }
+.leaderboard-award-card { background: #f8fafc; color: #111827; border-radius: 8px; padding: 16px; box-shadow: 0 18px 42px rgba(0,0,0,0.32); }
+.award-card-border { min-height: 560px; border: 2px solid var(--award-color, #d97706); border-radius: 6px; padding: 24px 28px; display: flex; flex-direction: column; align-items: center; text-align: center; background: linear-gradient(180deg, #ffffff, #f1f5f9); position: relative; overflow: hidden; }
+.award-card-border::before, .award-card-border::after { content: ''; position: absolute; inset: 10px; border: 1px solid rgba(15,23,42,0.16); pointer-events: none; }
+.award-card-border::after { inset: 18px; border-color: rgba(15,23,42,0.08); }
+.award-card-top { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.award-card-top strong { justify-self: end; color: #0f172a; }
+.award-medal { position: relative; z-index: 1; width: 64px; height: 64px; display: grid; place-items: center; margin-top: 18px; border: 2px solid color-mix(in srgb, var(--award-color, #d97706) 45%, transparent); border-radius: 50%; background: #111827; color: var(--award-color, #f59e0b); font-size: 30px; }
+.award-label { position: relative; z-index: 1; margin: 10px 0 0; color: var(--award-color, #92400e); text-transform: uppercase; font-weight: 700; }
+.award-presented { position: relative; z-index: 1; margin: 8px 0 0; color: #64748b; }
+.leaderboard-award-card h2 { position: relative; z-index: 1; margin: 2px 0 6px; font-family: 'Rajdhani', sans-serif; font-size: 48px; color: #111827; overflow-wrap: anywhere; }
+.award-reason { position: relative; z-index: 1; margin: 10px 0; padding: 8px 14px; border-radius: 6px; background: #111827; color: #fff; font-weight: 700; text-transform: uppercase; }
+.award-details { position: relative; z-index: 1; max-width: 760px; margin: 0; color: #334155; line-height: 1.45; }
+.award-stats { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 12px 0 18px; }
+.award-stats div { padding: 9px 6px; border-radius: 6px; border: 1px solid rgba(15,23,42,0.08); background: rgba(15,23,42,0.055); }
+.award-stats dt { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+.award-stats dd { margin: 0; font-weight: 700; }
+.award-footer { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: 150px 1fr; align-items: end; gap: 28px; margin-top: auto; }
+.award-verify { display: grid; gap: 4px; text-align: left; color: #475569; text-transform: uppercase; font-size: 11px; }
+.award-verify strong { color: #0f172a; }
+.award-signatures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.award-signature-line { display: grid; gap: 5px; text-align: center; }
+.award-signature-line span { height: 34px; border-bottom: 1.5px solid #334155; }
+.award-signature-line strong { color: #0f172a; font-size: 11px; text-transform: uppercase; }
+.award-signature-line small { color: #64748b; font-size: 10px; }
+.award-card-actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
 .leaderboard-footer { text-align: center; margin-top: 30px; }
+@media (max-width: 768px) { .leaderboard-page { padding: 24px 14px; } .leaderboard-header h1 { font-size: 34px; } .award-stats { grid-template-columns: repeat(2, 1fr); } .award-card-top, .award-footer, .award-signatures { grid-template-columns: 1fr; } .award-verify { text-align: center; } }
+@media print { .theme-toggle-global, .leaderboard-header, .leaderboard-lock-banner, .leaderboard-table-container, .leaderboard-footer, .award-card-actions { display: none !important; } .leaderboard-page { padding: 0; background: #fff; } .leaderboard-award-section { max-width: none; margin: 0; } .leaderboard-award-card { box-shadow: none; } }
 </style>
+<script>
+async function downloadLeaderboardAwardCard() {
+    const node = document.getElementById('leaderboard-award-card');
+    if (!node || !window.html2canvas) return;
+    const canvas = await html2canvas(node, { scale: 2, backgroundColor: null });
+    const link = document.createElement('a');
+    link.download = 'ui-battle-leaderboard-award-card.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
+
+function printLeaderboardAwardCard() {
+    window.print();
+}
+</script>
 {% endblock %}

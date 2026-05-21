@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-sidebar">
+        <div class="sidebar-brand"><i class="fas fa-crosshairs"></i> UI BATTLE</div>
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('admin_panel') }}"><i class="fas fa-tachometer-alt"></i> Admin Dashboard</a>
+            <a href="{{ url_for('admin_spectators') }}" class="active"><i class="fas fa-eye"></i> Spectator Center</a>
+            <a href="{{ url_for('dashboard') }}"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+        </nav>
+    </div>
+    <div class="admin-main">
+        <div class="admin-header">
+            <h1><i class="fas fa-eye"></i> Spectator Center</h1>
+            <div class="admin-user"><i class="fas fa-user-shield"></i> {{ user.username }}</div>
+        </div>
+
+        <div class="section-header">
+            <p class="subheader">View all active rooms and current spectators. Remove inactive watchers instantly.</p>
+            <button onclick="location.reload()" class="btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>
+        </div>
+
+        <div class="spectators-table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Room</th>
+                        <th>Challenge</th>
+                        <th>Status</th>
+                        <th>Spectators</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for room in rooms %}
+                    {% set room_spectators = spectators_by_room|default({}) %}
+                    {% set current_spectators = room_spectators.get(room.id, []) %}
+                    <tr>
+                        <td>{{ room.room_code }}</td>
+                        <td>{{ room.challenge.title if room.challenge else '—' }}</td>
+                        <td><span class="status-badge status-{{ room.status }}">{{ room.status }}</span></td>
+                        <td>{{ current_spectators|length }}</td>
+                        <td>
+                            {% if current_spectators %}
+                            <div class="spectator-chip-list">
+                                {% for name in current_spectators %}
+                                <span class="spectator-chip">
+                                    <i class="fas fa-user"></i> {{ name }}
+                                    <button onclick="kickSpectator(this, {{ room.id }}, '{{ name }}')" class="mini-action" title="Remove spectator"><i class="fas fa-user-slash"></i></button>
+                                </span>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <span class="muted">No spectators currently</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.kickSpectator = async (button, roomId, username) => {
+    if (!username) return;
+    const confirmed = await showConfirm(`Remove spectator ${username} from room ${roomId}?`, 'Remove spectator');
+    if (!confirmed) return;
+    button.disabled = true;
+    const res = await fetch('/admin/kick', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({room_id: roomId, username})
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+        showToast(`${username} removed`, 'success');
+        setTimeout(() => location.reload(), 900);
+    } else {
+        showToast(data.error || 'Failed to remove spectator', 'error');
+        button.disabled = false;
+    }
+};
+</script>
+{% endblock %}

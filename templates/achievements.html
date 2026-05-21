@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="achievements-page">
+    <header class="achievements-header">
+        <div>
+            <p>Player Recognition</p>
+            <h1>{{ target_user.username }} Achievements</h1>
+            <span>{{ achievements.unlocked_count }} achievements unlocked</span>
+        </div>
+        <div class="achievement-actions">
+            <a href="{{ url_for('profile', user_id=target_user.id) }}" class="btn-secondary"><i class="fas fa-user"></i> Profile</a>
+            <button type="button" class="btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Print All</button>
+        </div>
+    </header>
+
+    {% if award_card %}
+    <section class="achievement-certificate-section">
+        <div id="achievement-certificate" class="achievement-certificate" style="--award-color: {{ award_card.color }};">
+            <div class="achievement-certificate-border">
+                <div class="certificate-top">
+                    <span>UI Battle Arena</span>
+                    <span>Official Player Certificate</span>
+                    <strong>{{ award_card.card_id }}</strong>
+                </div>
+                <div class="certificate-seal"><i class="fas fa-certificate"></i></div>
+                <p class="certificate-label">Certificate of Achievement</p>
+                <p class="certificate-presented">This certifies that</p>
+                <h2>{{ award_card.username }}</h2>
+                <p class="certificate-copy">
+                    has been officially recognized for <strong>{{ award_card.reason }}</strong>.
+                    {{ award_card.details }}
+                </p>
+                <dl class="certificate-stats">
+                    <div><dt>Rank</dt><dd>#{{ award_card.rank or '-' }}</dd></div>
+                    <div><dt>Power</dt><dd>{{ "%.1f"|format(award_card.power_score) }}</dd></div>
+                    <div><dt>Wins</dt><dd>{{ award_card.wins }}</dd></div>
+                    <div><dt>Matches</dt><dd>{{ award_card.matches_played }}</dd></div>
+                    <div><dt>Best Streak</dt><dd>{{ award_card.best_streak }}</dd></div>
+                    <div><dt>Best Accuracy</dt><dd>{{ "%.1f"|format(award_card.best_accuracy) }}%</dd></div>
+                </dl>
+                <div class="certificate-footer">
+                    <div class="certificate-issued">
+                        <span>Issued</span>
+                        <strong>{{ award_card.date.strftime('%B %d, %Y') if award_card.date else '' }}</strong>
+                    </div>
+                    <div class="certificate-signatures">
+                        <div><span></span><strong>Authorized Signature</strong><small>Administrator</small></div>
+                        <div><span></span><strong>Official Seal / Signature</strong><small>UI Battle Arena</small></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="achievement-card-actions">
+            <label class="certificate-color-control">
+                Certificate Color
+                <input id="achievement-color-picker" type="color" value="{{ award_card.color }}">
+            </label>
+            <button type="button" class="btn-primary" onclick="downloadAchievementCertificate()"><i class="fas fa-download"></i> Download Certificate</button>
+            <button type="button" class="btn-secondary" onclick="printAchievementCertificate()"><i class="fas fa-print"></i> Print Certificate</button>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="achievement-card-grid">
+        <article id="avatar-card" class="profile-display-card">
+            <div class="profile-display-avatar">
+                {% if achievements.avatar_url %}
+                <img src="{{ achievements.avatar_url }}" alt="{{ target_user.username }} avatar">
+                {% else %}
+                {{ target_user.username[0].upper() }}
+                {% endif %}
+            </div>
+            <h2>{{ target_user.username }}</h2>
+            <p>{{ achievements.bio or 'UI Battle Arena competitor' }}</p>
+            <dl>
+                <div><dt>Wins</dt><dd>{{ achievements.wins }}</dd></div>
+                <div><dt>Matches</dt><dd>{{ achievements.matches_played }}</dd></div>
+                <div><dt>Best</dt><dd>{{ "%.1f"|format(achievements.best_accuracy) }}%</dd></div>
+            </dl>
+        </article>
+
+        {% for item in achievements.achievement_items %}
+        <article class="achievement-tile {% if item.unlocked %}unlocked{% else %}locked{% endif %}">
+            <i class="fas {{ item.icon }}"></i>
+            <h3>{{ item.title }}</h3>
+            <p>{{ item.description }}</p>
+            <span>{% if item.unlocked %}Unlocked{% else %}Locked{% endif %}</span>
+        </article>
+        {% endfor %}
+    </section>
+</div>
+
+<style>
+.achievements-page { min-height: 100vh; padding: 36px; background: var(--page-gradient); color: var(--text-primary); }
+.achievements-header { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 24px; }
+.achievements-header p { margin: 0 0 6px; color: var(--accent-primary); font-weight: 700; text-transform: uppercase; }
+.achievements-header h1 { margin: 0; font-family: 'Rajdhani', sans-serif; font-size: 42px; }
+.achievements-header span { color: var(--text-secondary); }
+.achievement-actions, .achievement-card-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.certificate-color-control { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border-default); border-radius: 8px; color: var(--text-secondary); font-weight: 700; }
+.certificate-color-control input { width: 42px; height: 32px; padding: 0; border: 0; background: transparent; }
+.achievement-certificate-section { display: grid; gap: 12px; margin-bottom: 24px; }
+.achievement-certificate { max-width: 980px; background: #f8fafc; color: #111827; border-radius: 8px; padding: 16px; box-shadow: 0 18px 42px rgba(0,0,0,0.32); }
+.achievement-certificate-border { min-height: 560px; border: 2px solid var(--award-color, #d97706); border-radius: 6px; padding: 24px 28px; display: flex; flex-direction: column; align-items: center; text-align: center; background: linear-gradient(180deg, #ffffff, #f1f5f9); position: relative; overflow: hidden; }
+.achievement-certificate-border::before, .achievement-certificate-border::after { content: ''; position: absolute; inset: 10px; border: 1px solid rgba(15,23,42,0.16); pointer-events: none; }
+.achievement-certificate-border::after { inset: 18px; border-color: rgba(15,23,42,0.08); }
+.certificate-top { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.certificate-top strong { justify-self: end; color: #0f172a; }
+.certificate-seal { position: relative; z-index: 1; width: 64px; height: 64px; display: grid; place-items: center; margin-top: 18px; border-radius: 50%; background: #111827; color: var(--award-color, #d97706); font-size: 30px; }
+.certificate-label { position: relative; z-index: 1; margin: 10px 0 0; color: var(--award-color, #d97706); text-transform: uppercase; font-weight: 700; }
+.certificate-presented { position: relative; z-index: 1; margin: 8px 0 0; color: #64748b; }
+.achievement-certificate h2 { position: relative; z-index: 1; margin: 2px 0 6px; font-family: 'Rajdhani', sans-serif; font-size: 48px; color: #111827; overflow-wrap: anywhere; }
+.certificate-copy { position: relative; z-index: 1; max-width: 760px; margin: 0; color: #334155; line-height: 1.45; }
+.certificate-stats { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 14px 0 18px; }
+.certificate-stats div { padding: 9px 6px; border-radius: 6px; border: 1px solid rgba(15,23,42,0.08); background: rgba(15,23,42,0.055); }
+.certificate-stats dt { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+.certificate-stats dd { margin: 0; font-weight: 700; }
+.certificate-footer { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: 150px 1fr; align-items: end; gap: 28px; margin-top: auto; }
+.certificate-issued { display: grid; gap: 4px; text-align: left; color: #475569; text-transform: uppercase; font-size: 11px; }
+.certificate-issued strong { color: #0f172a; }
+.certificate-signatures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.certificate-signatures div { display: grid; gap: 5px; text-align: center; }
+.certificate-signatures span { height: 34px; border-bottom: 1.5px solid #334155; }
+.certificate-signatures strong { color: #0f172a; font-size: 11px; text-transform: uppercase; }
+.certificate-signatures small { color: #64748b; font-size: 10px; }
+.achievement-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.profile-display-card, .achievement-tile { border: 1px solid var(--border-default); border-radius: 8px; background: rgba(26,26,46,0.86); padding: 20px; }
+.profile-display-card { text-align: center; background: linear-gradient(135deg, rgba(0,255,245,0.12), rgba(245,158,11,0.12)); }
+.profile-display-avatar { width: 92px; height: 92px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: linear-gradient(135deg, #00fff5, #f59e0b); font-size: 40px; font-weight: 700; }
+.profile-display-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-display-card h2 { margin: 0; font-family: 'Rajdhani', sans-serif; font-size: 30px; }
+.profile-display-card p { color: var(--text-secondary); }
+.profile-display-card dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 0; }
+.profile-display-card div { padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.18); }
+.profile-display-card dt { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+.profile-display-card dd { margin: 0; font-weight: 700; }
+.achievement-tile { display: grid; gap: 8px; min-height: 170px; }
+.achievement-tile i { font-size: 32px; color: var(--text-muted); }
+.achievement-tile h3 { margin: 0; }
+.achievement-tile p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.achievement-tile span { align-self: end; color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 11px; }
+.achievement-tile.unlocked { border-color: rgba(245,158,11,0.5); background: linear-gradient(135deg, rgba(245,158,11,0.16), rgba(34,211,238,0.08)); }
+.achievement-tile.unlocked i, .achievement-tile.unlocked span { color: #f59e0b; }
+.achievement-tile.locked { opacity: 0.58; }
+@media (max-width: 780px) {
+    .achievements-page { padding: 22px; }
+    .achievements-header { flex-direction: column; align-items: flex-start; }
+    .certificate-stats { grid-template-columns: repeat(2, 1fr); }
+    .certificate-top, .certificate-footer, .certificate-signatures { grid-template-columns: 1fr; }
+    .certificate-issued { text-align: center; }
+}
+@media print {
+    .theme-toggle-global, .achievements-header, .achievement-card-actions, .achievement-card-grid { display: none !important; }
+    .achievements-page { padding: 0; background: #fff; }
+    .achievement-certificate { box-shadow: none; max-width: none; }
+}
+</style>
+
+<script>
+async function downloadAchievementCertificate() {
+    const node = document.getElementById('achievement-certificate');
+    if (!node || !window.html2canvas) return;
+    const canvas = await html2canvas(node, { scale: 2, backgroundColor: null });
+    const link = document.createElement('a');
+    link.download = 'ui-battle-achievement-certificate.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
+
+function printAchievementCertificate() {
+    window.print();
+}
+
+document.getElementById('achievement-color-picker')?.addEventListener('input', (event) => {
+    document.getElementById('achievement-certificate')?.style.setProperty('--award-color', event.target.value);
+});
+</script>
+{% endblock %}

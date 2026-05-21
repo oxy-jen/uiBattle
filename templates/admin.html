@@ -1,25 +1,32 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="admin-container">
+<div class="admin-container" id="admin-root" data-admin-theme="dark">
     <div class="admin-sidebar">
-        <div class="sidebar-brand">⚔️ UI BATTLE</div>
+        <div class="sidebar-brand"><i class="fas fa-crosshairs"></i> UI BATTLE</div>
         <nav class="sidebar-nav">
             <a href="#" data-section="overview" class="active"><i class="fas fa-chart-line"></i> Overview</a>
             <a href="#" data-section="create"><i class="fas fa-plus-circle"></i> Create Challenge</a>
             <a href="#" data-section="rooms"><i class="fas fa-door-open"></i> Manage Rooms</a>
+            <a href="#" data-section="spectators"><i class="fas fa-eye"></i> Spectators</a>
             <a href="#" data-section="players"><i class="fas fa-users"></i> Manage Players</a>
             <a href="#" data-section="challenges"><i class="fas fa-code-branch"></i> Manage Challenges</a>
             <a href="#" data-section="competitions"><i class="fas fa-trophy"></i> Competitions</a>
+            <a href="#" data-section="moderation"><i class="fas fa-comments"></i> Chat Moderation</a>
             <a href="#" data-section="broadcast"><i class="fas fa-broadcast-tower"></i> Broadcast</a>
+            <a href="#" data-section="maintenance"><i class="fas fa-sliders"></i> Maintenance</a>
         </nav>
     </div>
     
     <div class="admin-main">
         <div class="admin-header">
-            <h1>GOD MODE ACTIVE</h1>
+            <h1>Admin Console</h1>
             <div class="admin-user">
-                <i class="fas fa-crown"></i> {{ user.username }}
+                <button class="theme-toggle" id="admin-theme-toggle" type="button" aria-label="Toggle admin theme">
+                    <i class="fas fa-moon"></i>
+                    <span>Dark</span>
+                </button>
+                <i class="fas fa-user-shield"></i> {{ user.username }}
             </div>
         </div>
         
@@ -78,11 +85,11 @@
         <div id="section-create" class="admin-section">
             <div class="form-card">
                 <div class="challenge-type-toggle">
-                    <button class="type-btn active" data-type="image">🖼 IMAGE CHALLENGE</button>
-                    <button class="type-btn" data-type="html">🖥 HTML CHALLENGE</button>
+                    <button class="type-btn active" data-type="image"><i class="fas fa-image"></i> IMAGE CHALLENGE</button>
+                    <button class="type-btn" data-type="html"><i class="fas fa-code"></i> HTML CHALLENGE</button>
                 </div>
                 
-                <form id="create-challenge-form" enctype="multipart/form-data">
+                <form id="create-challenge-form" enctype="multipart/form-data" novalidate>
                     <input type="hidden" id="challenge-type" name="challenge_type" value="image">
                     
                     <div class="form-group">
@@ -109,6 +116,15 @@
                         <label>Description</label>
                         <textarea id="description" name="description" rows="3" placeholder="Describe the challenge..."></textarea>
                     </div>
+
+                    <div class="form-group">
+                        <label>Match Room ID Visibility</label>
+                        <select id="room-visibility" name="room_visibility">
+                            <option value="private" selected>Private - players must be given the ID</option>
+                            <option value="public">Public - show the ID on player screens</option>
+                        </select>
+                        <small class="help-text">Private keeps the join ID hidden until you make the room public.</small>
+                    </div>
                     
                     <div id="image-fields" class="type-fields">
                         <div class="form-group">
@@ -119,24 +135,40 @@
                     </div>
                     
                     <div id="html-fields" class="type-fields" style="display:none;">
-                        <div class="form-group">
-                            <label>Target HTML — This is the structure players will style *</label>
-                            <textarea id="target-html" name="target_html" rows="8" placeholder="<div class='container'>\n  <div class='box'></div>\n</div>"></textarea>
+                        <div class="admin-code-section">
+                            <h3><i class="fas fa-bullseye"></i> Target Output Source</h3>
+                            <small class="help-text">This private HTML/CSS renders the target players must match.</small>
+                            <div class="form-group">
+                                <label>Target HTML *</label>
+                                <textarea id="target-html" name="target_html" rows="8" placeholder="<div class='container'>\n  <div class='box'></div>\n</div>"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Target CSS</label>
+                                <textarea id="target-css" name="target_css" rows="6" placeholder=".container {\n  display: grid;\n  place-items: center;\n}\n.box {\n  background: #7c3aed;\n}"></textarea>
+                            </div>
+                            <div id="html-preview" class="preview-frame">
+                                <div class="preview-header"><i class="fas fa-desktop"></i> Target Output Preview</div>
+                                <iframe id="preview-iframe" sandbox="allow-scripts" style="width:100%;height:300px;border:none;background:#fff;"></iframe>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Target CSS (optional) — Base styles</label>
-                            <textarea id="target-css" name="target_css" rows="5" placeholder="body {\n  margin: 0;\n  background: #f0f0f0;\n}"></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="html-locked" checked> Lock HTML for players (read-only)
-                            </label>
-                            <small class="help-text">When locked, players can only edit CSS/JS. When unlocked, they can modify the HTML structure.</small>
-                        </div>
-                        <button type="button" id="preview-target" class="btn-secondary">🔍 Preview Target</button>
-                        <div id="html-preview" class="preview-frame" style="display:none;">
-                            <div class="preview-header">Live Preview:</div>
-                            <iframe id="preview-iframe" sandbox="allow-scripts" style="width:100%;height:300px;border:none;background:#fff;"></iframe>
+
+                        <div class="admin-code-section">
+                            <h3><i class="fas fa-user-edit"></i> Player Starter Code</h3>
+                            <small class="help-text">This is what appears in each player's editor. CSS is always editable.</small>
+                            <div class="form-group">
+                                <label>Starter HTML for Players *</label>
+                                <textarea id="starter-html" name="starter_html" rows="7" placeholder="<div class='container'>\n  <div class='box'></div>\n</div>"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Starter CSS for Players</label>
+                                <textarea id="starter-css" name="starter_css" rows="6" placeholder=":root {\n  --primary: #7c3aed;\n}\nbody {\n  margin: 0;\n}"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="html-locked" checked> Lock starter HTML for players (read-only)
+                                </label>
+                                <small class="help-text">When locked, players use this HTML as reference/structure and edit CSS. When unlocked, they can modify HTML too.</small>
+                            </div>
                         </div>
                     </div>
                     
@@ -168,6 +200,7 @@
                             <th>P1</th>
                             <th>P2</th>
                             <th>Status</th>
+                            <th>Visibility</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -182,15 +215,67 @@
                             <td>{{ room.player1.username if room.player1 else 'Empty' }}</td>
                             <td>{{ room.player2.username if room.player2 else 'Empty' }}</td>
                             <td><span class="status-badge status-{{ room.status }}">{{ room.status }}</span></td>
+                            <td><span class="status-badge room-visibility {{ 'status-running' if room.is_public else 'status-waiting' }}">{{ 'public' if room.is_public else 'private' }}</span></td>
                             <td class="room-actions">
-                                <button onclick="roomAction({{ room.id }}, 'start')" class="action-btn start" title="Start">▶</button>
-                                <button onclick="roomAction({{ room.id }}, 'pause')" class="action-btn pause" title="Pause">⏸</button>
-                                <button onclick="roomAction({{ room.id }}, 'resume')" class="action-btn resume" title="Resume">▶</button>
-                                <button onclick="roomAction({{ room.id }}, 'end')" class="action-btn end" title="End">⏹</button>
-                                <button onclick="roomAction({{ room.id }}, 'add_time')" class="action-btn time" title="+30s">+30s</button>
-                                <button onclick="kickPlayer({{ room.id }}, '{{ room.player1.username if room.player1 else '' }}')" class="action-btn kick" title="Kick P1">🚫1</button>
-                                <button onclick="kickPlayer({{ room.id }}, '{{ room.player2.username if room.player2 else '' }}')" class="action-btn kick" title="Kick P2">🚫2</button>
-                                <button onclick="deleteRoom({{ room.id }})" class="action-btn delete" title="Delete Room">🗑</button>
+                                <button onclick="roomAction(this, {{ room.id }}, '{{ 'make_private' if room.is_public else 'make_public' }}')" class="action-btn visibility" title="{{ 'Make Private' if room.is_public else 'Make Public' }}"><i class="fas {{ 'fa-lock' if room.is_public else 'fa-globe' }}"></i></button>
+                                <button onclick="roomAction(this, {{ room.id }}, 'start')" class="action-btn start" title="Start"><i class="fas fa-play"></i></button>
+                                <button onclick="roomAction(this, {{ room.id }}, 'pause')" class="action-btn pause" title="Pause"><i class="fas fa-pause"></i></button>
+                                <button onclick="roomAction(this, {{ room.id }}, 'resume')" class="action-btn resume" title="Resume"><i class="fas fa-play"></i></button>
+                                <button onclick="roomAction(this, {{ room.id }}, 'end')" class="action-btn end" title="End"><i class="fas fa-stop"></i></button>
+                                <button onclick="roomAction(this, {{ room.id }}, 'add_time')" class="action-btn time" title="+30s"><i class="fas fa-clock"></i> 30s</button>
+                                <button onclick="kickPlayer(this, {{ room.id }}, '{{ room.player1.username if room.player1 else '' }}')" class="action-btn kick" title="Kick P1"><i class="fas fa-user-slash"></i></button>
+                                <button onclick="kickPlayer(this, {{ room.id }}, '{{ room.player2.username if room.player2 else '' }}')" class="action-btn kick" title="Kick P2"><i class="fas fa-user-slash"></i></button>
+                                <button onclick="deleteRoom(this, {{ room.id }})" class="action-btn delete" title="Delete Room"><i class="fas fa-trash-alt"></i></button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Spectator Management Section -->
+        <div id="section-spectators" class="admin-section">
+            <div class="section-header">
+                <h3><i class="fas fa-eye"></i> Spectator Management</h3>
+                <div class="section-actions">
+                    <button onclick="location.reload()" class="btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>
+                    <a href="/admin/spectators" class="btn-secondary"><i class="fas fa-external-link-alt"></i> Open Spectator Page</a>
+                </div>
+            </div>
+            <div class="spectators-table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Room</th>
+                            <th>Challenge</th>
+                            <th>Status</th>
+                            <th>Spectators</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for room in rooms %}
+                        {% set room_spectators = spectators_by_room|default({}) %}
+                        {% set current_spectators = room_spectators.get(room.id, []) %}
+                        <tr>
+                            <td>{{ room.room_code }}</td>
+                            <td>{{ room.challenge.title if room.challenge else '—' }}</td>
+                            <td><span class="status-badge status-{{ room.status }}">{{ room.status }}</span></td>
+                            <td>{{ current_spectators|length }}</td>
+                            <td>
+                                {% if current_spectators %}
+                                    <div class="spectator-chip-list">
+                                        {% for name in current_spectators %}
+                                        <span class="spectator-chip">
+                                            <i class="fas fa-user"></i> {{ name }}
+                                            <button onclick="kickPlayer(this, {{ room.id }}, '{{ name }}')" class="mini-action" title="Remove spectator"><i class="fas fa-user-slash"></i></button>
+                                        </span>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <span class="muted">No spectators</span>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -222,6 +307,7 @@
                             <th>Best Accuracy</th>
                             <th>Wins</th>
                             <th>Win Rate</th>
+                            <th>Leaderboard</th>
                             <th>Joined</th>
                             <th>Actions</th>
                         </tr>
@@ -238,19 +324,31 @@
                             </td>
                             <td>{{ p.total_wins }}</td>
                             <td>{% if p.matches_played > 0 %}{{ "%.1f"|format((p.total_wins / p.matches_played) * 100) }}%{% else %}0%{% endif %}</td>
+                            <td>
+                                <span class="leaderboard-admin-pill {% if p.leaderboard_awarded or p.leaderboard_unlocked_at %}open{% else %}locked{% endif %}">
+                                    <i class="fas {% if p.leaderboard_awarded or p.leaderboard_unlocked_at %}fa-unlock{% else %}fa-lock{% endif %}"></i>
+                                    {% if p.leaderboard_awarded %}Awarded{% elif p.leaderboard_unlocked_at %}Earned{% else %}Locked{% endif %}
+                                </span>
+                            </td>
                             <td>{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '—' }}</td>
                             <td class="player-actions">
                                 <button onclick="viewPlayerProfile({{ p.id }})" class="action-btn view" title="View Profile"><i class="fas fa-user"></i></button>
-                                <button onclick="viewPlayerMatches({{ p.id }}, '{{ p.username }}')" class="action-btn matches" title="View Matches">📊</button>
+                                <button onclick='viewPlayerMatches({{ p.id }}, {{ p.username|tojson }})' class="action-btn matches" title="View Matches"><i class="fas fa-chart-bar"></i></button>
                                 {% if p.role != 'admin' or p.id != user.id %}
-                                <button onclick="deleteUser({{ p.id }}, '{{ p.username }}')" class="action-btn delete-user" title="Delete User">🗑</button>
+                                <button onclick='deleteUser({{ p.id }}, {{ p.username|tojson }})' class="action-btn delete-user" title="Delete User"><i class="fas fa-trash-alt"></i></button>
                                 {% endif %}
                                 {% if p.role != 'admin' %}
-                                <button onclick="toggleAdminRole({{ p.id }}, '{{ p.username }}')" class="action-btn promote" title="Make Admin">👑</button>
+                                <button onclick='toggleAdminRole({{ p.id }}, {{ p.username|tojson }})' class="action-btn promote" title="Make Admin"><i class="fas fa-user-shield"></i></button>
                                 {% else %}
-                                <button onclick="toggleAdminRole({{ p.id }}, '{{ p.username }}')" class="action-btn demote" title="Remove Admin">⭐</button>
+                                <button onclick='toggleAdminRole({{ p.id }}, {{ p.username|tojson }})' class="action-btn demote" title="Remove Admin"><i class="fas fa-user-minus"></i></button>
                                 {% endif %}
-                                <button onclick="resetPlayerStats({{ p.id }}, '{{ p.username }}')" class="action-btn reset-stats" title="Reset Stats">🔄</button>
+                                <button onclick='resetPlayerStats({{ p.id }}, {{ p.username|tojson }})' class="action-btn reset-stats" title="Reset Stats"><i class="fas fa-rotate-right"></i></button>
+                                <button onclick='openCertificateAwardModal({{ p.id }}, {{ p.username|tojson }}, {{ 'true' if p.leaderboard_awarded else 'false' }})' class="action-btn leaderboard-award" title="{% if p.leaderboard_awarded %}Update Certificate Award{% else %}Award Certificate{% endif %}">
+                                    <i class="fas fa-certificate"></i>
+                                </button>
+                                {% if p.role != 'admin' %}
+                                <a href="/admin/user/{{ p.id }}/award-card" class="action-btn award-card" title="Award Card / Avatar"><i class="fas fa-id-card-clip"></i></a>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -270,13 +368,87 @@
                     </div>
                 </div>
             </div>
+            <div id="challenge-details-modal" class="modal" style="display:none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="challenge-modal-title">Challenge Details</h3>
+                        <span class="close-modal" onclick="closeChallengeModal()">&times;</span>
+                    </div>
+                    <div class="modal-body" id="challenge-modal-body">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+            <div id="certificate-award-modal" class="modal" style="display:none;">
+                <div class="modal-content modal-large certificate-award-modal">
+                    <div class="modal-header">
+                        <div>
+                            <p class="modal-kicker">Official Certificate</p>
+                            <h3 id="certificate-award-title">Award Certificate</h3>
+                        </div>
+                        <span class="close-modal" onclick="closeCertificateAwardModal()">&times;</span>
+                    </div>
+                    <form id="certificate-award-form" class="modal-body certificate-award-form">
+                        <input type="hidden" id="certificate-award-user-id">
+                        <label>
+                            Recipient
+                            <input id="certificate-award-recipient" readonly>
+                        </label>
+                        <label>
+                            Certificate Title
+                            <input id="certificate-award-reason" maxlength="200" value="Certificate of Achievement" required>
+                        </label>
+                        <label>
+                            Certificate Details
+                            <textarea id="certificate-award-details" required placeholder="Recognized for excellent participation, strong performance, and official contribution to UI Battle Arena."></textarea>
+                        </label>
+                        <label>
+                            Certificate Color
+                            <input id="certificate-award-color" type="color" value="#d97706">
+                        </label>
+                        <div class="certificate-award-preview" aria-label="Certificate preview">
+                            <div class="certificate-preview-border">
+                                <div class="certificate-preview-top">
+                                    <span>UI Battle Arena</span>
+                                    <span>Official Admin Certificate</span>
+                                </div>
+                                <div class="certificate-preview-seal"><i class="fas fa-certificate"></i></div>
+                                <p>Certificate of Achievement</p>
+                                <h4 id="certificate-preview-name">Player</h4>
+                                <span id="certificate-preview-copy">Recognized by an administrator for official arena achievement.</span>
+                                <div class="certificate-preview-signatures">
+                                    <div><b></b><small>Authorized Signature</small></div>
+                                    <div><b></b><small>Official Seal / Signature</small></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary" id="certificate-award-remove">Remove Award</button>
+                            <button type="button" class="btn-secondary" onclick="closeCertificateAwardModal()">Cancel</button>
+                            <button type="submit" class="btn-primary"><i class="fas fa-certificate"></i> Save Certificate</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
         
         <!-- ========== MANAGE CHALLENGES SECTION ========== -->
         <div id="section-challenges" class="admin-section">
             <div class="section-header">
-                <h3><i class="fas fa-code-branch"></i> Manage Challenges</h3>
+                <div>
+                    <h3><i class="fas fa-code-branch"></i> Challenges</h3>
+                    <p class="section-subtitle">Create, inspect, archive, or permanently remove challenge records.</p>
+                </div>
                 <button onclick="location.reload()" class="btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>
+            </div>
+            <div class="section-toolbar compact-toolbar">
+                <input type="text" id="challenge-search" placeholder="Search challenges..." class="search-input">
+                <select id="challenge-filter" class="filter-select">
+                    <option value="all">All statuses</option>
+                    <option value="active">Active only</option>
+                    <option value="inactive">Inactive only</option>
+                </select>
+                <span class="toolbar-count">{{ all_challenges|default(challenges)|length }} total</span>
             </div>
             <div class="challenges-table-container">
                 <table class="challenges-table">
@@ -294,12 +466,12 @@
                     </thead>
                     <tbody>
                         {% for challenge in all_challenges|default(challenges) %}
-                        <tr>
+                        <tr data-status="{% if challenge.is_active %}active{% else %}inactive{% endif %}" data-title="{{ challenge.title|lower }}">
                             <td>{{ challenge.id }}</td>
                             <td class="challenge-title">{{ challenge.title }}</td>
                             <td>
                                 <span class="badge {% if challenge.challenge_type == 'html' %}html-badge{% else %}image-badge{% endif %}">
-                                    {% if challenge.challenge_type == 'html' %}🖥 HTML{% else %}🖼 IMAGE{% endif %}
+                                    {% if challenge.challenge_type == 'html' %}<i class="fas fa-code"></i> HTML{% else %}<i class="fas fa-image"></i> IMAGE{% endif %}
                                 </span>
                             </td>
                             <td>{{ challenge.difficulty }}</td>
@@ -312,14 +484,17 @@
                             </td>
                             <td class="challenge-actions">
                                 {% if challenge.is_active %}
-                                <button onclick="deleteChallenge({{ challenge.id }}, '{{ challenge.title }}')" class="action-btn delete-challenge" title="Delete Challenge">
-                                    <i class="fas fa-trash"></i> Delete
+                                <button onclick='archiveChallenge({{ challenge.id }}, {{ challenge.title|tojson }})' class="action-btn archive-challenge" title="Archive Challenge">
+                                    <i class="fas fa-box-archive"></i> Archive
                                 </button>
                                 {% else %}
                                 <button onclick="restoreChallenge({{ challenge.id }})" class="action-btn restore" title="Restore Challenge">
                                     <i class="fas fa-undo-alt"></i> Restore
                                 </button>
                                 {% endif %}
+                                <button onclick='deleteChallenge({{ challenge.id }}, {{ challenge.title|tojson }})' class="action-btn delete-challenge" title="Delete Forever">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
                                 <button onclick="viewChallengeDetails({{ challenge.id }})" class="action-btn view-details" title="View Details">
                                     <i class="fas fa-eye"></i> View
                                 </button>
@@ -335,12 +510,15 @@
         <div id="section-competitions" class="admin-section">
             <div class="competitions-header">
                 <h3><i class="fas fa-trophy"></i> Competition Statistics</h3>
-                <button onclick="exportData()" class="btn-secondary"><i class="fas fa-download"></i> Export Data</button>
+                <div class="competition-actions">
+                    <a href="/tournament" class="btn-secondary"><i class="fas fa-sitemap"></i> 32 Player Bracket</a>
+                    <button onclick="exportData()" class="btn-secondary"><i class="fas fa-download"></i> Export Data</button>
+                </div>
             </div>
             
             <div class="stats-cards">
                 <div class="stat-card">
-                    <div class="stat-icon">🏆</div>
+                    <div class="stat-icon"><i class="fas fa-trophy"></i></div>
                     <div class="stat-info">
                         <span class="stat-value">{{ top_player.username if top_player else '—' }}</span>
                         <span class="stat-label">Top Player</span>
@@ -348,7 +526,7 @@
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon">⚡</div>
+                    <div class="stat-icon"><i class="fas fa-bolt"></i></div>
                     <div class="stat-info">
                         <span class="stat-value">{{ highest_score|default(0) }}%</span>
                         <span class="stat-label">Highest Score</span>
@@ -356,7 +534,7 @@
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon">📊</div>
+                    <div class="stat-icon"><i class="fas fa-chart-simple"></i></div>
                     <div class="stat-info">
                         <span class="stat-value">{{ total_submissions|default(0) }}</span>
                         <span class="stat-label">Total Submissions</span>
@@ -364,12 +542,66 @@
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon">🎯</div>
+                    <div class="stat-icon"><i class="fas fa-bullseye"></i></div>
                     <div class="stat-info">
                         <span class="stat-value">{{ avg_response_time|default(0) }}s</span>
                         <span class="stat-label">Avg Response</span>
                         <span class="stat-sub">Submission time</span>
                     </div>
+                </div>
+            </div>
+
+            <div class="leaderboard-container tournament-admin-card">
+                <h4><i class="fas fa-sitemap"></i> Create Database Tournament</h4>
+                <form id="create-tournament-form" class="tournament-form">
+                    <label>
+                        Tournament name
+                        <input type="text" id="tournament-name" placeholder="Spring UI Knockout" required>
+                    </label>
+                    <label>
+                        Mode
+                        <select id="tournament-size">
+                            {% for size in tournament_sizes|default([4, 8, 16, 32]) %}
+                            <option value="{{ size }}">{{ size }} players</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>
+                        Challenge target
+                        <select id="tournament-challenge" required>
+                            {% for challenge in challenges %}
+                            <option value="{{ challenge.id }}">{{ challenge.title }} · {{ challenge.challenge_type|upper }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>
+                        Advancement
+                        <select id="tournament-auto-advance">
+                            <option value="true">Automatic higher score advances</option>
+                            <option value="false">Manual admin advancement</option>
+                        </select>
+                    </label>
+                    <label class="tournament-players-select">
+                        Participants
+                        <select id="tournament-participants" multiple size="8" required>
+                            {% for p in players %}
+                                {% if p.role == 'player' %}
+                                <option value="{{ p.id }}">{{ p.username }} · {{ "%.1f"|format(p.best_accuracy) }}% best</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <button type="submit" class="btn-primary"><i class="fas fa-plus"></i> Create Matches</button>
+                </form>
+                <div class="tournament-list">
+                    {% for t in tournaments|default([]) %}
+                    <a href="{{ url_for('tournament_detail', tournament_id=t.id) }}">
+                        <strong>{{ t.name }}</strong>
+                        <span>{{ t.size }} players · {{ t.status|upper }}</span>
+                    </a>
+                    {% else %}
+                    <p class="section-subtitle">No tournaments created yet.</p>
+                    {% endfor %}
                 </div>
             </div>
             
@@ -390,12 +622,13 @@
                     </thead>
                     <tbody>
                         {% for p in players_sorted|default(players) %}
-                        <tr>
+                        <tr class="rank-row-{{ loop.index if loop.index <= 3 else 'other' }}">
                             <td class="rank-cell">
-                                {% if loop.index == 1 %}🥇
-                                {% elif loop.index == 2 %}🥈
-                                {% elif loop.index == 3 %}🥉
-                                {% else %}#{{ loop.index }}{% endif %}
+                                {% if loop.index == 1 %}
+                                    <i class="fas fa-medal"></i> #{{ loop.index }}
+                                {% else %}
+                                    #{{ loop.index }}
+                                {% endif %}
                             </td>
                             <td class="player-cell">
                                 <div class="player-avatar-small">{{ p.username[0].upper() }}</div>
@@ -415,6 +648,69 @@
             </div>
         </div>
         
+        <!-- Chat Moderation Section -->
+        <div id="section-moderation" class="admin-section">
+            <div class="section-header">
+                <div>
+                    <h3><i class="fas fa-comments"></i> Chat Moderation</h3>
+                    <p class="section-subtitle">Watch room messages, reply to mentions, and flag harmful chat from one place.</p>
+                </div>
+                <div class="moderation-summary">
+                    <span><i class="fas fa-flag"></i> <b id="moderation-flagged-count">{{ moderation_flagged_count|default(0) }}</b> flagged</span>
+                    <span><i class="fas fa-at"></i> <b id="moderation-mentions-count">{{ moderation_mentions_count|default(0) }}</b> mentions</span>
+                </div>
+            </div>
+            <div class="section-toolbar compact-toolbar">
+                <input type="text" id="moderation-search" placeholder="Search messages, users, rooms..." class="search-input">
+                <select id="moderation-filter" class="filter-select">
+                    <option value="all">All Messages</option>
+                    <option value="flagged">Flagged</option>
+                    <option value="mentions">Mentions</option>
+                    <option value="unflagged">Unflagged</option>
+                </select>
+                <button onclick="loadModerationMessages()" class="btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>
+            </div>
+            <div class="moderation-feed" id="moderation-feed">
+                {% for msg in moderation_messages|default([]) %}
+                <article class="moderation-message {% if msg.is_flagged %}flagged{% endif %} {% if msg.is_mention %}mentioned{% endif %}"
+                         data-message-id="{{ msg.id }}"
+                         data-room="{{ msg.room_code|lower }}"
+                         data-username="{{ msg.username|lower }}"
+                         data-message="{{ msg.message|lower }}"
+                         data-flagged="{{ 'true' if msg.is_flagged else 'false' }}"
+                         data-mentioned="{{ 'true' if msg.is_mention else 'false' }}">
+                    <div class="moderation-message-head">
+                        <div>
+                            <strong>{{ msg.username }}</strong>
+                            <span>{{ msg.room_code }}</span>
+                            <small>{{ msg.time }}</small>
+                        </div>
+                        <div class="moderation-tags">
+                            {% if msg.is_mention %}<span class="mention-tag"><i class="fas fa-at"></i> Mention</span>{% endif %}
+                            {% if msg.is_flagged %}<span class="flag-tag"><i class="fas fa-flag"></i> {{ msg.flag_reason or 'Flagged' }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <p class="moderation-text">{{ msg.message }}</p>
+                    <div class="moderation-actions">
+                        <button type="button" onclick="adminFlagChatMessage(this, {{ msg.id }})" class="btn-warning" {% if msg.is_flagged or msg.is_system %}disabled{% endif %}>
+                            <i class="fas fa-flag"></i> Flag
+                        </button>
+                        <button type="button" onclick="toggleAdminReply({{ msg.id }})" class="btn-secondary" {% if msg.is_system %}disabled{% endif %}>
+                            <i class="fas fa-reply"></i> Reply
+                        </button>
+                        <a href="/arena/{{ msg.room_id }}" class="btn-secondary"><i class="fas fa-external-link-alt"></i> Open Room</a>
+                    </div>
+                    <div class="moderation-reply" id="reply-box-{{ msg.id }}" hidden>
+                        <textarea id="reply-text-{{ msg.id }}" rows="2" placeholder="Reply to {{ msg.username }}...">@{{ msg.username }} </textarea>
+                        <button type="button" onclick="adminReplyChatMessage(this, {{ msg.id }})" class="btn-primary"><i class="fas fa-paper-plane"></i> Send Reply</button>
+                    </div>
+                </article>
+                {% else %}
+                <div class="empty-state">No chat messages yet.</div>
+                {% endfor %}
+            </div>
+        </div>
+
         <!-- Broadcast Section -->
         <div id="section-broadcast" class="admin-section">
             <div class="broadcast-card">
@@ -431,6 +727,30 @@
                 <div class="broadcast-actions">
                     <button onclick="broadcastMessage()" class="btn-primary"><i class="fas fa-paper-plane"></i> Send Broadcast</button>
                     <button onclick="broadcastToAll()" class="btn-secondary"><i class="fas fa-globe"></i> Broadcast to All</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Maintenance Section -->
+        <div id="section-maintenance" class="admin-section">
+            <div class="maintenance-panel">
+                <div class="maintenance-head">
+                    <div>
+                        <h3><i class="fas fa-sliders"></i> Maintenance</h3>
+                        <p>Reset testing data while keeping admin accounts available.</p>
+                    </div>
+                    <span class="danger-pill"><i class="fas fa-triangle-exclamation"></i> Admin Only</span>
+                </div>
+                <div class="danger-zone">
+                    <h4><i class="fas fa-broom"></i> Clear Created Information</h4>
+                    <p>This removes students, rooms, challenges, tournaments, submissions, chat messages, match results, student profiles, and referenced uploaded challenge/student files. Admin accounts stay in place.</p>
+                    <div class="form-group">
+                        <label>Type CLEAR to enable reset</label>
+                        <input type="text" id="clear-data-confirm" autocomplete="off" placeholder="CLEAR">
+                    </div>
+                    <button type="button" class="btn-danger" id="clear-created-data-btn" onclick="clearCreatedData(this)">
+                        <i class="fas fa-trash-alt"></i> Clear Created Data
+                    </button>
                 </div>
             </div>
         </div>
@@ -460,6 +780,20 @@
     background: var(--bg-panel);
     border-radius: 12px;
 }
+.compact-toolbar {
+    align-items: center;
+}
+.toolbar-count {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+.section-subtitle {
+    color: var(--text-secondary);
+    margin-top: 4px;
+    font-size: 14px;
+}
 
 .search-input, .filter-select {
     padding: 8px 15px;
@@ -480,11 +814,207 @@
 
 .action-btn.view { background: var(--neon-cyan); color: var(--bg-primary); }
 .action-btn.matches { background: var(--neon-purple); color: white; }
+.action-btn.leaderboard-award { background: #ffd166; color: #111827; }
+.action-btn.award-card { background: #22c55e; color: #052e16; }
+.action-btn.visibility { background: var(--neon-cyan); color: var(--bg-primary); }
+.leaderboard-admin-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border-default); white-space: nowrap; }
+.leaderboard-admin-pill.open { color: var(--success); background: rgba(0,255,136,0.08); border-color: rgba(0,255,136,0.35); }
+.leaderboard-admin-pill.locked { color: var(--warning); background: rgba(255,170,0,0.08); border-color: rgba(255,170,0,0.35); }
 .action-btn.delete-user { background: var(--danger); color: white; }
 .action-btn.promote { background: var(--neon-gold); color: var(--bg-primary); }
 .action-btn.demote { background: var(--warning); color: var(--bg-primary); }
 .action-btn.reset-stats { background: var(--text-muted); color: white; }
 .action-btn.delete { background: var(--danger); color: white; }
+
+.maintenance-panel {
+    display: grid;
+    gap: 18px;
+    max-width: 920px;
+}
+.maintenance-head,
+.danger-zone {
+    border: 1px solid var(--border-default);
+    background: var(--bg-panel);
+    border-radius: 10px;
+    padding: 18px;
+}
+.maintenance-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+}
+.maintenance-head h3,
+.danger-zone h4 {
+    margin: 0 0 8px;
+}
+.maintenance-head p,
+.danger-zone p {
+    margin: 0 0 16px;
+    color: var(--text-secondary);
+}
+.danger-zone {
+    border-color: rgba(255, 77, 109, 0.45);
+    background: rgba(255, 77, 109, 0.06);
+}
+.danger-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    color: var(--danger);
+    border: 1px solid rgba(255, 77, 109, 0.45);
+    background: rgba(255, 77, 109, 0.08);
+    white-space: nowrap;
+}
+.btn-danger {
+    border: none;
+    border-radius: 6px;
+    padding: 11px 16px;
+    background: var(--danger);
+    color: white;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    cursor: pointer;
+}
+.btn-danger:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.spectator-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+.spectator-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,255,255,0.08);
+    border: 1px solid rgba(0,255,255,0.14);
+    border-radius: 18px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+.mini-action {
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 8px;
+}
+.mini-action:hover { background: rgba(255,255,255,0.06); }
+
+.moderation-summary {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.moderation-summary span,
+.moderation-tags span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid var(--border-default);
+    color: var(--text-secondary);
+}
+.moderation-feed {
+    display: grid;
+    gap: 14px;
+}
+.moderation-message {
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+    background: var(--bg-panel);
+    padding: 14px;
+}
+.moderation-message.flagged {
+    border-color: rgba(217, 119, 6, 0.55);
+    background: rgba(217, 119, 6, 0.08);
+}
+.moderation-message.mentioned {
+    box-shadow: inset 3px 0 0 var(--neon-cyan);
+}
+.moderation-message-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.moderation-message-head strong {
+    color: var(--text-primary);
+    margin-right: 8px;
+}
+.moderation-message-head span {
+    color: var(--neon-cyan);
+    font-family: 'JetBrains Mono', monospace;
+}
+.moderation-message-head small {
+    display: block;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+.moderation-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+.moderation-tags .mention-tag {
+    color: var(--neon-cyan);
+    border-color: rgba(0,255,245,0.35);
+    background: rgba(0,255,245,0.08);
+}
+.moderation-tags .flag-tag {
+    color: var(--warning);
+    border-color: rgba(217,119,6,0.42);
+    background: rgba(217,119,6,0.10);
+}
+.moderation-text {
+    margin: 12px 0;
+    color: var(--text-primary);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.moderation-actions,
+.moderation-reply {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.moderation-reply {
+    margin-top: 12px;
+}
+.moderation-reply textarea {
+    flex: 1 1 320px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+.btn-warning {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 8px;
+    background: var(--warning);
+    color: white;
+    cursor: pointer;
+}
+.btn-warning:disabled,
+.moderation-actions button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
 
 /* Challenges Table Styles */
 .challenges-table-container {
@@ -528,6 +1058,11 @@
 
 .action-btn.delete-challenge {
     background: var(--danger);
+    color: white;
+}
+
+.action-btn.archive-challenge {
+    background: #475569;
     color: white;
 }
 
@@ -618,6 +1153,214 @@
 
 .modal-body { padding: 20px; }
 
+.modal-kicker {
+    margin: 0 0 4px;
+    color: var(--neon-cyan);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.certificate-award-modal {
+    max-width: 900px;
+}
+
+.certificate-award-form {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(340px, 1.1fr);
+    gap: 16px;
+}
+
+.certificate-award-form label {
+    display: grid;
+    gap: 7px;
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+
+.certificate-award-form input,
+.certificate-award-form textarea {
+    width: 100%;
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    border-radius: 8px;
+    padding: 11px 12px;
+}
+
+.certificate-award-form textarea {
+    min-height: 130px;
+    resize: vertical;
+}
+
+.certificate-award-preview {
+    grid-row: span 4;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 12px;
+    color: #111827;
+}
+
+.certificate-preview-border {
+    min-height: 330px;
+    border: 2px solid #d97706;
+    border-radius: 6px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(180deg, #ffffff, #f1f5f9);
+}
+
+.certificate-preview-top {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.certificate-preview-seal {
+    width: 58px;
+    height: 58px;
+    display: grid;
+    place-items: center;
+    margin-top: 18px;
+    border-radius: 50%;
+    background: #111827;
+    color: #f59e0b;
+    font-size: 26px;
+}
+
+.certificate-preview-border p {
+    margin: 10px 0 0;
+    color: #92400e;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.certificate-preview-border h4 {
+    margin: 4px 0;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 34px;
+    color: #111827;
+    overflow-wrap: anywhere;
+}
+
+.certificate-preview-border > span {
+    max-width: 520px;
+    color: #334155;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.certificate-preview-signatures {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: auto;
+    padding-top: 22px;
+}
+
+.certificate-preview-signatures div {
+    display: grid;
+    gap: 6px;
+    text-align: center;
+}
+
+.certificate-preview-signatures b {
+    height: 28px;
+    border-bottom: 1.5px solid #334155;
+}
+
+.certificate-preview-signatures small {
+    color: #475569;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.modal-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 820px) {
+    .certificate-award-form { grid-template-columns: 1fr; }
+    .certificate-award-preview { grid-row: auto; }
+}
+
+.competitions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.competition-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.tournament-form {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+    gap: 14px;
+    align-items: end;
+}
+
+.tournament-form label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.tournament-form input,
+.tournament-form select {
+    width: 100%;
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.tournament-players-select {
+    grid-column: 1 / -2;
+}
+
+.tournament-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.tournament-list a {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.tournament-list span {
+    color: var(--text-secondary);
+}
+
 .stats-cards {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -652,6 +1395,9 @@
     margin-bottom: 15px;
     color: var(--neon-cyan);
 }
+.rank-row-1 .rank-cell { color: var(--neon-gold); }
+.rank-row-2 .rank-cell { color: var(--neon-silver); }
+.rank-row-3 .rank-cell { color: var(--neon-bronze); }
 
 .broadcast-card {
     background: var(--bg-panel);
@@ -721,66 +1467,408 @@
     text-align: left;
     border-bottom: 1px solid var(--border-default);
 }
+
+/* Classic admin console polish */
+.admin-container {
+    background: #0f172a;
+    color: #e5e7eb;
+}
+.admin-sidebar {
+    background: #111827;
+    border-right: 1px solid #243042;
+    box-shadow: none;
+}
+.sidebar-brand {
+    color: #f8fafc;
+    letter-spacing: 0;
+}
+.sidebar-nav a {
+    border-radius: 6px;
+    color: #cbd5e1;
+}
+.sidebar-nav a:hover,
+.sidebar-nav a.active {
+    background: #1f2937;
+    color: #ffffff;
+    border-left: 3px solid #38bdf8;
+    box-shadow: none;
+}
+.admin-main {
+    background: #0f172a;
+}
+.admin-header,
+.form-card,
+.recent-activity,
+.broadcast-card,
+.leaderboard-container,
+.stat-box,
+.stat-card,
+.section-toolbar,
+.challenges-table,
+.players-table,
+.rooms-table,
+.modal-content {
+    background: #111827;
+    border: 1px solid #243042;
+    border-radius: 8px;
+    box-shadow: none;
+}
+.admin-header h1,
+.section-header h3,
+.recent-activity h3,
+.leaderboard-container h4 {
+    color: #f8fafc;
+    letter-spacing: 0;
+}
+.stat-box i,
+.stat-value,
+.challenges-table th,
+.players-table th,
+.data-table th {
+    color: #38bdf8;
+}
+.search-input,
+.filter-select,
+input,
+select,
+textarea {
+    background: #0b1220;
+    border-color: #334155;
+    border-radius: 6px;
+}
+.challenges-table {
+    border-collapse: collapse;
+}
+.challenges-table th {
+    background: #0b1220;
+    color: #cbd5e1;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0;
+}
+.challenges-table tr:hover td,
+.players-table tr:hover td,
+.data-table tr:hover td {
+    background: rgba(148, 163, 184, 0.06);
+}
+.action-btn,
+.btn-primary,
+.btn-secondary {
+    border-radius: 6px;
+    box-shadow: none;
+}
+.admin-container .btn-primary,
+.admin-container .btn-secondary,
+.admin-container .action-btn.view,
+.admin-container .action-btn.view-details,
+.admin-container .action-btn.matches,
+.admin-container .action-btn.leaderboard-award,
+.admin-container .action-btn.award-card,
+.admin-container .action-btn.promote,
+.admin-container .action-btn.demote,
+.admin-container .action-btn.reset-stats,
+.admin-container .action-btn.delete,
+.admin-container .action-btn.delete-user,
+.admin-container .action-btn.delete-challenge,
+.admin-container .action-btn.archive-challenge,
+.admin-container .action-btn.restore {
+    color: #f8fafc;
+    border: 1px solid transparent;
+}
+.admin-container .btn-primary,
+.admin-container .action-btn.view,
+.admin-container .action-btn.view-details,
+.admin-container .action-btn.matches {
+    background: #0369a1;
+}
+.admin-container .btn-secondary,
+.admin-container .action-btn.archive-challenge,
+.admin-container .action-btn.reset-stats {
+    background: #475569;
+}
+.admin-container .action-btn.restore,
+.admin-container .action-btn.promote {
+    background: #166534;
+}
+.admin-container .action-btn.demote,
+.admin-container .action-btn.leaderboard-award {
+    background: #854d0e;
+}
+.admin-container .action-btn.delete,
+.admin-container .action-btn.delete-user,
+.admin-container .action-btn.delete-challenge {
+    background: #991b1b;
+}
+.admin-container .table-avatar,
+.admin-container .leaderboard-avatar,
+.admin-container .player-avatar-small {
+    background: #334155;
+    color: #f8fafc;
+}
+.admin-container .badge,
+.admin-container .role-badge,
+.admin-container .status-badge,
+.admin-container .unlock-pill,
+.admin-container .leaderboard-admin-pill {
+    border-radius: 6px;
+}
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    margin-right: 14px;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    background: #0b1220;
+    color: #e5e7eb;
+    cursor: pointer;
+    font: inherit;
+}
+.theme-toggle:hover {
+    border-color: #64748b;
+}
+.admin-container[data-admin-theme="light"] {
+    background: #f4f6f8;
+    color: #111827;
+}
+.admin-container[data-admin-theme="light"] .admin-main {
+    background: #f4f6f8;
+}
+.admin-container[data-admin-theme="light"] .admin-sidebar {
+    background: #ffffff;
+    border-right-color: #d8dee6;
+}
+.admin-container[data-admin-theme="light"] .sidebar-brand,
+.admin-container[data-admin-theme="light"] .admin-header h1,
+.admin-container[data-admin-theme="light"] .section-header h3,
+.admin-container[data-admin-theme="light"] .recent-activity h3,
+.admin-container[data-admin-theme="light"] .leaderboard-container h4 {
+    color: #111827;
+}
+.admin-container[data-admin-theme="light"] .sidebar-nav a {
+    color: #374151;
+}
+.admin-container[data-admin-theme="light"] .sidebar-nav a:hover,
+.admin-container[data-admin-theme="light"] .sidebar-nav a.active {
+    background: #e8edf3;
+    color: #111827;
+    border-left-color: #2563eb;
+}
+.admin-container[data-admin-theme="light"] .admin-header,
+.admin-container[data-admin-theme="light"] .form-card,
+.admin-container[data-admin-theme="light"] .recent-activity,
+.admin-container[data-admin-theme="light"] .broadcast-card,
+.admin-container[data-admin-theme="light"] .leaderboard-container,
+.admin-container[data-admin-theme="light"] .stat-box,
+.admin-container[data-admin-theme="light"] .stat-card,
+.admin-container[data-admin-theme="light"] .section-toolbar,
+.admin-container[data-admin-theme="light"] .challenges-table,
+.admin-container[data-admin-theme="light"] .players-table,
+.admin-container[data-admin-theme="light"] .rooms-table,
+.admin-container[data-admin-theme="light"] .modal-content {
+    background: #ffffff;
+    border-color: #d8dee6;
+}
+.admin-container[data-admin-theme="light"] .challenges-table th {
+    background: #eef2f7;
+    color: #374151;
+}
+.admin-container[data-admin-theme="light"] .search-input,
+.admin-container[data-admin-theme="light"] .filter-select,
+.admin-container[data-admin-theme="light"] input,
+.admin-container[data-admin-theme="light"] select,
+.admin-container[data-admin-theme="light"] textarea {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    color: #111827;
+}
+.admin-container[data-admin-theme="light"] .section-subtitle,
+.admin-container[data-admin-theme="light"] .toolbar-count,
+.admin-container[data-admin-theme="light"] .stat-label,
+.admin-container[data-admin-theme="light"] .stat-sub,
+.admin-container[data-admin-theme="light"] .activity-time {
+    color: #64748b;
+}
+.admin-container[data-admin-theme="light"] .theme-toggle {
+    background: #ffffff;
+    color: #111827;
+    border-color: #cbd5e1;
+}
+.admin-container[data-admin-theme="light"] .challenges-table tr:hover td,
+.admin-container[data-admin-theme="light"] .players-table tr:hover td,
+.admin-container[data-admin-theme="light"] .data-table tr:hover td {
+    background: #f8fafc;
+}
 </style>
 
 <script>
-let adminHtmlEditor, adminCssEditor;
+let adminTargetHtmlEditor, adminTargetCssEditor, adminStarterHtmlEditor, adminStarterCssEditor;
 
 function initAdminEditors() {
-    const htmlTextarea = document.getElementById('target-html');
-    const cssTextarea = document.getElementById('target-css');
+    const targetHtmlTextarea = document.getElementById('target-html');
+    const targetCssTextarea = document.getElementById('target-css');
+    const starterHtmlTextarea = document.getElementById('starter-html');
+    const starterCssTextarea = document.getElementById('starter-css');
     
-    if (htmlTextarea) {
-        adminHtmlEditor = CodeMirror.fromTextArea(htmlTextarea, {
+    if (targetHtmlTextarea) {
+        adminTargetHtmlEditor = CodeMirror.fromTextArea(targetHtmlTextarea, {
             mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, tabSize: 2
         });
     }
-    if (cssTextarea) {
-        adminCssEditor = CodeMirror.fromTextArea(cssTextarea, {
+    if (targetCssTextarea) {
+        adminTargetCssEditor = CodeMirror.fromTextArea(targetCssTextarea, {
             mode: 'css', theme: 'dracula', lineNumbers: true, tabSize: 2
         });
     }
+    if (starterHtmlTextarea) {
+        adminStarterHtmlEditor = CodeMirror.fromTextArea(starterHtmlTextarea, {
+            mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, tabSize: 2
+        });
+    }
+    if (starterCssTextarea) {
+        adminStarterCssEditor = CodeMirror.fromTextArea(starterCssTextarea, {
+            mode: 'css', theme: 'dracula', lineNumbers: true, tabSize: 2
+        });
+    }
+
+    if (adminTargetHtmlEditor) {
+        adminTargetHtmlEditor.on('change', () => {
+            scheduleAdminTargetPreview();
+            if (adminStarterHtmlEditor && !adminStarterHtmlEditor.getValue().trim()) {
+                adminStarterHtmlEditor.setValue(adminTargetHtmlEditor.getValue());
+            }
+        });
+    }
+    if (adminTargetCssEditor) adminTargetCssEditor.on('change', scheduleAdminTargetPreview);
 }
+
+function setChallengeType(type) {
+    document.querySelectorAll('.type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+    document.getElementById('challenge-type').value = type;
+    document.getElementById('image-fields').style.display = type === 'image' ? 'block' : 'none';
+    document.getElementById('html-fields').style.display = type === 'html' ? 'block' : 'none';
+
+    const imageInput = document.getElementById('target-image');
+    if (imageInput) imageInput.required = type === 'image';
+
+    setTimeout(() => {
+        [adminTargetHtmlEditor, adminTargetCssEditor, adminStarterHtmlEditor, adminStarterCssEditor].forEach((editor) => {
+            if (editor) editor.refresh();
+        });
+        renderAdminTargetPreview();
+    }, 40);
+}
+
+let adminTargetPreviewTimer = null;
+
+function scheduleAdminTargetPreview() {
+    if (adminTargetPreviewTimer) clearTimeout(adminTargetPreviewTimer);
+    adminTargetPreviewTimer = setTimeout(renderAdminTargetPreview, 180);
+}
+
+function renderAdminTargetPreview() {
+    const iframe = document.getElementById('preview-iframe');
+    if (!iframe) return;
+
+    const html = adminTargetHtmlEditor ? adminTargetHtmlEditor.getValue() : '';
+    const css = adminTargetCssEditor ? adminTargetCssEditor.getValue() : '';
+    iframe.srcdoc = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>${css}</style>
+</head>
+<body>${html}</body>
+</html>`;
+}
+
+initAdminEditors();
 
 // Challenge type toggle
 document.querySelectorAll('.type-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const type = btn.dataset.type;
-        document.getElementById('challenge-type').value = type;
-        document.getElementById('image-fields').style.display = type === 'image' ? 'block' : 'none';
-        document.getElementById('html-fields').style.display = type === 'html' ? 'block' : 'none';
+        setChallengeType(btn.dataset.type);
     });
 });
+
+setChallengeType(document.getElementById('challenge-type')?.value || 'image');
 
 // Create challenge form
 document.getElementById('create-challenge-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    [adminTargetHtmlEditor, adminTargetCssEditor, adminStarterHtmlEditor, adminStarterCssEditor].forEach((editor) => {
+        if (editor) editor.save();
+    });
+
     const formData = new FormData();
-    formData.append('challenge_type', document.getElementById('challenge-type').value);
-    formData.append('title', document.getElementById('title').value);
+    const challengeType = document.getElementById('challenge-type').value;
+    const title = document.getElementById('title').value.trim();
+    if (!title) {
+        showToast('Challenge name is required', 'error');
+        return;
+    }
+
+    formData.append('challenge_type', challengeType);
+    formData.append('title', title);
     formData.append('difficulty', document.getElementById('difficulty').value);
     formData.append('time_limit', document.getElementById('time-limit').value);
     formData.append('description', document.getElementById('description').value);
+    formData.append('room_visibility', document.getElementById('room-visibility').value);
     
-    if (document.getElementById('challenge-type').value === 'image') {
+    if (challengeType === 'image') {
         const file = document.getElementById('target-image').files[0];
         if (file) formData.append('target_image', file);
         else { showToast('Please select an image', 'error'); return; }
     } else {
-        formData.append('target_html', adminHtmlEditor ? adminHtmlEditor.getValue() : '');
-        formData.append('target_css', adminCssEditor ? adminCssEditor.getValue() : '');
-        formData.append('html_locked', document.getElementById('html-locked').checked);
+        const targetHtml = adminTargetHtmlEditor ? adminTargetHtmlEditor.getValue().trim() : '';
+        const starterHtml = adminStarterHtmlEditor ? adminStarterHtmlEditor.getValue().trim() : '';
+        if (!targetHtml) {
+            showToast('Please add target HTML for the rendered target', 'error');
+            return;
+        }
+        if (!starterHtml) {
+            showToast('Please add starter HTML for players', 'error');
+            return;
+        }
+        formData.append('target_html', targetHtml);
+        formData.append('target_css', adminTargetCssEditor ? adminTargetCssEditor.getValue() : '');
+        formData.append('starter_html', starterHtml);
+        formData.append('starter_css', adminStarterCssEditor ? adminStarterCssEditor.getValue() : '');
+        formData.append('html_locked', document.getElementById('html-locked').checked ? 'true' : 'false');
     }
     
-    const res = await fetch('/admin/create_challenge', {method: 'POST', body: formData});
-    const data = await res.json();
-    if (data.success) {
-        showToast(`Room created! Code: ${data.room_code}`, 'success');
-        setTimeout(() => location.reload(), 1500);
-    } else {
-        showToast(data.error || 'Error creating challenge', 'error');
+    const submitButton = e.submitter || e.target.querySelector('button[type="submit"]');
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.dataset.originalText = submitButton.innerHTML;
+        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> CREATING...';
+    }
+
+    try {
+        const res = await fetch('/admin/create_challenge', {method: 'POST', body: formData});
+        const text = await res.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (parseError) {
+            data = {success: false, error: text || `Server returned ${res.status}`};
+        }
+
+        if (res.ok && data.success) {
+            const visibility = data.is_public ? 'public' : 'private';
+            showToast(`Room created as ${visibility}! Code: ${data.room_code}`, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast(data.error || 'Error creating challenge', 'error');
+        }
+    } catch (error) {
+        showToast(`Network error: ${error.message}`, 'error');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = submitButton.dataset.originalText || 'CREATE & LAUNCH ROOM';
+        }
     }
 });
 
@@ -796,68 +1884,111 @@ document.getElementById('target-image')?.addEventListener('change', (e) => {
     }
 });
 
-// Preview HTML challenge
-document.getElementById('preview-target')?.addEventListener('click', () => {
-    const html = adminHtmlEditor ? adminHtmlEditor.getValue() : '';
-    const css = adminCssEditor ? adminCssEditor.getValue() : '';
-    const previewDiv = document.getElementById('html-preview');
-    const iframe = document.getElementById('preview-iframe');
-    previewDiv.style.display = 'block';
-    iframe.srcdoc = `<!DOCTYPE html><html><head><style>${css}</style></head><body>${html}</body></html>`;
-});
-
 // Room actions
-window.roomAction = async (roomId, action) => {
-    const res = await fetch(`/admin/room/${roomId}/action`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action})
-    });
-    if (res.ok) {
-        showToast(`${action} command sent`, 'success');
-        setTimeout(() => location.reload(), 1000);
+window.roomAction = async (button, roomId, action) => {
+    if (button && button.disabled === false) {
+        button.disabled = true;
+        button.dataset.originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+
+    try {
+        const res = await fetch(`/admin/room/${roomId}/action`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action})
+        });
+        if (res.ok) {
+            showToast(`${action} command sent`, 'success');
+            setTimeout(() => location.reload(), 900);
+        } else {
+            showToast(`Failed to ${action} room`, 'error');
+        }
+    } catch (error) {
+        showToast(`Network error: ${error.message}`, 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = button.dataset.originalText || button.innerHTML;
+        }
     }
 };
 
 // Delete room
-window.deleteRoom = async (roomId) => {
-    if (!confirm('Delete this room? All data will be lost.')) return;
+window.deleteRoom = async (button, roomId) => {
+    const confirmed = await showConfirm('Delete this room? All data will be lost.', 'Delete room');
+    if (!confirmed) return;
+    if (button) button.disabled = true;
     const res = await fetch(`/admin/room/${roomId}/delete`, {
         method: 'DELETE',
         headers: {'Content-Type': 'application/json'}
     });
-    if (res.ok) {
+    const data = await res.json();
+    if (res.ok && data.success) {
         showToast('Room deleted', 'success');
-        setTimeout(() => location.reload(), 1000);
+        setTimeout(() => location.reload(), 900);
+    } else {
+        showToast(data.error || 'Failed to delete room', 'error');
+        if (button) button.disabled = false;
     }
 };
 
 // Kick player
-window.kickPlayer = async (roomId, username) => {
+window.kickPlayer = async (button, roomId, username) => {
+    if (typeof button !== 'object') {
+        username = roomId;
+        roomId = button;
+        button = null;
+    }
     if (!username || username === 'Empty') return;
-    if (!confirm(`Kick ${username} from the room?`)) return;
+    const confirmed = await showConfirm(`Kick ${username} from the room?`, 'Kick user');
+    if (!confirmed) return;
+    if (button) button.disabled = true;
     const res = await fetch('/admin/kick', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({room_id: roomId, username: username})
     });
-    if (res.ok) {
+    const data = await res.json();
+    if (res.ok && data.success) {
         showToast(`${username} kicked`, 'warning');
-        setTimeout(() => location.reload(), 1000);
+        setTimeout(() => location.reload(), 900);
+    } else {
+        showToast(data.error || 'Failed to kick player', 'error');
+        if (button) button.disabled = false;
     }
 };
 
-// Delete challenge
+// Archive challenge
+window.archiveChallenge = async (challengeId, challengeTitle) => {
+    const confirmed = await showConfirm(`Archive "${challengeTitle}"? It will be hidden from new rooms, but can be restored later.`, 'Archive challenge');
+    if (!confirmed) return;
+
+    const res = await fetch(`/admin/challenge/${challengeId}/delete?mode=soft`, {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'}
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+        showToast(`Challenge "${challengeTitle}" archived`, 'success');
+        setTimeout(() => location.reload(), 1000);
+    } else {
+        showToast(data.error || 'Failed to archive challenge', 'error');
+    }
+};
+
+// Delete challenge permanently
 window.deleteChallenge = async (challengeId, challengeTitle) => {
-    if (!confirm(`⚠️ Delete challenge "${challengeTitle}"?\n\nThis will mark the challenge as inactive.`)) return;
-    
+    const confirmed = await showConfirm(`Permanently delete "${challengeTitle}"? This also removes its rooms, submissions, chat, and related match data.`, 'Delete forever');
+    if (!confirmed) return;
+
     const res = await fetch(`/admin/challenge/${challengeId}/delete`, {
         method: 'DELETE',
         headers: {'Content-Type': 'application/json'}
     });
     const data = await res.json();
-    if (data.success) {
-        showToast(`Challenge "${challengeTitle}" deleted`, 'success');
+    if (res.ok && data.success) {
+        showToast(`Challenge "${challengeTitle}" deleted permanently`, 'success');
         setTimeout(() => location.reload(), 1000);
     } else {
         showToast(data.error || 'Failed to delete challenge', 'error');
@@ -866,7 +1997,8 @@ window.deleteChallenge = async (challengeId, challengeTitle) => {
 
 // Restore challenge
 window.restoreChallenge = async (challengeId) => {
-    if (!confirm('Restore this challenge?')) return;
+    const confirmed = await showConfirm('Restore this challenge?', 'Restore challenge');
+    if (!confirmed) return;
     
     const res = await fetch(`/admin/challenge/${challengeId}/restore`, {
         method: 'POST',
@@ -901,8 +2033,10 @@ window.viewChallengeDetails = async (challengeId) => {
             ${data.challenge_type === 'image' ? 
                 `<div class="detail-card"><span class="detail-label">Target Image</span><div><img src="${data.target_image_url}" style="max-width:100%; border-radius:8px;"></div></div>` : 
                 `<div class="detail-card"><span class="detail-label">HTML Locked</span><span class="detail-value">${data.html_locked ? 'Yes' : 'No'}</span></div>
-                 <div class="code-preview"><strong>Target HTML:</strong><pre><code>${escapeHtml(data.target_html || 'No HTML')}</code></pre></div>
-                 <div class="code-preview"><strong>Target CSS:</strong><pre><code>${escapeHtml(data.target_css || 'No CSS')}</code></pre></div>`
+                 <div class="code-preview"><strong>Private Target HTML:</strong><pre><code>${escapeHtml(data.target_html || 'No HTML')}</code></pre></div>
+                 <div class="code-preview"><strong>Private Target CSS:</strong><pre><code>${escapeHtml(data.target_css || 'No CSS')}</code></pre></div>
+                 <div class="code-preview"><strong>Player Starter HTML:</strong><pre><code>${escapeHtml(data.starter_html || 'No starter HTML')}</code></pre></div>
+                 <div class="code-preview"><strong>Player Starter CSS:</strong><pre><code>${escapeHtml(data.starter_css || 'No starter CSS')}</code></pre></div>`
             }
         `;
     }
@@ -910,7 +2044,13 @@ window.viewChallengeDetails = async (challengeId) => {
 
 // Delete user
 window.deleteUser = async (userId, username) => {
-    if (!confirm(`⚠️ Delete user "${username}"? This cannot be undone!`)) return;
+    const row = document.querySelector(`tr[data-user-id='${userId}']`);
+    const isAdmin = row?.dataset.role === 'admin';
+    const message = isAdmin
+        ? `Delete admin "${username}"? This permanently removes their admin access and account.`
+        : `Delete user "${username}"? This cannot be undone!`;
+    const confirmed = await showConfirm(message, isAdmin ? 'Delete admin' : 'Delete user');
+    if (!confirmed) return;
     
     const res = await fetch(`/admin/user/${userId}/delete`, {
         method: 'DELETE',
@@ -927,57 +2067,173 @@ window.deleteUser = async (userId, username) => {
 
 // Toggle admin role
 window.toggleAdminRole = async (userId, username) => {
-    const action = confirm(`Make ${username} an admin?`) ? 'promote' : 'demote';
+    const row = document.querySelector(`tr[data-user-id='${userId}']`);
+    const currentRole = row?.dataset.role || 'player';
+    const action = currentRole === 'admin' ? 'demote' : 'promote';
+    const confirmMessage = currentRole === 'admin'
+        ? `Remove admin role from ${username}?`
+        : `Promote ${username} to admin?`;
+    const confirmed = await showConfirm(confirmMessage, 'Change role');
+    if (!confirmed) return;
     const res = await fetch(`/admin/user/${userId}/role`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({action: action})
     });
     const data = await res.json();
-    if (data.success) {
+    if (res.ok && data.success) {
         showToast(`Role updated for ${username}`, 'success');
-        setTimeout(() => location.reload(), 1000);
+        setTimeout(() => location.reload(), 900);
+    } else {
+        showToast(data.error || 'Failed to update role', 'error');
     }
 };
 
 // Reset player stats
 window.resetPlayerStats = async (userId, username) => {
-    if (!confirm(`Reset all stats for ${username}?`)) return;
+    const confirmed = await showConfirm(`Reset all stats for ${username}?`, 'Reset stats');
+    if (!confirmed) return;
     
-    const res = await fetch(`/admin/user/${userId}/reset-stats`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'}
-    });
-    const data = await res.json();
-    if (data.success) {
-        showToast(`Stats reset for ${username}`, 'success');
-        setTimeout(() => location.reload(), 1000);
+    try {
+        const res = await fetch(`/admin/user/${userId}/reset-stats`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`Stats reset for ${username}`, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.error || 'Failed to reset stats', 'error');
+        }
+    } catch (err) {
+        console.error('resetPlayerStats error:', err);
+        showToast('Network error resetting stats', 'error');
     }
 };
+
+function updateCertificateAwardPreview() {
+    const name = document.getElementById('certificate-award-recipient')?.value || 'Player';
+    const reason = document.getElementById('certificate-award-reason')?.value || 'Certificate of Achievement';
+    const details = document.getElementById('certificate-award-details')?.value || 'Recognized by an administrator for official arena achievement.';
+    const color = document.getElementById('certificate-award-color')?.value || '#d97706';
+    document.getElementById('certificate-preview-name').textContent = name;
+    document.querySelector('.certificate-preview-border p').textContent = reason;
+    document.getElementById('certificate-preview-copy').textContent = details;
+    const preview = document.querySelector('.certificate-preview-border');
+    if (preview) preview.style.borderColor = color;
+    document.querySelector('.certificate-preview-seal')?.style.setProperty('color', color);
+}
+
+window.openCertificateAwardModal = (userId, username, alreadyAwarded) => {
+    const modal = document.getElementById('certificate-award-modal');
+    document.getElementById('certificate-award-user-id').value = userId;
+    document.getElementById('certificate-award-recipient').value = username;
+    document.getElementById('certificate-award-title').textContent = alreadyAwarded ? `Update ${username}'s Certificate` : `Award ${username}`;
+    document.getElementById('certificate-award-reason').value = 'Certificate of Achievement';
+    document.getElementById('certificate-award-details').value = `Recognized for excellent participation, strong performance, and official contribution to UI Battle Arena.`;
+    document.getElementById('certificate-award-color').value = '#d97706';
+    const removeButton = document.getElementById('certificate-award-remove');
+    removeButton.hidden = !alreadyAwarded;
+    removeButton.dataset.userId = userId;
+    removeButton.dataset.username = username;
+    modal.style.display = 'flex';
+    updateCertificateAwardPreview();
+};
+
+window.closeCertificateAwardModal = () => {
+    document.getElementById('certificate-award-modal').style.display = 'none';
+};
+
+async function saveCertificateAward(userId, username, award, reason = '', details = '', color = '#d97706') {
+    try {
+        const res = await fetch(`/admin/user/${userId}/leaderboard-award`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({award, reason, details, color})
+        });
+        const text = await res.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (parseError) {
+            data = {success: false, error: text || `Server returned ${res.status}`};
+        }
+        if (res.ok && data.success) {
+            showToast(award ? `Certificate awarded to ${username}` : `Certificate removed from ${username}`, 'success');
+            setTimeout(() => location.reload(), 900);
+        } else {
+            showToast(data.error || 'Failed to update certificate award', 'error');
+        }
+    } catch (err) {
+        showToast('Network error updating certificate award', 'error');
+    }
+}
+
+document.getElementById('certificate-award-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const userId = document.getElementById('certificate-award-user-id').value;
+    const username = document.getElementById('certificate-award-recipient').value;
+    const reason = document.getElementById('certificate-award-reason').value.trim();
+    const details = document.getElementById('certificate-award-details').value.trim();
+    const color = document.getElementById('certificate-award-color').value;
+    if (!reason || !details) {
+        showToast('Certificate title and details are required', 'warning');
+        return;
+    }
+    await saveCertificateAward(userId, username, true, reason, details, color);
+});
+
+document.getElementById('certificate-award-remove')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const username = button.dataset.username || 'this player';
+    const confirmed = await showConfirm(`Remove the awarded certificate from ${username}?`, 'Remove certificate');
+    if (!confirmed) return;
+    await saveCertificateAward(button.dataset.userId, username, false);
+});
+
+['certificate-award-recipient', 'certificate-award-reason', 'certificate-award-details', 'certificate-award-color'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', updateCertificateAwardPreview);
+});
 
 // View player profile
 window.viewPlayerProfile = async (userId) => {
     const modal = document.getElementById('player-stats-modal');
     const modalBody = document.getElementById('modal-body');
     const modalTitle = document.getElementById('modal-player-name');
-    
+
     modal.style.display = 'flex';
     modalBody.innerHTML = '<div class="loading">Loading...</div>';
-    
-    const res = await fetch(`/admin/user/${userId}/stats`);
-    const data = await res.json();
-    
-    if (data.success) {
-        modalTitle.textContent = `${data.username}'s Stats`;
-        modalBody.innerHTML = `
-            <div class="detail-card"><span class="detail-label">Username</span><span class="detail-value">${data.username}</span></div>
-            <div class="detail-card"><span class="detail-label">Role</span><span class="detail-value">${data.role}</span></div>
-            <div class="detail-card"><span class="detail-label">Matches</span><span class="detail-value">${data.matches_played}</span></div>
-            <div class="detail-card"><span class="detail-label">Best Accuracy</span><span class="detail-value">${data.best_accuracy}%</span></div>
-            <div class="detail-card"><span class="detail-label">Total Wins</span><span class="detail-value">${data.total_wins}</span></div>
-            <div class="detail-card"><span class="detail-label">Win Rate</span><span class="detail-value">${data.win_rate}%</span></div>
-            <div class="detail-card"><span class="detail-label">Member Since</span><span class="detail-value">${data.joined_date}</span></div>
-        `;
+
+    try {
+        const res = await fetch(`/admin/user/${userId}/stats`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const data = await res.json();
+
+        if (data && data.success) {
+            modalTitle.textContent = `${data.username}'s Stats`;
+            modalBody.innerHTML = `
+                <div class="detail-card"><span class="detail-label">Username</span><span class="detail-value">${data.username}</span></div>
+                <div class="detail-card"><span class="detail-label">Role</span><span class="detail-value">${data.role || 'player'}</span></div>
+                <div class="detail-card"><span class="detail-label">Matches</span><span class="detail-value">${data.matches_played ?? 0}</span></div>
+                <div class="detail-card"><span class="detail-label">Best Accuracy</span><span class="detail-value">${data.best_accuracy ?? 0}%</span></div>
+                <div class="detail-card"><span class="detail-label">Total Wins</span><span class="detail-value">${data.total_wins ?? 0}</span></div>
+                <div class="detail-card"><span class="detail-label">Win Rate</span><span class="detail-value">${data.win_rate ?? 0}%</span></div>
+                <div class="detail-card"><span class="detail-label">Best Streak</span><span class="detail-value">${data.best_streak ?? 0}</span></div>
+                <div class="detail-card"><span class="detail-label">Power Score</span><span class="detail-value">${Math.round(data.power_score ?? 0)}</span></div>
+                <div class="detail-card"><span class="detail-label">Leaderboard</span><span class="detail-value">${data.leaderboard_unlocked ? (data.leaderboard_awarded ? 'Awarded' : 'Unlocked') : 'Locked'}</span></div>
+                <div class="detail-card"><span class="detail-label">Member Since</span><span class="detail-value">${data.joined_date ?? 'Unknown'}</span></div>
+            `;
+        } else {
+            modalTitle.textContent = 'Profile';
+            modalBody.innerHTML = `<p class="error">${data?.error || 'Failed to load profile'}</p>`;
+            if (typeof showToast === 'function') showToast(data?.error || 'Failed to load profile', 'error');
+        }
+    } catch (err) {
+        modalTitle.textContent = 'Profile';
+        modalBody.innerHTML = `<p class="error">Error loading profile: ${err.message}</p>`;
+        if (typeof showToast === 'function') showToast('Error loading profile', 'error');
+        console.error('viewPlayerProfile error:', err);
     }
 };
 
@@ -1003,7 +2259,7 @@ window.viewPlayerMatches = async (userId, username) => {
                         <td>${m.date}</td>
                         <td>${m.challenge}</td>
                         <td class="${m.accuracy >= 80 ? 'high' : m.accuracy >= 50 ? 'mid' : 'low'}">${m.accuracy}%</td>
-                        <td>${m.is_winner ? '🏆 Win' : '❌ Loss'}</td>
+                        <td>${m.is_winner ? '<i class="fas fa-trophy"></i> Win' : '<i class="fas fa-times-circle"></i> Loss'}</td>
                     </tr>`).join('')}
                 </tbody>
             </table>
@@ -1049,6 +2305,45 @@ window.exportData = async () => {
     showToast('Data exported', 'success');
 };
 
+document.getElementById('create-tournament-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const size = Number(document.getElementById('tournament-size').value);
+    const selected = Array.from(document.getElementById('tournament-participants').selectedOptions).map(option => Number(option.value));
+    if (selected.length !== size) {
+        showToast(`Select exactly ${size} players`, 'warning');
+        return;
+    }
+    try {
+        const res = await fetch('/admin/tournament/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: document.getElementById('tournament-name').value.trim(),
+                size,
+                challenge_id: Number(document.getElementById('tournament-challenge').value),
+                auto_advance: document.getElementById('tournament-auto-advance').value === 'true',
+                participant_ids: selected
+            })
+        });
+        const text = await res.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (parseError) {
+            data = {success: false, error: text || `Server returned ${res.status}`};
+        }
+        if (res.ok && data.success) {
+            showToast('Tournament created with 2-player match rooms', 'success');
+            window.location.href = data.redirect || `/tournament/${data.tournament_id}`;
+        } else {
+            showToast(data.error || 'Failed to create tournament', 'error');
+        }
+    } catch (err) {
+        console.error('create tournament error:', err);
+        showToast('Network error creating tournament', 'error');
+    }
+});
+
 // Filter functions
 function filterPlayers() {
     const search = document.getElementById('player-search')?.value.toLowerCase() || '';
@@ -1080,12 +2375,268 @@ function filterRooms() {
     });
 }
 
+function filterChallenges() {
+    const search = document.getElementById('challenge-search')?.value.toLowerCase() || '';
+    const filter = document.getElementById('challenge-filter')?.value || 'all';
+    const rows = document.querySelectorAll('.challenges-table tbody tr');
+
+    rows.forEach(row => {
+        const title = row.dataset.title || '';
+        const status = row.dataset.status || '';
+        const matchesSearch = !search || title.includes(search);
+        const matchesFilter = filter === 'all' || status === filter;
+        row.style.display = matchesSearch && matchesFilter ? '' : 'none';
+    });
+}
+
+function filterModerationMessages() {
+    const search = document.getElementById('moderation-search')?.value.toLowerCase() || '';
+    const filter = document.getElementById('moderation-filter')?.value || 'all';
+    document.querySelectorAll('.moderation-message').forEach(card => {
+        const haystack = `${card.dataset.room || ''} ${card.dataset.username || ''} ${card.dataset.message || ''}`;
+        const matchesSearch = !search || haystack.includes(search);
+        const matchesFilter =
+            filter === 'all' ||
+            (filter === 'flagged' && card.dataset.flagged === 'true') ||
+            (filter === 'mentions' && card.dataset.mentioned === 'true') ||
+            (filter === 'unflagged' && card.dataset.flagged !== 'true');
+        card.style.display = matchesSearch && matchesFilter ? '' : 'none';
+    });
+}
+
+window.loadModerationMessages = async () => {
+    const feed = document.getElementById('moderation-feed');
+    if (!feed) return;
+    feed.innerHTML = '<div class="loading">Loading messages...</div>';
+    try {
+        const res = await fetch('/admin/chat/messages');
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not load messages');
+
+        document.getElementById('moderation-flagged-count').textContent = data.flagged_count || 0;
+        document.getElementById('moderation-mentions-count').textContent = data.mentions_count || 0;
+        feed.innerHTML = '';
+        if (!data.messages.length) {
+            feed.innerHTML = '<div class="empty-state">No chat messages yet.</div>';
+            return;
+        }
+        data.messages.slice().reverse().forEach(msg => renderModerationMessage(msg, true));
+        filterModerationMessages();
+    } catch (err) {
+        feed.innerHTML = `<div class="empty-state">Could not load chat messages: ${escapeHtml(err.message)}</div>`;
+        showToast('Could not load moderation messages', 'error');
+    }
+};
+
+window.toggleAdminReply = (messageId) => {
+    const box = document.getElementById(`reply-box-${messageId}`);
+    if (!box) return;
+    box.hidden = !box.hidden;
+    if (!box.hidden) document.getElementById(`reply-text-${messageId}`)?.focus();
+};
+
+window.adminFlagChatMessage = async (button, messageId) => {
+    const reason = await showPrompt({
+        title: 'Flag Chat Message',
+        label: 'Reason',
+        value: 'Flagged by admin as harmful',
+        required: true,
+        confirmText: 'Flag Message'
+    });
+    if (!reason) return;
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Flagging';
+    try {
+        const res = await fetch(`/admin/chat/${messageId}/flag`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({reason})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Failed to flag message');
+        const card = document.querySelector(`.moderation-message[data-message-id="${messageId}"]`);
+        if (card) {
+            card.classList.add('flagged');
+            card.dataset.flagged = 'true';
+            const tags = card.querySelector('.moderation-tags');
+            if (tags && !tags.querySelector('.flag-tag')) {
+                tags.insertAdjacentHTML('beforeend', `<span class="flag-tag"><i class="fas fa-flag"></i> ${escapeHtml(reason)}</span>`);
+            }
+        }
+        button.innerHTML = '<i class="fas fa-flag"></i> Flagged';
+        showToast('Message flagged and room notified', 'warning');
+    } catch (err) {
+        button.disabled = false;
+        button.innerHTML = original;
+        showToast(err.message || 'Failed to flag message', 'error');
+    }
+};
+
+window.adminReplyChatMessage = async (button, messageId) => {
+    const textarea = document.getElementById(`reply-text-${messageId}`);
+    const message = textarea?.value.trim();
+    if (!message) {
+        showToast('Enter a reply first', 'warning');
+        return;
+    }
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending';
+    try {
+        const res = await fetch(`/admin/chat/${messageId}/reply`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send reply');
+        textarea.value = '';
+        document.getElementById(`reply-box-${messageId}`).hidden = true;
+        showToast('Reply sent to the room', 'success');
+    } catch (err) {
+        showToast(err.message || 'Failed to send reply', 'error');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = original;
+    }
+};
+
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
+
+function renderModerationMessage(msg, prepend = true) {
+    const feed = document.getElementById('moderation-feed');
+    if (!feed || !msg || document.querySelector(`.moderation-message[data-message-id="${msg.id}"]`)) return;
+    feed.querySelector('.empty-state')?.remove();
+    const card = document.createElement('article');
+    card.className = `moderation-message ${msg.is_flagged ? 'flagged' : ''} ${msg.is_mention ? 'mentioned' : ''}`;
+    card.dataset.messageId = msg.id;
+    card.dataset.room = String(msg.room_code || '').toLowerCase();
+    card.dataset.username = String(msg.username || '').toLowerCase();
+    card.dataset.message = String(msg.message || '').toLowerCase();
+    card.dataset.flagged = msg.is_flagged ? 'true' : 'false';
+    card.dataset.mentioned = msg.is_mention ? 'true' : 'false';
+    card.innerHTML = `
+        <div class="moderation-message-head">
+            <div>
+                <strong>${escapeHtml(msg.username)}</strong>
+                <span>${escapeHtml(msg.room_code)}</span>
+                <small>${escapeHtml(msg.time || 'Just now')}</small>
+            </div>
+            <div class="moderation-tags">
+                ${msg.is_mention ? '<span class="mention-tag"><i class="fas fa-at"></i> Mention</span>' : ''}
+                ${msg.is_flagged ? `<span class="flag-tag"><i class="fas fa-flag"></i> ${escapeHtml(msg.flag_reason || 'Flagged')}</span>` : ''}
+            </div>
+        </div>
+        <p class="moderation-text">${escapeHtml(msg.message)}</p>
+        <div class="moderation-actions">
+            <button type="button" onclick="adminFlagChatMessage(this, ${Number(msg.id)})" class="btn-warning" ${msg.is_flagged || msg.is_system ? 'disabled' : ''}>
+                <i class="fas fa-flag"></i> Flag
+            </button>
+            <button type="button" onclick="toggleAdminReply(${Number(msg.id)})" class="btn-secondary" ${msg.is_system ? 'disabled' : ''}>
+                <i class="fas fa-reply"></i> Reply
+            </button>
+            <a href="/arena/${Number(msg.room_id)}" class="btn-secondary"><i class="fas fa-external-link-alt"></i> Open Room</a>
+        </div>
+        <div class="moderation-reply" id="reply-box-${Number(msg.id)}" hidden>
+            <textarea id="reply-text-${Number(msg.id)}" rows="2" placeholder="Reply to ${escapeHtml(msg.username)}...">@${escapeHtml(msg.username)} </textarea>
+            <button type="button" onclick="adminReplyChatMessage(this, ${Number(msg.id)})" class="btn-primary"><i class="fas fa-paper-plane"></i> Send Reply</button>
+        </div>
+    `;
+    if (prepend) feed.prepend(card);
+    else feed.appendChild(card);
+}
+
+function markModerationFlagged(messageId, reason) {
+    const card = document.querySelector(`.moderation-message[data-message-id="${messageId}"]`);
+    if (!card) return;
+    card.classList.add('flagged');
+    card.dataset.flagged = 'true';
+    const flagButton = card.querySelector('.btn-warning');
+    if (flagButton) {
+        flagButton.disabled = true;
+        flagButton.innerHTML = '<i class="fas fa-flag"></i> Flagged';
+    }
+    const tags = card.querySelector('.moderation-tags');
+    if (tags && !tags.querySelector('.flag-tag')) {
+        tags.insertAdjacentHTML('beforeend', `<span class="flag-tag"><i class="fas fa-flag"></i> ${escapeHtml(reason || 'Flagged')}</span>`);
+    }
+}
+
+if (typeof io !== 'undefined') {
+    const moderationSocket = io();
+    moderationSocket.on('admin_chat_message', (msg) => {
+        renderModerationMessage(msg, true);
+        if (msg?.is_flagged || msg?.is_mention) {
+            showToast(msg.is_flagged ? 'New flagged chat message' : 'New admin mention in chat', msg.is_flagged ? 'warning' : 'info');
+        }
+    });
+    moderationSocket.on('admin_chat_message_flagged', (data) => {
+        markModerationFlagged(data?.id, data?.flag_reason);
+    });
+}
+
+window.clearCreatedData = async (button) => {
+    const input = document.getElementById('clear-data-confirm');
+    const confirmText = (input?.value || '').trim();
+    if (confirmText !== 'CLEAR') {
+        showToast('Type CLEAR before resetting data', 'warning');
+        input?.focus();
+        return;
+    }
+
+    const confirmed = await showConfirm('Clear all created student, room, challenge, tournament, submission, and chat data? Admin accounts will remain.', 'Clear created data');
+    if (!confirmed) return;
+
+    if (button) {
+        button.disabled = true;
+        button.dataset.originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Clearing...';
+    }
+
+    try {
+        const res = await fetch('/admin/maintenance/clear-data', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({confirm: confirmText})
+        });
+        const text = await res.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (parseError) {
+            data = {
+                success: false,
+                error: res.redirected || text.trim().startsWith('<')
+                    ? 'The running server is still returning an HTML page. Restart Flask, log in as admin, then retry.'
+                    : (text || `Server returned ${res.status}`)
+            };
+        }
+        if (res.ok && data.success) {
+            const counts = data.counts || {};
+            showToast(`Data cleared: ${counts.students || 0} students, ${counts.rooms || 0} rooms, ${counts.chat_messages || 0} messages`, 'success');
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            showToast(data.error || 'Failed to clear data', 'error');
+        }
+    } catch (error) {
+        showToast(`Network error: ${error.message}`, 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = button.dataset.originalText || '<i class="fas fa-trash-alt"></i> Clear Created Data';
+        }
+    }
+};
 
 window.refreshRooms = () => location.reload();
 window.refreshPlayers = () => location.reload();
@@ -1099,15 +2650,26 @@ document.getElementById('player-stats-modal')?.addEventListener('click', (e) => 
 document.getElementById('challenge-details-modal')?.addEventListener('click', (e) => {
     if (e.target === document.getElementById('challenge-details-modal')) closeChallengeModal();
 });
+document.getElementById('certificate-award-modal')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('certificate-award-modal')) closeCertificateAwardModal();
+});
 
-// Navigation
+// Navigation (only intercept internal section links)
 document.querySelectorAll('.sidebar-nav a').forEach(link => {
     link.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.querySelectorAll('.sidebar-nav a').forEach(l => l.classList.remove('active'));
-        link.classList.add('active');
-        document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
-        document.getElementById(`section-${link.dataset.section}`).classList.add('active');
+        const href = link.getAttribute('href');
+        const section = link.dataset.section;
+        // If this is an in-page navigation (href="#" or has data-section), handle via JS
+        if (href === '#' || section) {
+            e.preventDefault();
+            document.querySelectorAll('.sidebar-nav a').forEach(l => l.classList.remove('active'));
+            link.classList.add('active');
+            document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+            const target = document.getElementById(`section-${section}`);
+            if (target) target.classList.add('active');
+            if (section === 'moderation') loadModerationMessages();
+        }
+        // Otherwise allow the link to navigate normally (external/admin pages)
     });
 });
 
@@ -1116,7 +2678,12 @@ document.getElementById('player-search')?.addEventListener('input', filterPlayer
 document.getElementById('player-filter')?.addEventListener('change', filterPlayers);
 document.getElementById('room-search')?.addEventListener('input', filterRooms);
 document.getElementById('room-filter')?.addEventListener('change', filterRooms);
-
-initAdminEditors();
+document.getElementById('challenge-search')?.addEventListener('input', filterChallenges);
+document.getElementById('challenge-filter')?.addEventListener('change', filterChallenges);
+document.getElementById('moderation-search')?.addEventListener('input', filterModerationMessages);
+document.getElementById('moderation-filter')?.addEventListener('change', filterModerationMessages);
+if (document.getElementById('moderation-feed')) {
+    loadModerationMessages();
+}
 </script>
 {% endblock %}

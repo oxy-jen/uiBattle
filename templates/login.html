@@ -6,7 +6,7 @@
     
     <div class="login-card">
         <div class="login-left">
-            <div class="brand-icon">⚔️</div>
+            <div class="brand-icon"><i class="fas fa-crosshairs"></i></div>
             <h1 class="brand-title">UI BATTLE ARENA</h1>
             <p class="brand-subtitle">Where Code Meets Competition</p>
             
@@ -45,6 +45,27 @@
                     <input type="password" id="login-password" placeholder="Password" required>
                 </div>
                 <button type="submit" class="btn-primary">ENTER THE ARENA <i class="fas fa-arrow-right"></i></button>
+                <div class="social-login-block">
+                    <div class="auth-divider"><span>or</span></div>
+                    {% if google_oauth_enabled %}
+                    <a class="social-login-btn google-login" href="{{ url_for('google_login') }}">
+                        <i class="fab fa-google"></i> Continue with Google
+                    </a>
+                    {% else %}
+                    <button class="social-login-btn google-login" type="button" disabled title="Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable Google login">
+                        <i class="fab fa-google"></i> Google login not configured
+                    </button>
+                    {% endif %}
+                </div>
+            </form>
+
+            <form id="two-factor-login-form" class="auth-form {% if pending_two_factor %}active{% endif %}">
+                <div class="input-group">
+                    <i class="fas fa-shield-halved"></i>
+                    <input type="text" id="login-2fa-code" placeholder="6-digit verification code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required>
+                </div>
+                <button type="submit" class="btn-primary">VERIFY LOGIN <i class="fas fa-check"></i></button>
+                <button type="button" class="btn-secondary" id="back-to-login-btn">Back to login</button>
             </form>
             
             <form id="register-form" class="auth-form">
@@ -55,14 +76,6 @@
                 <div class="input-group">
                     <i class="fas fa-lock"></i>
                     <input type="password" id="reg-password" placeholder="Password" required>
-                </div>
-                <div class="role-toggle">
-                    <span class="role-label">🎮 Player</span>
-                    <label class="switch">
-                        <input type="checkbox" id="reg-role">
-                        <span class="slider round"></span>
-                    </label>
-                    <span class="role-label">👑 Admin</span>
                 </div>
                 <button type="submit" class="btn-primary">CREATE ACCOUNT <i class="fas fa-user-plus"></i></button>
             </form>
@@ -98,6 +111,18 @@ document.querySelectorAll('.form-tab').forEach(tab => {
     });
 });
 
+function showAuthForm(formId) {
+    document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+    document.getElementById(formId)?.classList.add('active');
+    document.querySelectorAll('.form-tab').forEach(t => t.classList.remove('active'));
+    const tabName = formId === 'register-form' ? 'register' : 'login';
+    document.querySelector(`[data-form="${tabName}"]`)?.classList.add('active');
+}
+
+{% if pending_two_factor %}
+showAuthForm('two-factor-login-form');
+{% endif %}
+
 document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const response = await fetch('/auth/login', {
@@ -111,9 +136,32 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     const data = await response.json();
     if (data.success) {
         window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
+    } else if (data.requires_2fa) {
+        showAuthForm('two-factor-login-form');
+        document.getElementById('login-2fa-code').focus();
+        showToast(data.message || 'Enter your verification code', 'info');
     } else {
-        showToast('Invalid credentials', 'error');
+        showToast(data.error || 'Invalid credentials', 'error');
     }
+});
+
+document.getElementById('two-factor-login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const response = await fetch('/auth/2fa/verify-login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({code: document.getElementById('login-2fa-code').value})
+    });
+    const data = await response.json();
+    if (data.success) {
+        window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
+    } else {
+        showToast(data.error || 'Invalid verification code', 'error');
+    }
+});
+
+document.getElementById('back-to-login-btn').addEventListener('click', () => {
+    showAuthForm('login-form');
 });
 
 document.getElementById('register-form').addEventListener('submit', async (e) => {
@@ -123,15 +171,14 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             username: document.getElementById('reg-username').value,
-            password: document.getElementById('reg-password').value,
-            role: document.getElementById('reg-role').checked ? 'admin' : 'player'
+            password: document.getElementById('reg-password').value
         })
     });
     const data = await response.json();
     if (data.success) {
         window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
     } else {
-        showToast('Registration failed', 'error');
+        showToast(data.error || 'Registration failed', 'error');
     }
 });
 </script>

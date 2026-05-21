@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block content %}
 <div class="dashboard">
@@ -8,11 +8,17 @@
             <span>UI BATTLE ARENA</span>
         </div>
         <div class="nav-right">
-            <div class="user-menu">
-                <div class="avatar">{{ user.username[0].upper() }}</div>
-                <span>{{ user.username }}</span>
+            <button class="user-menu profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">
+                <div class="avatar" data-profile-avatar>
+                    {% if current_profile is defined and current_profile.avatar_url %}
+                    <img src="{{ current_profile.avatar_url }}" alt="{{ user.username }} avatar">
+                    {% else %}
+                    {{ user.username[0].upper() }}
+                    {% endif %}
+                </div>
+                <span data-profile-name>{{ user.username }}</span>
                 <i class="fas fa-chevron-down"></i>
-            </div>
+            </button>
             <a href="/auth/logout" class="logout-btn"><i class="fas fa-sign-out-alt"></i></a>
         </div>
     </nav>
@@ -31,7 +37,7 @@
             </div>
             <div class="stat-card-large">
                 <i class="fas fa-globe"></i>
-                <div class="stat-value">#{{ global_rank if global_rank else '—' }}</div>
+                <div class="stat-value">#{{ global_rank if global_rank else 'â€”' }}</div>
                 <div class="stat-label">Global Rank</div>
             </div>
         </div>
@@ -43,11 +49,11 @@
                 </div>
                 <div class="rooms-grid">
                     {% for room in rooms %}
-                    <div class="room-card" data-room-id="{{ room.id }}">
+                    <div class="room-card" data-room-id="{{ room.id }}" data-room-public="{{ 'true' if room.is_public else 'false' }}" data-room-code="{{ room.room_code if room.is_public else '' }}">
                         <div class="room-header">
-                            <span class="room-code">{{ room.room_code }}</span>
+                            <span class="room-code">{{ room.room_code if room.is_public else 'Private match' }}</span>
                             <span class="room-type-badge {% if room.challenge_type == 'html' %}html-type{% else %}image-type{% endif %}">
-                                {% if room.challenge_type == 'html' %}🖥 HTML{% else %}🖼 IMAGE{% endif %}
+                                {% if room.challenge_type == 'html' %}<i class="fas fa-code"></i> HTML{% else %}<i class="fas fa-image"></i> IMAGE{% endif %}
                             </span>
                         </div>
                         <div class="room-title">{{ room.challenge_title }}</div>
@@ -56,7 +62,14 @@
                             <div class="player-slot"><i class="fas fa-user"></i> {{ room.player2 }}</div>
                         </div>
                         <div class="room-status status-{{ room.status }}">{{ room.status|upper }}</div>
-                        <button class="btn-join" onclick="joinRoom({{ room.id }})">JOIN BATTLE <i class="fas fa-arrow-right"></i></button>
+                        <div class="room-choice-actions">
+                            <button class="btn-join" onclick="joinRoom({{ room.id }}, 'player')">
+                                <i class="fas fa-gamepad"></i> Join as Player
+                            </button>
+                            <button class="btn-spectate" onclick="joinRoom({{ room.id }}, 'spectator')">
+                                <i class="fas fa-eye"></i> Spectate
+                            </button>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -85,7 +98,7 @@
                 <div class="matches-list">
                     {% for match in recent_matches %}
                     <div class="match-row">
-                        <span class="match-date">{{ match.submitted_at.strftime('%m/%d') if match.submitted_at else '—' }}</span>
+                        <span class="match-date">{{ match.submitted_at.strftime('%m/%d') if match.submitted_at else 'â€”' }}</span>
                         <span class="match-accuracy {% if match.accuracy >= 80 %}high{% elif match.accuracy >= 50 %}mid{% else %}low{% endif %}">
                             {{ "%.1f"|format(match.accuracy) }}%
                         </span>
@@ -98,15 +111,76 @@
     </div>
 </div>
 
+<style>
+.room-choice-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+}
+.room-choice-actions .btn-join,
+.room-choice-actions .btn-spectate {
+    width: 100%;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+}
+.room-choice-actions .btn-spectate {
+    background: var(--bg-panel-alt);
+    color: var(--text-primary);
+}
+.room-choice-actions .btn-spectate:hover {
+    border-color: var(--accent-primary);
+}
+@media (max-width: 640px) {
+    .room-choice-actions { grid-template-columns: 1fr; }
+}
+</style>
+
 <script>
-function joinRoom(roomId) {
-    fetch('/room/join', {
+const CURRENT_USER_ROLE = {{ user.role | tojson }};
+
+function normalizeRoomCode(value) {
+    return String(value || '').trim().toUpperCase();
+}
+
+async function requestPlayerRoomCode(roomId) {
+    if (CURRENT_USER_ROLE === 'admin') return '';
+    const roomCard = document.querySelector(`[data-room-id="${roomId}"]`);
+    const publicCode = roomCard?.dataset.roomPublic === 'true' ? roomCard.dataset.roomCode : '';
+    if (publicCode) return publicCode;
+    if (typeof showPrompt !== 'function') {
+        return window.prompt('Enter the match room ID to join as a player:') || '';
+    }
+    return await showPrompt({
+        title: 'Match Room ID Required',
+        message: 'Players must enter the exact match room ID before joining. Spectators can enter without it.',
+        label: 'Match room ID',
+        placeholder: '#ABCDE',
+        required: true,
+        confirmText: 'Join Match'
+    });
+}
+
+async function joinRoom(roomId, joinAs = 'player') {
+    const endpoint = joinAs === 'spectator' ? '/room/spectate' : '/room/join';
+    const payload = {room_id: roomId, join_as: joinAs};
+    if (joinAs === 'player' && CURRENT_USER_ROLE !== 'admin') {
+        const code = await requestPlayerRoomCode(roomId);
+        if (code === null) return;
+        payload.room_code = normalizeRoomCode(code);
+    }
+
+    fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({room_id: roomId})
+        body: JSON.stringify(payload)
     }).then(res => res.json()).then(data => {
         if (data.success) {
-            window.location.href = `/arena/${data.room_id}`;
+            window.location.href = `/arena/${data.room_id}?role=${joinAs}`;
         } else {
             showToast(data.error || 'Cannot join room', 'error');
         }
@@ -114,3 +188,4 @@ function joinRoom(roomId) {
 }
 </script>
 {% endblock %}
+

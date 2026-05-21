@@ -1,41 +1,109 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
+﻿from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func, text
+from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timezone
 import os
 import uuid
 import secrets
+import time
+import json
+import re
+import base64
+import hashlib
+import hmac
+import struct
+import urllib.parse
+import urllib.request
 from functools import wraps
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 from PIL import Image
 import threading
 
-# IMPORTANT: Must import eventlet and monkey patch BEFORE anything else
-import eventlet
-eventlet.monkey_patch()
-
 app = Flask(__name__)
-app.config['SECRET_KEY'] = secrets.token_hex(32)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
+app.config['GOOGLE_DISCOVERY_AUTH_URL'] = 'https://accounts.google.com/o/oauth2/v2/auth'
+app.config['GOOGLE_TOKEN_URL'] = 'https://oauth2.googleapis.com/token'
+app.config['GOOGLE_USERINFO_URL'] = 'https://openidconnect.googleapis.com/v1/userinfo'
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-from models import db, User, Challenge, Room, Submission, ChatMessage
+from models import (
+    db, User, Challenge, Room, Submission, ChatMessage,
+    Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard
+)
 from auth import login_required, admin_required, get_current_user
 
 db.init_app(app)
 
-# Use eventlet for async - this is critical for WebSocket to work
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+# The browser client uses long-polling, so threading avoids Eventlet warnings on Windows/Python 3.14.
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 room_timers = {}
 room_preview_data = {}
 connected_users = {}
+room_spectators = {}
+room_typing_users = {}
+PROFILE_STORE = os.path.join(app.root_path, 'profile_store.json')
+LEADERBOARD_STREAK_TARGET = 5
+schema_upgrades_ready = False
+CARD_TEMPLATES = [
+    {'id': 'champion', 'name': 'Champion Crest', 'icon': 'fa-trophy', 'layout': 'classic', 'shape': 'rounded', 'primary': '#f59e0b', 'secondary': '#111827'},
+    {'id': 'loyalty', 'name': 'Loyalty Star', 'icon': 'fa-star', 'layout': 'badge', 'shape': 'ticket', 'primary': '#22d3ee', 'secondary': '#0f172a'},
+    {'id': 'consistency', 'name': 'Consistency Ring', 'icon': 'fa-repeat', 'layout': 'split', 'shape': 'rounded', 'primary': '#10b981', 'secondary': '#1e293b'},
+    {'id': 'focus', 'name': 'Focus Lens', 'icon': 'fa-bullseye', 'layout': 'classic', 'shape': 'hex', 'primary': '#8b5cf6', 'secondary': '#f8fafc'},
+    {'id': 'mentor', 'name': 'Mentor Flame', 'icon': 'fa-fire', 'layout': 'diagonal', 'shape': 'rounded', 'primary': '#ef4444', 'secondary': '#111827'},
+    {'id': 'creative', 'name': 'Creative Spark', 'icon': 'fa-wand-magic-sparkles', 'layout': 'badge', 'shape': 'wave', 'primary': '#ec4899', 'secondary': '#fef3c7'},
+    {'id': 'precision', 'name': 'Precision Grid', 'icon': 'fa-crosshairs', 'layout': 'split', 'shape': 'sharp', 'primary': '#3b82f6', 'secondary': '#e0f2fe'},
+    {'id': 'teamwork', 'name': 'Team Builder', 'icon': 'fa-users', 'layout': 'classic', 'shape': 'ticket', 'primary': '#14b8a6', 'secondary': '#042f2e'},
+    {'id': 'resilience', 'name': 'Resilience Shield', 'icon': 'fa-shield-halved', 'layout': 'diagonal', 'shape': 'hex', 'primary': '#6366f1', 'secondary': '#eef2ff'},
+    {'id': 'innovation', 'name': 'Innovation Orbit', 'icon': 'fa-atom', 'layout': 'badge', 'shape': 'wave', 'primary': '#06b6d4', 'secondary': '#164e63'},
+    {'id': 'leadership', 'name': 'Leadership Seal', 'icon': 'fa-crown', 'layout': 'classic', 'shape': 'rounded', 'primary': '#d97706', 'secondary': '#fff7ed'},
+    {'id': 'growth', 'name': 'Growth Path', 'icon': 'fa-seedling', 'layout': 'split', 'shape': 'sharp', 'primary': '#84cc16', 'secondary': '#1a2e05'}
+]
+AVATAR_TEMPLATES = [
+    {'id': 'spark', 'name': 'Spark', 'icon': 'fa-bolt', 'shape': 'circle'},
+    {'id': 'pilot', 'name': 'Pilot', 'icon': 'fa-rocket', 'shape': 'shield'},
+    {'id': 'artist', 'name': 'Artist', 'icon': 'fa-palette', 'shape': 'blob'},
+    {'id': 'coder', 'name': 'Coder', 'icon': 'fa-code', 'shape': 'square'},
+    {'id': 'strategist', 'name': 'Strategist', 'icon': 'fa-chess-knight', 'shape': 'hex'},
+    {'id': 'builder', 'name': 'Builder', 'icon': 'fa-hammer', 'shape': 'circle'},
+    {'id': 'guardian', 'name': 'Guardian', 'icon': 'fa-shield-heart', 'shape': 'shield'},
+    {'id': 'navigator', 'name': 'Navigator', 'icon': 'fa-compass', 'shape': 'blob'},
+    {'id': 'analyst', 'name': 'Analyst', 'icon': 'fa-chart-line', 'shape': 'square'},
+    {'id': 'maker', 'name': 'Maker', 'icon': 'fa-cubes', 'shape': 'hex'},
+    {'id': 'visionary', 'name': 'Visionary', 'icon': 'fa-eye', 'shape': 'circle'},
+    {'id': 'anchor', 'name': 'Anchor', 'icon': 'fa-anchor', 'shape': 'shield'},
+    {'id': 'storm', 'name': 'Storm', 'icon': 'fa-cloud-bolt', 'shape': 'blob'},
+    {'id': 'logic', 'name': 'Logic', 'icon': 'fa-brain', 'shape': 'square'},
+    {'id': 'signal', 'name': 'Signal', 'icon': 'fa-signal', 'shape': 'hex'},
+    {'id': 'craft', 'name': 'Craft', 'icon': 'fa-gem', 'shape': 'circle'}
+]
+BAD_LANGUAGE_TERMS = {
+    'asshole', 'bastard', 'bitch', 'bullshit', 'cunt', 'damn', 'dick',
+    'fag', 'faggot', 'fuck', 'motherfucker', 'nigga', 'nigger', 'piss',
+    'prick', 'pussy', 'shit', 'slut', 'whore'
+}
+SENSITIVE_LANGUAGE_TERMS = {
+    'abuse', 'abused', 'abusing', 'assault', 'assaulted', 'assaulting',
+    'assaults', 'assult', 'assults', 'bomb', 'blood', 'die', 'drug', 'drugs', 'harm', 'harass',
+    'harassed', 'harassment', 'hate', 'immoral', 'kill', 'killed', 'killing',
+    'kills', 'molest', 'molested', 'molesting', 'murder', 'naked', 'nude',
+    'porn', 'rape', 'raped', 'raping', 'sex', 'sexual', 'sexy', 'shoot',
+    'suicide', 'terror', 'threat', 'violence', 'violent', 'weapon'
+}
+LEET_TRANSLATION = str.maketrans({'0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's'})
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -45,16 +113,857 @@ def generate_room_code():
     import string
     return '#' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
 
+def clean_hex_color(value, fallback='#22d3ee'):
+    value = (value or '').strip()
+    return value if re.fullmatch(r'#[0-9a-fA-F]{6}', value) else fallback
+
+def get_card_template(template_id):
+    return next((item for item in CARD_TEMPLATES if item['id'] == template_id), CARD_TEMPLATES[0])
+
+def get_avatar_template(template_id):
+    return next((item for item in AVATAR_TEMPLATES if item['id'] == template_id), AVATAR_TEMPLATES[0])
+
+def serialize_award_card(card):
+    template = get_card_template(card.card_template)
+    avatar = get_avatar_template(card.avatar_template)
+    color = card.student_color or card.primary_color or template['primary']
+    return {
+        'id': card.id,
+        'username': card.user.username if card.user else 'Student',
+        'title': card.title,
+        'reason': card.reason or '',
+        'message': card.message or '',
+        'card_template': card.card_template,
+        'avatar_template': card.avatar_template,
+        'accent_icon': card.accent_icon or template['icon'],
+        'avatar_label': card.avatar_label or (card.user.username if card.user else 'Student'),
+        'primary_color': card.primary_color or template['primary'],
+        'secondary_color': card.secondary_color or template['secondary'],
+        'student_color': card.student_color,
+        'display_color': color,
+        'shape': card.shape or template['shape'],
+        'avatar_shape': card.avatar_shape or avatar['shape'],
+        'layout': card.layout or template['layout'],
+        'template_name': template['name'],
+        'avatar_name': avatar['name'],
+        'avatar_icon': avatar['icon'],
+        'created_at': card.created_at
+    }
+
+def normalize_chat_text(message):
+    normalized = (message or '').lower().translate(LEET_TRANSLATION)
+    return re.sub(r'[^a-z0-9]+', ' ', normalized)
+
+def contains_bad_language(message):
+    words = normalize_chat_text(message).split()
+    if any(term in words for term in BAD_LANGUAGE_TERMS):
+        return True
+    for index in range(len(words)):
+        combined = ''
+        for word in words[index:index + 5]:
+            combined += word
+            if combined in BAD_LANGUAGE_TERMS:
+                return True
+            if not any(term.startswith(combined) for term in BAD_LANGUAGE_TERMS):
+                break
+    return False
+
+def contains_sensitive_language(message):
+    words = normalize_chat_text(message).split()
+    if any(term in words for term in SENSITIVE_LANGUAGE_TERMS):
+        return True
+    for index in range(len(words)):
+        combined = ''
+        for word in words[index:index + 5]:
+            combined += word
+            if combined in SENSITIVE_LANGUAGE_TERMS:
+                return True
+            if not any(term.startswith(combined) for term in SENSITIVE_LANGUAGE_TERMS):
+                break
+    return False
+
+def serialize_chat_message(chat_msg):
+    return {
+        'id': chat_msg.id,
+        'username': chat_msg.user.username if chat_msg.user else 'SYSTEM',
+        'message': chat_msg.message,
+        'is_system': bool(chat_msg.is_system),
+        'is_flagged': bool(getattr(chat_msg, 'is_flagged', False)),
+        'flag_reason': getattr(chat_msg, 'flag_reason', None),
+        'timestamp': (chat_msg.sent_at or datetime.utcnow()).isoformat()
+    }
+
+def serialize_admin_chat_message(chat_msg, admin_username=None):
+    room = db.session.get(Room, chat_msg.room_id) if chat_msg.room_id else None
+    message_text = chat_msg.message or ''
+    mention_text = f'@{admin_username}'.lower() if admin_username else ''
+    is_mention = bool(mention_text and mention_text in message_text.lower()) or '@admin' in message_text.lower()
+    return {
+        'id': chat_msg.id,
+        'room_id': chat_msg.room_id,
+        'room_code': room.room_code if room else f'Room {chat_msg.room_id}',
+        'username': chat_msg.user.username if chat_msg.user else 'System',
+        'message': message_text,
+        'is_system': bool(chat_msg.is_system),
+        'is_flagged': bool(getattr(chat_msg, 'is_flagged', False)),
+        'flag_reason': getattr(chat_msg, 'flag_reason', None),
+        'is_mention': is_mention,
+        'time': chat_msg.sent_at.strftime('%Y-%m-%d %H:%M') if chat_msg.sent_at else ''
+    }
+
+def google_oauth_configured():
+    return bool(app.config['GOOGLE_CLIENT_ID'] and app.config['GOOGLE_CLIENT_SECRET'])
+
+def complete_login(user):
+    session.pop('pending_2fa_user_id', None)
+    session['user_id'] = user.id
+    session['username'] = user.username
+    session['role'] = user.role
+
+def generate_totp_secret():
+    return base64.b32encode(secrets.token_bytes(20)).decode('ascii').rstrip('=')
+
+def _totp_digest(secret, counter):
+    padded_secret = secret + ('=' * ((8 - len(secret) % 8) % 8))
+    key = base64.b32decode(padded_secret.upper())
+    msg = struct.pack('>Q', counter)
+    digest = hmac.new(key, msg, hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    token = struct.unpack('>I', digest[offset:offset + 4])[0] & 0x7FFFFFFF
+    return f'{token % 1000000:06d}'
+
+def current_totp(secret, timestamp=None):
+    timestamp = int(timestamp or time.time())
+    return _totp_digest(secret, timestamp // 30)
+
+def verify_totp(secret, code, window=1):
+    if not secret or not code:
+        return False
+    code = re.sub(r'\s+', '', str(code))
+    if not re.fullmatch(r'\d{6}', code):
+        return False
+    counter = int(time.time()) // 30
+    return any(hmac.compare_digest(_totp_digest(secret, counter + step), code) for step in range(-window, window + 1))
+
+def totp_otpauth_uri(user, secret):
+    label = urllib.parse.quote(f'UI Battle Arena:{user.username}')
+    issuer = urllib.parse.quote('UI Battle Arena')
+    return f'otpauth://totp/{label}?secret={secret}&issuer={issuer}&digits=6&period=30'
+
+def fetch_json_url(url, payload=None, headers=None):
+    data = None
+    method = 'GET'
+    if payload is not None:
+        data = urllib.parse.urlencode(payload).encode('utf-8')
+        method = 'POST'
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    with urllib.request.urlopen(req, timeout=12) as response:
+        return json.loads(response.read().decode('utf-8'))
+
+def ensure_schema_upgrades():
+    global schema_upgrades_ready
+    if schema_upgrades_ready:
+        return
+    db.create_all()
+    user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(users)")).fetchall()}
+    user_additions = {
+        'email': 'ALTER TABLE users ADD COLUMN email VARCHAR(255)',
+        'auth_provider': "ALTER TABLE users ADD COLUMN auth_provider VARCHAR(20) DEFAULT 'local'",
+        'google_sub': 'ALTER TABLE users ADD COLUMN google_sub VARCHAR(255)',
+        'two_factor_secret': 'ALTER TABLE users ADD COLUMN two_factor_secret VARCHAR(64)',
+        'two_factor_enabled': 'ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT 0',
+        'leaderboard_unlocked_at': 'ALTER TABLE users ADD COLUMN leaderboard_unlocked_at DATETIME',
+        'leaderboard_awarded': 'ALTER TABLE users ADD COLUMN leaderboard_awarded BOOLEAN DEFAULT 0',
+        'leaderboard_awarded_at': 'ALTER TABLE users ADD COLUMN leaderboard_awarded_at DATETIME',
+        'leaderboard_awarded_by': 'ALTER TABLE users ADD COLUMN leaderboard_awarded_by INTEGER',
+        'leaderboard_award_reason': 'ALTER TABLE users ADD COLUMN leaderboard_award_reason VARCHAR(200)',
+        'leaderboard_award_details': 'ALTER TABLE users ADD COLUMN leaderboard_award_details TEXT',
+        'leaderboard_award_color': 'ALTER TABLE users ADD COLUMN leaderboard_award_color VARCHAR(20)'
+    }
+    for column, ddl in user_additions.items():
+        if column not in user_columns:
+            db.session.execute(text(ddl))
+
+    challenge_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(challenges)")).fetchall()}
+    challenge_additions = {
+        'challenge_type': "ALTER TABLE challenges ADD COLUMN challenge_type VARCHAR(10) DEFAULT 'image'",
+        'target_html': 'ALTER TABLE challenges ADD COLUMN target_html TEXT',
+        'target_css': 'ALTER TABLE challenges ADD COLUMN target_css TEXT',
+        'starter_html': 'ALTER TABLE challenges ADD COLUMN starter_html TEXT',
+        'starter_css': 'ALTER TABLE challenges ADD COLUMN starter_css TEXT',
+        'html_locked': 'ALTER TABLE challenges ADD COLUMN html_locked BOOLEAN DEFAULT 1'
+    }
+    for column, ddl in challenge_additions.items():
+        if column not in challenge_columns:
+            db.session.execute(text(ddl))
+
+    chat_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(chat_messages)")).fetchall()}
+    chat_additions = {
+        'is_flagged': 'ALTER TABLE chat_messages ADD COLUMN is_flagged BOOLEAN DEFAULT 0',
+        'flag_reason': 'ALTER TABLE chat_messages ADD COLUMN flag_reason VARCHAR(160)',
+        'flagged_by': 'ALTER TABLE chat_messages ADD COLUMN flagged_by INTEGER'
+    }
+    for column, ddl in chat_additions.items():
+        if column not in chat_columns:
+            db.session.execute(text(ddl))
+
+    room_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(rooms)")).fetchall()}
+    room_additions = {
+        'is_public': 'ALTER TABLE rooms ADD COLUMN is_public BOOLEAN DEFAULT 0'
+    }
+    for column, ddl in room_additions.items():
+        if column not in room_columns:
+            db.session.execute(text(ddl))
+    db.session.commit()
+    schema_upgrades_ready = True
+
+def get_best_room_submission(room_id, user_id):
+    submissions = Submission.query.filter_by(room_id=room_id, user_id=user_id).order_by(
+        Submission.is_final.desc(),
+        Submission.accuracy.desc(),
+        Submission.submitted_at.desc()
+    ).all()
+    return submissions[0] if submissions else None
+
+def get_room_winner_id(room):
+    if not room or not room.player1_id or not room.player2_id:
+        return None
+
+    p1_sub = get_best_room_submission(room.id, room.player1_id)
+    p2_sub = get_best_room_submission(room.id, room.player2_id)
+    if not p1_sub and not p2_sub:
+        return None
+
+    p1_score = p1_sub.accuracy if p1_sub and not p1_sub.is_forfeit else 0
+    p2_score = p2_sub.accuracy if p2_sub and not p2_sub.is_forfeit else 0
+    if p1_score == p2_score:
+        return None
+    return room.player1_id if p1_score > p2_score else room.player2_id
+
+def datetime_sort_value(value):
+    if not value:
+        return 0
+    if value.tzinfo:
+        return value.timestamp()
+    return value.replace(tzinfo=timezone.utc).timestamp()
+
+def get_user_match_events(user_id):
+    rooms = Room.query.filter((Room.player1_id == user_id) | (Room.player2_id == user_id)).all()
+    room_ids = {room.id for room in rooms}
+    submitted_room_ids = {
+        room_id for (room_id,) in db.session.query(Submission.room_id).filter_by(user_id=user_id).distinct().all()
+        if room_id is not None
+    }
+    for room_id in submitted_room_ids - room_ids:
+        room = db.session.get(Room, room_id)
+        if room:
+            rooms.append(room)
+
+    events = []
+    for room in rooms:
+        own_sub = get_best_room_submission(room.id, user_id)
+        winner_id = get_room_winner_id(room)
+        opponent_id = room.player2_id if room.player1_id == user_id else room.player1_id
+        opponent = db.session.get(User, opponent_id) if opponent_id else None
+        completed_at = room.ended_at or (own_sub.submitted_at if own_sub else room.created_at)
+
+        if winner_id == user_id:
+            result = 'win'
+        elif winner_id:
+            result = 'loss'
+        elif own_sub:
+            result = 'draw' if opponent_id else ('win' if own_sub.accuracy >= 50 and not own_sub.is_forfeit else 'loss')
+        else:
+            result = 'pending'
+
+        events.append({
+            'room': room,
+            'submission': own_sub,
+            'opponent': opponent,
+            'result': result,
+            'completed_at': completed_at or datetime.min
+        })
+
+    return sorted(events, key=lambda item: datetime_sort_value(item['completed_at']), reverse=True)
+
+def calculate_player_record(user):
+    events = [event for event in get_user_match_events(user.id) if event['result'] != 'pending']
+    wins = sum(1 for event in events if event['result'] == 'win')
+    losses = sum(1 for event in events if event['result'] == 'loss')
+    draws = sum(1 for event in events if event['result'] == 'draw')
+    submissions = [event['submission'] for event in events if event['submission'] and not event['submission'].is_forfeit]
+    best_accuracy = max((sub.accuracy for sub in submissions), default=0)
+    avg_accuracy = round(sum(sub.accuracy for sub in submissions) / len(submissions), 1) if submissions else 0
+
+    current_streak = 0
+    for event in events:
+        if event['result'] == 'win':
+            current_streak += 1
+        else:
+            break
+
+    best_streak = 0
+    running = 0
+    for event in reversed(events):
+        if event['result'] == 'win':
+            running += 1
+            best_streak = max(best_streak, running)
+        else:
+            running = 0
+
+    matches_played = len(events)
+    win_rate = round((wins / matches_played) * 100, 1) if matches_played else 0
+    power_score = round(
+        (wins * 120)
+        + (best_streak * 35)
+        + (current_streak * 20)
+        + (avg_accuracy * 1.8)
+        + (best_accuracy * 1.2)
+        + (matches_played * 8)
+        - (losses * 12),
+        1
+    )
+
+    return {
+        'matches_played': matches_played,
+        'wins': wins,
+        'losses': losses,
+        'draws': draws,
+        'win_rate': win_rate,
+        'avg_accuracy': avg_accuracy,
+        'best_accuracy': round(best_accuracy, 1),
+        'current_streak': current_streak,
+        'best_streak': best_streak,
+        'power_score': max(power_score, 0),
+        'events': events
+    }
+
+def sync_user_competition_state(user):
+    record = calculate_player_record(user)
+    user.matches_played = record['matches_played']
+    user.total_wins = record['wins']
+    user.best_accuracy = record['best_accuracy']
+    if record['best_streak'] >= LEADERBOARD_STREAK_TARGET and not user.leaderboard_unlocked_at:
+        user.leaderboard_unlocked_at = datetime.now(timezone.utc)
+    return record
+
+def finalize_room_results(room):
+    if not room:
+        return
+    final_submissions = Submission.query.filter_by(room_id=room.id).all()
+    for sub in final_submissions:
+        sub.is_final = True
+    if room.player1:
+        sync_user_competition_state(room.player1)
+    if room.player2:
+        sync_user_competition_state(room.player2)
+    sync_tournament_match_for_room(room)
+
+def user_has_leaderboard_access(user, record=None):
+    record = record or calculate_player_record(user)
+    return bool(user.leaderboard_awarded or user.leaderboard_unlocked_at or record['best_streak'] >= LEADERBOARD_STREAK_TARGET)
+
+def build_leaderboard_rows():
+    rows = []
+    for player in User.query.filter_by(role='player').all():
+        record = sync_user_competition_state(player)
+        rows.append({
+            'user': player,
+            'record': record,
+            'leaderboard_unlocked': user_has_leaderboard_access(player, record),
+            'unlock_reason': 'Admin award' if player.leaderboard_awarded else (
+                f"{record['best_streak']} win streak" if record['best_streak'] >= LEADERBOARD_STREAK_TARGET else 'Locked'
+            )
+        })
+    db.session.commit()
+    return sorted(rows, key=lambda row: (row['record']['power_score'], row['record']['win_rate'], row['record']['best_accuracy']), reverse=True)
+
+def build_leaderboard_award_card(user, row, rank):
+    if not user or not row or not row.get('leaderboard_unlocked'):
+        return None
+    record = row['record']
+    events = record.get('events', [])
+    challenge_names = []
+    for event in events:
+        room = event.get('room')
+        title = room.challenge.title if room and room.challenge else None
+        if title and title not in challenge_names:
+            challenge_names.append(title)
+    tournament_entries = TournamentParticipant.query.filter_by(user_id=user.id).order_by(TournamentParticipant.created_at.desc()).limit(4).all()
+    tournament_names = [
+        entry.tournament.name for entry in tournament_entries
+        if entry.tournament and entry.tournament.name
+    ]
+    if user.leaderboard_awarded:
+        reason = user.leaderboard_award_reason or 'Awarded manually by an admin'
+        details = user.leaderboard_award_details or 'Admin recognized this player for leaderboard access.'
+        award_type = 'Admin Award'
+        award_date = user.leaderboard_awarded_at or datetime.now(timezone.utc)
+    else:
+        reason = f"Earned automatically with a best streak of {record['best_streak']} wins"
+        details = (
+            f"Qualified through real match performance: {record['wins']} wins, "
+            f"{record['matches_played']} matches played, {record['best_accuracy']}% best accuracy, "
+            f"and {round(record['power_score'], 1)} power score."
+        )
+        award_type = 'Performance Award'
+        award_date = user.leaderboard_unlocked_at or datetime.now(timezone.utc)
+    participation = ', '.join(challenge_names[:4]) if challenge_names else 'No completed challenge records yet'
+    tournaments = ', '.join(tournament_names[:4]) if tournament_names else 'No tournament entries yet'
+    return {
+        'username': user.username,
+        'rank': rank,
+        'award_type': award_type,
+        'reason': reason,
+        'details': details,
+        'participation': participation,
+        'tournaments': tournaments,
+        'power_score': round(record['power_score'], 1),
+        'wins': record['wins'],
+        'matches_played': record['matches_played'],
+        'best_accuracy': record['best_accuracy'],
+        'best_streak': record['best_streak'],
+        'date': award_date,
+        'card_id': f"LB-{user.id:04d}-{datetime_sort_value(award_date):.0f}",
+        'color': user.leaderboard_award_color or '#d97706'
+    }
+
+def build_profile_achievements(user, record, rank=None, award_card=None):
+    profile = get_profile_view_data(user.id)
+    matches_played = int(record.get('matches_played') or 0)
+    wins = int(record.get('wins') or 0)
+    best_accuracy = float(record.get('best_accuracy') or 0)
+    best_streak = int(record.get('best_streak') or 0)
+    items = [
+        {'title': 'First Match', 'description': 'Completed the first arena match.', 'icon': 'fa-flag-checkered', 'unlocked': matches_played >= 1},
+        {'title': 'Perfect Score', 'description': 'Reached 100% accuracy in a challenge.', 'icon': 'fa-star', 'unlocked': best_accuracy >= 99.9},
+        {'title': 'Win Streak', 'description': 'Built a 3 match winning streak.', 'icon': 'fa-fire', 'unlocked': best_streak >= 3},
+        {'title': 'Veteran Player', 'description': 'Played at least 10 matches.', 'icon': 'fa-shield-halved', 'unlocked': matches_played >= 10},
+        {'title': 'Leaderboard Elite', 'description': 'Unlocked or received leaderboard recognition.', 'icon': 'fa-ranking-star', 'unlocked': bool(user_has_leaderboard_access(user, record))},
+        {'title': 'Profile Avatar Card', 'description': 'Added a custom profile avatar.', 'icon': 'fa-id-card', 'unlocked': bool(profile.get('avatar_url'))},
+    ]
+    return {
+        'achievement_items': items,
+        'unlocked_count': sum(1 for item in items if item['unlocked']),
+        'award_card': award_card,
+        'rank': rank,
+        'avatar_url': profile.get('avatar_url'),
+        'bio': profile.get('bio', ''),
+        'wins': wins,
+        'matches_played': matches_played,
+        'best_accuracy': best_accuracy,
+        'best_streak': best_streak
+    }
+
+TOURNAMENT_SIZES = {4, 8, 16, 32}
+ROUND_NAMES_BY_SIZE = {
+    32: 'Round of 32',
+    16: 'Round of 16',
+    8: 'Quarter Finals',
+    4: 'Semi Finals',
+    2: 'Finals'
+}
+
+def tournament_round_name(player_count):
+    return ROUND_NAMES_BY_SIZE.get(player_count, f'Round of {player_count}')
+
+def get_player_room_score(room_id, user_id):
+    sub = get_best_room_submission(room_id, user_id)
+    if not sub or sub.is_forfeit:
+        return 0.0
+    return round(float(sub.accuracy or 0), 1)
+
+def get_participant(tournament_id, user_id):
+    return TournamentParticipant.query.filter_by(tournament_id=tournament_id, user_id=user_id).first()
+
+def certificate_type_for_position(position):
+    if position == 'Champion':
+        return 'champion'
+    if position == 'Runner-up':
+        return 'runner-up'
+    if position == 'Semi-finalist':
+        return 'semi-finalist'
+    return 'participant'
+
+def certificate_id_for(tournament_id, user_id):
+    return f"UIBA-{tournament_id:04d}-{user_id:04d}-{secrets.token_hex(3).upper()}"
+
+def create_tournament_room(tournament, player1_id=None, player2_id=None):
+    room = Room(
+        room_code=generate_room_code(),
+        challenge_id=tournament.challenge_id,
+        status='waiting',
+        player1_id=player1_id,
+        player2_id=player2_id,
+        is_public=False
+    )
+    db.session.add(room)
+    db.session.flush()
+    return room
+
+def create_tournament_match(tournament, round_number, round_name, match_number, player1_id, player2_id):
+    room = create_tournament_room(tournament, player1_id, player2_id)
+    match = TournamentMatch(
+        tournament_id=tournament.id,
+        round_number=round_number,
+        round_name=round_name,
+        match_number=match_number,
+        room_id=room.id,
+        player1_id=player1_id,
+        player2_id=player2_id,
+        status='waiting'
+    )
+    db.session.add(match)
+    db.session.flush()
+    return match
+
+def log_admin_action(admin_id, action_type, reason, tournament_id=None, player_id=None, tournament_match_id=None, admin_note=None):
+    action = AdminAction(
+        admin_id=admin_id,
+        action_type=action_type,
+        reason=(reason or '').strip()[:200] or 'No reason provided',
+        admin_note=(admin_note or '').strip() or None,
+        tournament_id=tournament_id,
+        tournament_match_id=tournament_match_id,
+        player_id=player_id
+    )
+    db.session.add(action)
+    return action
+
+def serialize_tournament_match(match):
+    room = match.room
+    p1_score = get_player_room_score(room.id, match.player1_id) if room and match.player1_id else 0
+    p2_score = get_player_room_score(room.id, match.player2_id) if room and match.player2_id else 0
+    return {
+        'id': match.id,
+        'round_number': match.round_number,
+        'round_name': match.round_name,
+        'match_number': match.match_number,
+        'status': match.status,
+        'room_id': match.room_id,
+        'room_code': room.room_code if room and room.is_public else None,
+        'player1': match.player1.username if match.player1 else None,
+        'player1_id': match.player1_id,
+        'player1_score': p1_score,
+        'player2': match.player2.username if match.player2 else None,
+        'player2_id': match.player2_id,
+        'player2_score': p2_score,
+        'winner': match.winner.username if match.winner else None,
+        'winner_id': match.winner_id,
+        'manual_override': bool(match.is_manual_override)
+    }
+
+def serialize_tournament(tournament):
+    matches = TournamentMatch.query.filter_by(tournament_id=tournament.id).order_by(
+        TournamentMatch.round_number.asc(),
+        TournamentMatch.match_number.asc()
+    ).all()
+    rounds = []
+    for match in matches:
+        if not rounds or rounds[-1]['round_number'] != match.round_number:
+            rounds.append({'round_number': match.round_number, 'name': match.round_name, 'matches': []})
+        rounds[-1]['matches'].append(serialize_tournament_match(match))
+
+    participants = TournamentParticipant.query.filter_by(tournament_id=tournament.id).order_by(
+        TournamentParticipant.seed.asc()
+    ).all()
+    participant_rows = [{
+        'id': participant.id,
+        'user_id': participant.user_id,
+        'username': participant.user.username if participant.user else 'Player',
+        'seed': participant.seed,
+        'status': participant.status,
+        'position': participant.position,
+        'final_score': round(participant.final_score or 0, 1),
+        'matches_played': participant.matches_played or 0,
+        'certificate_id': participant.certificate_id,
+        'reason': participant.reason,
+        'admin_note': participant.admin_note
+    } for participant in participants]
+    return {
+        'id': tournament.id,
+        'name': tournament.name,
+        'size': tournament.size,
+        'status': tournament.status,
+        'auto_advance': bool(tournament.auto_advance),
+        'challenge': tournament.challenge.title if tournament.challenge else None,
+        'created_at': tournament.created_at.isoformat() if tournament.created_at else None,
+        'created_at_label': tournament.created_at.strftime('%Y-%m-%d') if tournament.created_at else '',
+        'ended_at': tournament.ended_at.isoformat() if tournament.ended_at else None,
+        'ended_at_label': tournament.ended_at.strftime('%Y-%m-%d') if tournament.ended_at else '',
+        'rounds': rounds,
+        'participants': participant_rows
+    }
+
+def update_participant_from_result(tournament_id, user_id, score, status=None, position=None):
+    participant = get_participant(tournament_id, user_id)
+    if not participant:
+        return
+    participant.final_score = max(float(participant.final_score or 0), float(score or 0))
+    participant.matches_played = MatchResult.query.join(TournamentMatch).filter(
+        TournamentMatch.tournament_id == tournament_id,
+        MatchResult.player_id == user_id
+    ).count()
+    if status:
+        participant.status = status
+    if position:
+        participant.position = position
+
+def save_match_result(match, player_id, score, is_winner, source='auto'):
+    result = MatchResult.query.filter_by(tournament_match_id=match.id, player_id=player_id).first()
+    if not result:
+        result = MatchResult(
+            tournament_match_id=match.id,
+            room_id=match.room_id,
+            player_id=player_id
+        )
+        db.session.add(result)
+    result.score = round(float(score or 0), 1)
+    result.is_winner = bool(is_winner)
+    result.source = source
+    result.created_at = datetime.now(timezone.utc)
+    return result
+
+def complete_tournament_match(match, winner_id, source='auto'):
+    if not match or not winner_id:
+        return False
+    player_ids = [pid for pid in [match.player1_id, match.player2_id] if pid]
+    if winner_id not in player_ids:
+        return False
+    scores = {pid: get_player_room_score(match.room_id, pid) for pid in player_ids}
+    for pid in player_ids:
+        save_match_result(match, pid, scores[pid], pid == winner_id, source)
+    loser_ids = [pid for pid in player_ids if pid != winner_id]
+    match.winner_id = winner_id
+    match.status = 'completed'
+    match.completed_at = datetime.now(timezone.utc)
+    if source == 'manual':
+        match.is_manual_override = True
+    update_participant_from_result(match.tournament_id, winner_id, scores.get(winner_id, 0), status='active')
+    for loser_id in loser_ids:
+        update_participant_from_result(match.tournament_id, loser_id, scores.get(loser_id, 0), status='eliminated', position=match.round_name)
+    maybe_advance_tournament(match.tournament)
+    return True
+
+def sync_tournament_match_for_room(room):
+    match = TournamentMatch.query.filter_by(room_id=room.id).first()
+    if not match or match.status in {'completed', 'disqualified'} or match.is_manual_override:
+        return
+    if not match.tournament or not match.tournament.auto_advance:
+        return
+    if room.status != 'ended':
+        return
+    player_ids = [pid for pid in [match.player1_id, match.player2_id] if pid]
+    if len(player_ids) < 2:
+        return
+    scores = {pid: get_player_room_score(room.id, pid) for pid in player_ids}
+    if scores[player_ids[0]] == scores[player_ids[1]]:
+        match.status = 'completed'
+        return
+    winner_id = max(player_ids, key=lambda pid: scores[pid])
+    complete_tournament_match(match, winner_id, 'auto')
+
+def maybe_advance_tournament(tournament):
+    if not tournament:
+        return
+    current_round = db.session.query(func.max(TournamentMatch.round_number)).filter_by(tournament_id=tournament.id).scalar()
+    current_matches = TournamentMatch.query.filter_by(tournament_id=tournament.id, round_number=current_round).all()
+    if not current_matches or any(match.status != 'completed' or not match.winner_id for match in current_matches):
+        socketio.emit('tournament_bracket_update', {'tournament': serialize_tournament(tournament)}, room=f"tournament_{tournament.id}")
+        return
+
+    winners = [match.winner_id for match in sorted(current_matches, key=lambda item: item.match_number)]
+    if len(winners) == 1:
+        champion_id = winners[0]
+        tournament.status = 'completed'
+        tournament.ended_at = datetime.now(timezone.utc)
+        for participant in tournament.participants:
+            if participant.user_id == champion_id:
+                participant.status = 'champion'
+                participant.position = 'Champion'
+            elif participant.position == 'Finals':
+                participant.position = 'Runner-up'
+            elif participant.position == 'Semi Finals':
+                participant.position = 'Semi-finalist'
+            else:
+                participant.position = participant.position or 'Participant'
+            if not participant.certificate_id:
+                participant.certificate_id = certificate_id_for(tournament.id, participant.user_id)
+        socketio.emit('tournament_completed', {'tournament_id': tournament.id, 'winner_id': champion_id}, room=f"tournament_{tournament.id}")
+        return
+
+    next_round_number = current_round + 1
+    round_name = tournament_round_name(len(winners))
+    existing_next = TournamentMatch.query.filter_by(tournament_id=tournament.id, round_number=next_round_number).count()
+    if existing_next:
+        return
+    for index in range(0, len(winners), 2):
+        create_tournament_match(
+            tournament,
+            next_round_number,
+            round_name,
+            (index // 2) + 1,
+            winners[index],
+            winners[index + 1] if index + 1 < len(winners) else None
+        )
+    tournament.status = 'live'
+    socketio.emit('tournament_advancement', {'tournament': serialize_tournament(tournament)}, room=f"tournament_{tournament.id}")
+
 def update_user_stats(user_id):
     user = db.session.get(User, user_id)
     if not user:
         return
-    submissions = Submission.query.filter_by(user_id=user_id, is_forfeit=False).all()
-    user.matches_played = len(submissions)
-    if submissions:
-        best = max(s.accuracy for s in submissions)
-        user.best_accuracy = max(user.best_accuracy, best)
+    sync_user_competition_state(user)
     db.session.commit()
+
+def profile_payload(user):
+    profiles = load_profile_store()
+    profile = profiles.get(str(user.id), {})
+    data = user.to_dict()
+    data['bio'] = profile.get('bio', '')
+    data['avatar_url'] = url_for('static', filename='uploads/' + profile['avatar_filename']) if profile.get('avatar_filename') else None
+    return data
+
+def load_profile_store():
+    try:
+        if os.path.exists(PROFILE_STORE):
+            with open(PROFILE_STORE, 'r', encoding='utf-8') as handle:
+                return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {}
+
+def save_profile_store(profiles):
+    with open(PROFILE_STORE, 'w', encoding='utf-8') as handle:
+        json.dump(profiles, handle, indent=2)
+
+def get_profile_record(user_id):
+    profiles = load_profile_store()
+    return profiles, profiles.setdefault(str(user_id), {'bio': '', 'avatar_filename': None})
+
+def get_profile_view_data(user_id):
+    profile = load_profile_store().get(str(user_id), {})
+    avatar_filename = profile.get('avatar_filename')
+    return {
+        'bio': profile.get('bio', ''),
+        'avatar_url': url_for('static', filename='uploads/' + avatar_filename) if avatar_filename else None
+    }
+
+def remove_profile_record(user_id):
+    profiles = load_profile_store()
+    if str(user_id) in profiles:
+        profiles.pop(str(user_id), None)
+        save_profile_store(profiles)
+
+def remove_upload_file(filename):
+    if not filename:
+        return False
+    upload_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+    upload_path = os.path.abspath(os.path.join(upload_root, filename))
+    if not upload_path.startswith(upload_root) or not os.path.exists(upload_path):
+        return False
+    try:
+        os.remove(upload_path)
+        return True
+    except OSError:
+        return False
+
+def clear_created_platform_data():
+    admin_ids = {user.id for user in User.query.filter_by(role='admin').all()}
+    profiles = load_profile_store()
+    deleted_user_ids = {user.id for user in User.query.filter(User.role != 'admin').all()}
+    protected_uploads = {
+        profile.get('avatar_filename')
+        for user_id, profile in profiles.items()
+        if user_id.isdigit() and int(user_id) in admin_ids and profile.get('avatar_filename')
+    }
+    upload_filenames = {
+        challenge.target_image_path
+        for challenge in Challenge.query.all()
+        if challenge.target_image_path
+    }
+    upload_filenames.update(
+        profile.get('avatar_filename')
+        for user_id, profile in profiles.items()
+        if user_id.isdigit() and int(user_id) in deleted_user_ids and profile.get('avatar_filename')
+    )
+    upload_filenames = {name for name in upload_filenames if name and name not in protected_uploads}
+
+    User.query.filter_by(role='admin').update({
+        User.matches_played: 0,
+        User.best_accuracy: 0,
+        User.total_wins: 0,
+        User.leaderboard_unlocked_at: None,
+        User.leaderboard_awarded: False,
+        User.leaderboard_awarded_at: None,
+        User.leaderboard_awarded_by: None,
+        User.leaderboard_award_reason: None,
+        User.leaderboard_award_details: None,
+        User.leaderboard_award_color: None
+    }, synchronize_session=False)
+
+    counts = {
+        'admin_actions': AdminAction.query.delete(synchronize_session=False),
+        'match_results': MatchResult.query.delete(synchronize_session=False),
+        'tournament_participants': TournamentParticipant.query.delete(synchronize_session=False),
+        'tournament_matches': TournamentMatch.query.delete(synchronize_session=False),
+        'award_cards': AwardCard.query.delete(synchronize_session=False),
+        'submissions': Submission.query.delete(synchronize_session=False),
+        'chat_messages': ChatMessage.query.delete(synchronize_session=False),
+        'rooms': Room.query.delete(synchronize_session=False),
+        'tournaments': Tournament.query.delete(synchronize_session=False),
+        'challenges': Challenge.query.delete(synchronize_session=False),
+        'students': User.query.filter(User.role != 'admin').delete(synchronize_session=False)
+    }
+
+    save_profile_store({
+        user_id: profile
+        for user_id, profile in profiles.items()
+        if user_id.isdigit() and int(user_id) in admin_ids
+    })
+
+    room_timers.clear()
+    room_preview_data.clear()
+    room_spectators.clear()
+    room_typing_users.clear()
+
+    db.session.commit()
+    counts['uploaded_files'] = sum(1 for filename in upload_filenames if remove_upload_file(filename))
+    return counts
+
+def sync_users_by_id(user_ids):
+    for user_id in {uid for uid in user_ids if uid}:
+        user = db.session.get(User, user_id)
+        if user:
+            sync_user_competition_state(user)
+
+def delete_room_data(room):
+    affected_user_ids = {room.player1_id, room.player2_id}
+    Submission.query.filter_by(room_id=room.id).delete()
+    ChatMessage.query.filter_by(room_id=room.id).delete()
+    room_timers.pop(room.id, None)
+    room_preview_data.pop(room.id, None)
+    room_spectators.pop(room.id, None)
+    db.session.delete(room)
+    return affected_user_ids
+
+@app.context_processor
+def inject_current_profile():
+    user_id = session.get('user_id')
+    if not user_id:
+        return {}
+    profile = load_profile_store().get(str(user_id), {})
+    avatar_filename = profile.get('avatar_filename')
+    return {
+        'current_profile': {
+            'bio': profile.get('bio', ''),
+            'avatar_url': url_for('static', filename='uploads/' + avatar_filename) if avatar_filename else None
+        }
+    }
+
+@app.before_request
+def ensure_runtime_schema():
+    ensure_schema_upgrades()
 
 def run_room_timer(room_id):
     with app.app_context():
@@ -63,23 +972,40 @@ def run_room_timer(room_id):
             if not room or room.status == 'ended':
                 break
             if room.status == 'paused':
-                eventlet.sleep(1)
+                time.sleep(1)
                 continue
             socketio.emit('timer_tick', {'remaining': room_timers[room_id]}, room=str(room_id))
-            eventlet.sleep(1)
             if room_timers.get(room_id, 0) > 0:
                 room_timers[room_id] -= 1
-        with app.app_context():
-            room = db.session.get(Room, room_id)
-            if room and room.status == 'running':
-                room.status = 'ended'
-                room.ended_at = datetime.now(timezone.utc)
-                db.session.commit()
-                final_submissions = Submission.query.filter_by(room_id=room_id).all()
-                for sub in final_submissions:
-                    sub.is_final = True
-                db.session.commit()
-        socketio.emit('challenge_ended', {'room_id': room_id}, room=str(room_id))
+            time.sleep(1)
+        
+        room = db.session.get(Room, room_id)
+        if room and room.status == 'running':
+            room.status = 'ended'
+            room.ended_at = datetime.now(timezone.utc)
+            finalize_room_results(room)
+            db.session.commit()
+    socketio.emit('challenge_ended', {'room_id': room_id}, room=str(room_id))
+
+def emit_challenge_paused(room):
+    if not room:
+        return
+    socketio.emit('challenge_paused', {
+        'room_id': room.id,
+        'remaining': room_timers.get(room.id, 0),
+        'message': 'Match paused by admin'
+    }, room=str(room.id))
+
+def emit_challenge_resumed(room):
+    if not room:
+        return
+    challenge = room.challenge
+    socketio.emit('challenge_resumed', {
+        'room_id': room.id,
+        'remaining': room_timers.get(room.id, 0),
+        'challenge_type': challenge.challenge_type if challenge else None,
+        'html_locked': bool(challenge.html_locked) if challenge else False
+    }, room=str(room.id))
 
 def broadcast_leaderboard(room_id):
     submissions = Submission.query.filter_by(room_id=room_id, is_final=False).all()
@@ -100,41 +1026,139 @@ def broadcast_leaderboard(room_id):
 # ========== AUTH ROUTES ==========
 @app.route('/')
 def login_page():
-    return render_template('login.html')
+    return render_template(
+        'login.html',
+        challenge_count=Challenge.query.filter_by(is_active=True).count(),
+        google_oauth_enabled=google_oauth_configured(),
+        pending_two_factor=bool(session.get('pending_2fa_user_id'))
+    )
 
 @app.route('/auth/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
+    data = request.get_json() or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
     
     user = User.query.filter_by(username=username).first()
     if user and user.check_password(password):
-        session['user_id'] = user.id
-        session['username'] = user.username
-        session['role'] = user.role
+        if user.two_factor_enabled:
+            session.clear()
+            session['pending_2fa_user_id'] = user.id
+            return jsonify({'success': False, 'requires_2fa': True, 'message': 'Enter your two-step verification code.'})
+        complete_login(user)
         return jsonify({'success': True, 'role': user.role})
     return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
+
+@app.route('/auth/2fa/verify-login', methods=['POST'])
+def verify_login_2fa():
+    data = request.get_json() or {}
+    user_id = session.get('pending_2fa_user_id')
+    user = db.session.get(User, user_id) if user_id else None
+    if not user:
+        return jsonify({'success': False, 'error': 'Login session expired. Sign in again.'}), 401
+    if not verify_totp(user.two_factor_secret, data.get('code')):
+        return jsonify({'success': False, 'error': 'Invalid verification code'}), 401
+    complete_login(user)
+    return jsonify({'success': True, 'role': user.role})
 
 @app.route('/auth/register', methods=['POST'])
 def register():
     data = request.get_json()
-    username = data.get('username')
+    username = (data.get('username') or '').strip()
     password = data.get('password')
-    role = data.get('role', 'player')
+
+    if not username or not password:
+        return jsonify({'success': False, 'error': 'Username and password are required'}), 400
+    if len(password) < 8:
+        return jsonify({'success': False, 'error': 'Password must be at least 8 characters'}), 400
     
     if User.query.filter_by(username=username).first():
         return jsonify({'success': False, 'error': 'Username already exists'}), 400
     
-    user = User(username=username, role=role)
+    user = User(username=username, role='player')
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
     
-    session['user_id'] = user.id
-    session['username'] = user.username
-    session['role'] = user.role
+    complete_login(user)
     return jsonify({'success': True, 'role': user.role})
+
+@app.route('/auth/google')
+def google_login():
+    if not google_oauth_configured():
+        return redirect(url_for('login_page'))
+    state = secrets.token_urlsafe(24)
+    session['google_oauth_state'] = state
+    params = {
+        'client_id': app.config['GOOGLE_CLIENT_ID'],
+        'redirect_uri': url_for('google_callback', _external=True),
+        'response_type': 'code',
+        'scope': 'openid email profile',
+        'state': state,
+        'prompt': 'select_account'
+    }
+    return redirect(f"{app.config['GOOGLE_DISCOVERY_AUTH_URL']}?{urllib.parse.urlencode(params)}")
+
+@app.route('/auth/google/callback')
+def google_callback():
+    if not google_oauth_configured():
+        return redirect(url_for('login_page'))
+    if request.args.get('state') != session.pop('google_oauth_state', None):
+        return redirect(url_for('login_page'))
+    code = request.args.get('code')
+    if not code:
+        return redirect(url_for('login_page'))
+
+    try:
+        token_data = fetch_json_url(app.config['GOOGLE_TOKEN_URL'], {
+            'code': code,
+            'client_id': app.config['GOOGLE_CLIENT_ID'],
+            'client_secret': app.config['GOOGLE_CLIENT_SECRET'],
+            'redirect_uri': url_for('google_callback', _external=True),
+            'grant_type': 'authorization_code'
+        })
+        access_token = token_data.get('access_token')
+        if not access_token:
+            raise ValueError('Missing access token')
+        google_user = fetch_json_url(
+            app.config['GOOGLE_USERINFO_URL'],
+            headers={'Authorization': f'Bearer {access_token}'}
+        )
+    except Exception:
+        app.logger.exception('Google OAuth failed')
+        return redirect(url_for('login_page'))
+
+    google_sub = google_user.get('sub')
+    email = (google_user.get('email') or '').lower()
+    if not google_sub or not email:
+        return redirect(url_for('login_page'))
+
+    user = User.query.filter_by(google_sub=google_sub).first()
+    if not user:
+        user = User.query.filter_by(email=email).first()
+    if not user:
+        base_name = re.sub(r'[^a-zA-Z0-9_]', '', (google_user.get('name') or email.split('@')[0]))[:32] or 'player'
+        username = base_name
+        suffix = 1
+        while User.query.filter_by(username=username).first():
+            suffix += 1
+            username = f'{base_name}{suffix}'
+        user = User(username=username, email=email, role='player', auth_provider='google', google_sub=google_sub)
+        user.set_password(secrets.token_urlsafe(32))
+        db.session.add(user)
+    else:
+        user.email = user.email or email
+        user.google_sub = user.google_sub or google_sub
+        if user.auth_provider == 'local':
+            user.auth_provider = 'local+google'
+    db.session.commit()
+
+    if user.two_factor_enabled:
+        session.clear()
+        session['pending_2fa_user_id'] = user.id
+        return redirect(url_for('login_page', two_factor='1'))
+    complete_login(user)
+    return redirect(url_for('admin_panel' if user.role == 'admin' else 'dashboard'))
 
 @app.route('/auth/logout')
 def logout():
@@ -145,9 +1169,11 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    ensure_schema_upgrades()
     user = get_current_user()
     rooms = Room.query.filter(Room.status != 'ended').order_by(Room.created_at.desc()).all()
-    top_players = User.query.filter_by(role='player').order_by(User.best_accuracy.desc()).limit(10).all()
+    leaderboard_rows = build_leaderboard_rows()
+    top_players = [row['user'] for row in leaderboard_rows[:10]]
     recent_matches = Submission.query.filter_by(user_id=user.id).order_by(Submission.submitted_at.desc()).limit(5).all()
     
     room_data = []
@@ -155,7 +1181,8 @@ def dashboard():
         challenge = room.challenge
         room_data.append({
             'id': room.id,
-            'room_code': room.room_code,
+            'room_code': room.room_code if room.is_public else None,
+            'is_public': bool(room.is_public),
             'challenge_title': challenge.title if challenge else 'Unknown',
             'challenge_type': challenge.challenge_type if challenge else 'image',
             'difficulty': challenge.difficulty if challenge else 'Medium',
@@ -164,8 +1191,8 @@ def dashboard():
             'player2': room.player2.username if room.player2 else 'Open'
         })
     
-    all_players = User.query.filter_by(role='player').order_by(User.best_accuracy.desc()).all()
-    rank = next((i+1 for i, p in enumerate(all_players) if p.id == user.id), None)
+    rank = next((i+1 for i, row in enumerate(leaderboard_rows) if row['user'].id == user.id), None)
+    current_record = next((row['record'] for row in leaderboard_rows if row['user'].id == user.id), calculate_player_record(user))
     
     return render_template('dashboard.html', 
                          user=user, 
@@ -175,33 +1202,394 @@ def dashboard():
                          active_rooms_count=len(rooms),
                          total_challenges=Challenge.query.filter_by(is_active=True).count(),
                          total_players=User.query.filter_by(role='player').count(),
-                         global_rank=rank)
+                         global_rank=rank,
+                         leaderboard_unlocked=user_has_leaderboard_access(user, current_record))
 
 # ========== ADMIN ROUTES ==========
 @app.route('/admin')
 @admin_required
 def admin_panel():
+    ensure_schema_upgrades()
     user = get_current_user()
     rooms = Room.query.order_by(Room.created_at.desc()).all()
     challenges = Challenge.query.filter_by(is_active=True).all()
     all_challenges = Challenge.query.all()
-    players = User.query.filter_by(role='player').all()
+    leaderboard_rows = build_leaderboard_rows()
+    players = User.query.order_by(User.username.asc()).all()
+    tournaments = Tournament.query.order_by(Tournament.created_at.desc()).all()
+
+    total_matches = Submission.query.count()
+    avg_accuracy = db.session.query(func.avg(Submission.accuracy)).scalar() or 0
+    avg_accuracy = round(avg_accuracy, 1)
+    active_players = User.query.filter_by(role='player').count()
+    top_player = leaderboard_rows[0]['user'] if leaderboard_rows else None
+    highest_score = leaderboard_rows[0]['record']['power_score'] if leaderboard_rows else 0
     
-    return render_template('admin.html', 
+    recent_messages = ChatMessage.query.order_by(ChatMessage.sent_at.desc()).limit(6).all()
+    moderation_messages_raw = ChatMessage.query.order_by(ChatMessage.sent_at.desc()).limit(80).all()
+    moderation_messages = [
+        serialize_admin_chat_message(msg, user.username)
+        for msg in moderation_messages_raw
+    ]
+    moderation_flagged_count = sum(1 for msg in moderation_messages if msg['is_flagged'])
+    moderation_mentions_count = sum(1 for msg in moderation_messages if msg['is_mention'])
+    recent_activities = [
+        {
+            'username': msg.user.username if msg.user else 'System',
+            'action': msg.message,
+            'time': msg.sent_at.strftime('%H:%M') if msg.sent_at else ''
+        }
+        for msg in recent_messages
+    ]
+    
+    spectators_by_room = {
+        room.id: sorted(list(room_spectators.get(room.id, set())))
+        for room in rooms
+    }
+    
+    return render_template('admin.html',
                          user=user, 
                          rooms=rooms, 
                          challenges=challenges,
                          all_challenges=all_challenges,
-                         players=players)
+                         players=players,
+                         players_sorted=[row['user'] for row in leaderboard_rows],
+                         spectators_by_room=spectators_by_room,
+                         total_matches=total_matches,
+                         avg_accuracy=avg_accuracy,
+                         active_players=active_players,
+                         top_player=top_player,
+                         highest_score=highest_score,
+                         leaderboard_rows=leaderboard_rows,
+                         leaderboard_streak_target=LEADERBOARD_STREAK_TARGET,
+                         recent_activities=recent_activities,
+                         moderation_messages=moderation_messages,
+                         moderation_flagged_count=moderation_flagged_count,
+                         moderation_mentions_count=moderation_mentions_count,
+                         tournaments=tournaments,
+                         tournament_sizes=sorted(TOURNAMENT_SIZES))
+
+@app.route('/admin/spectators')
+@admin_required
+def admin_spectators():
+    user = get_current_user()
+    rooms = Room.query.order_by(Room.created_at.desc()).all()
+    spectators_by_room = {
+        room.id: sorted(list(room_spectators.get(room.id, set())))
+        for room in rooms
+    }
+    return render_template('spectators.html',
+                           user=user,
+                           rooms=rooms,
+                           spectators_by_room=spectators_by_room)
+
+@app.route('/admin/broadcast', methods=['POST'])
+@admin_required
+def admin_broadcast():
+    data = request.get_json() or {}
+    message = data.get('message', '')
+    room_id = data.get('room_id')
+    if room_id:
+        socketio.emit('system_announcement', {'message': message}, room=str(room_id))
+    else:
+        for room in Room.query.all():
+            socketio.emit('system_announcement', {'message': message}, room=str(room.id))
+    return jsonify({'success': True})
+
+@app.route('/admin/chat/<int:message_id>/flag', methods=['POST'])
+@admin_required
+def admin_flag_chat_message(message_id):
+    ensure_schema_upgrades()
+    admin = get_current_user()
+    chat_msg = db.session.get(ChatMessage, message_id)
+    if not chat_msg or chat_msg.is_system:
+        return jsonify({'success': False, 'error': 'Message not found'}), 404
+
+    reason = (request.json or {}).get('reason') or 'Flagged by admin as harmful'
+    reason = reason.strip()[:160]
+    chat_msg.is_flagged = True
+    chat_msg.flag_reason = reason
+    chat_msg.flagged_by = admin.id
+    db.session.commit()
+
+    socketio.emit('chat_message_flagged', {
+        'id': chat_msg.id,
+        'is_flagged': True,
+        'flag_reason': reason
+    }, room=str(chat_msg.room_id))
+    socketio.emit('chat_flag_notice', {
+        'message_id': chat_msg.id,
+        'message': f'Admin flagged a chat message from {chat_msg.user.username if chat_msg.user else "a user"}.'
+    }, room=str(chat_msg.room_id))
+
+    return jsonify({'success': True, 'message': serialize_admin_chat_message(chat_msg, admin.username)})
+
+@app.route('/admin/chat/messages')
+@admin_required
+def admin_chat_messages():
+    ensure_schema_upgrades()
+    admin = get_current_user()
+    messages = ChatMessage.query.order_by(ChatMessage.sent_at.desc()).limit(120).all()
+    payload = [serialize_admin_chat_message(msg, admin.username) for msg in messages]
+    return jsonify({
+        'success': True,
+        'messages': payload,
+        'flagged_count': sum(1 for msg in payload if msg['is_flagged']),
+        'mentions_count': sum(1 for msg in payload if msg['is_mention'])
+    })
+
+@app.route('/admin/chat/<int:message_id>/reply', methods=['POST'])
+@admin_required
+def admin_reply_chat_message(message_id):
+    ensure_schema_upgrades()
+    admin = get_current_user()
+    source_msg = db.session.get(ChatMessage, message_id)
+    if not source_msg:
+        return jsonify({'success': False, 'error': 'Message not found'}), 404
+
+    body = (request.json or {}).get('message') or ''
+    body = body.strip()[:500]
+    if not body:
+        return jsonify({'success': False, 'error': 'Reply cannot be empty'}), 400
+
+    target_username = source_msg.user.username if source_msg.user else 'room'
+    reply_text = body if body.lower().startswith('@') else f'@{target_username} {body}'
+    reply = ChatMessage(
+        room_id=source_msg.room_id,
+        user_id=admin.id,
+        message=reply_text,
+        is_system=False
+    )
+    db.session.add(reply)
+    db.session.commit()
+    socketio.emit('chat_message', serialize_chat_message(reply), room=str(source_msg.room_id))
+    socketio.emit('admin_chat_message', serialize_admin_chat_message(reply, admin.username))
+
+    return jsonify({'success': True, 'message': serialize_admin_chat_message(reply, admin.username)})
+
+@app.route('/admin/user/<int:user_id>/stats')
+@admin_required
+def admin_user_stats(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    record = sync_user_competition_state(user)
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'username': user.username,
+        'role': user.role,
+        'matches_played': record['matches_played'],
+        'best_accuracy': record['best_accuracy'],
+        'total_wins': record['wins'],
+        'win_rate': record['win_rate'],
+        'current_streak': record['current_streak'],
+        'best_streak': record['best_streak'],
+        'power_score': record['power_score'],
+        'leaderboard_unlocked': user_has_leaderboard_access(user, record),
+        'leaderboard_awarded': bool(user.leaderboard_awarded),
+        'joined_date': user.created_at.strftime('%Y-%m-%d') if user.created_at else 'Unknown'
+    })
+
+@app.route('/admin/user/<int:user_id>/matches')
+@admin_required
+def admin_user_matches(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    matches = []
+    for event in get_user_match_events(user.id)[:20]:
+        sub = event['submission']
+        challenge = event['room'].challenge if event['room'] else (sub.challenge if sub else None)
+        matches.append({
+            'date': event['completed_at'].strftime('%Y-%m-%d %H:%M') if event['completed_at'] else 'Unknown',
+            'challenge': challenge.title if challenge else 'Unknown',
+            'accuracy': round(sub.accuracy, 1) if sub else 0,
+            'result': event['result'].title(),
+            'is_winner': event['result'] == 'win'
+        })
+
+    return jsonify({'success': True, 'matches': matches})
+
+@app.route('/admin/user/<int:user_id>/leaderboard-award', methods=['POST'])
+@admin_required
+def admin_user_leaderboard_award(user_id):
+    user = db.session.get(User, user_id)
+    admin = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    data = request.get_json() or {}
+    award = bool(data.get('award', True))
+    reason = (data.get('reason') or '').strip()
+    details = (data.get('details') or '').strip()
+    color = (data.get('color') or '#d97706').strip()
+    if not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+        color = '#d97706'
+    user.leaderboard_awarded = award
+    user.leaderboard_awarded_at = datetime.now(timezone.utc) if award else None
+    user.leaderboard_awarded_by = admin.id if award and admin else None
+    user.leaderboard_award_reason = reason[:200] if award and reason else None
+    user.leaderboard_award_details = details if award and details else None
+    user.leaderboard_award_color = color if award else None
+    record = sync_user_competition_state(user)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'username': user.username,
+        'leaderboard_unlocked': user_has_leaderboard_access(user, record),
+        'leaderboard_awarded': bool(user.leaderboard_awarded),
+        'power_score': record['power_score'],
+        'award_reason': user.leaderboard_award_reason,
+        'award_details': user.leaderboard_award_details,
+        'award_color': user.leaderboard_award_color
+    })
+
+@app.route('/admin/user/<int:user_id>/award-card')
+@admin_required
+def admin_award_card_page(user_id):
+    target_user = db.session.get(User, user_id)
+    if not target_user:
+        return redirect(url_for('admin_panel'))
+    if target_user.role == 'admin':
+        return redirect(url_for('admin_panel'))
+    existing_cards = AwardCard.query.filter_by(user_id=user_id).order_by(AwardCard.created_at.desc()).all()
+    return render_template(
+        'award_designer.html',
+        user=get_current_user(),
+        target_user=target_user,
+        cards=[serialize_award_card(card) for card in existing_cards],
+        card_templates=CARD_TEMPLATES,
+        avatar_templates=AVATAR_TEMPLATES,
+        admin_mode=True
+    )
+
+@app.route('/admin/user/<int:user_id>/award-card', methods=['POST'])
+@admin_required
+def admin_save_award_card(user_id):
+    target_user = db.session.get(User, user_id)
+    admin = get_current_user()
+    if not target_user:
+        return jsonify({'success': False, 'error': 'Student not found'}), 404
+    if target_user.role == 'admin':
+        return jsonify({'success': False, 'error': 'Cards can only be awarded to students'}), 400
+
+    data = request.get_json(silent=True) or {}
+    template = get_card_template(data.get('card_template'))
+    avatar = get_avatar_template(data.get('avatar_template'))
+    title = (data.get('title') or 'Loyalty Recognition Card').strip()[:140]
+    message = (data.get('message') or 'Recognized for strong effort, consistency, and positive contribution.').strip()[:800]
+    reason = (data.get('reason') or 'Excellent performance').strip()[:200]
+    shape = data.get('shape') if data.get('shape') in {'rounded', 'ticket', 'hex', 'wave', 'sharp'} else template['shape']
+    avatar_shape = data.get('avatar_shape') if data.get('avatar_shape') in {'circle', 'shield', 'blob', 'square', 'hex'} else avatar['shape']
+    layout = data.get('layout') if data.get('layout') in {'classic', 'badge', 'split', 'diagonal'} else template['layout']
+
+    card = AwardCard(
+        user_id=target_user.id,
+        awarded_by=admin.id,
+        title=title,
+        reason=reason,
+        message=message,
+        card_template=template['id'],
+        avatar_template=avatar['id'],
+        accent_icon=data.get('accent_icon') or template['icon'],
+        avatar_label=(data.get('avatar_label') or target_user.username).strip()[:80],
+        primary_color=clean_hex_color(data.get('primary_color'), template['primary']),
+        secondary_color=clean_hex_color(data.get('secondary_color'), template['secondary']),
+        shape=shape,
+        avatar_shape=avatar_shape,
+        layout=layout
+    )
+    db.session.add(card)
+    db.session.commit()
+    return jsonify({'success': True, 'card': serialize_award_card(card)})
+
+@app.route('/admin/export-data')
+@admin_required
+def export_data():
+    user_data = [u.to_dict() for u in User.query.all()]
+    room_data = [
+        {
+            'id': r.id,
+            'room_code': r.room_code,
+            'status': r.status,
+            'player1': r.player1.username if r.player1 else None,
+            'player2': r.player2.username if r.player2 else None,
+            'challenge': r.challenge.title if r.challenge else None
+        }
+        for r in Room.query.all()
+    ]
+    challenge_data = [
+        {
+            'id': c.id,
+            'title': c.title,
+            'type': c.challenge_type,
+            'difficulty': c.difficulty,
+            'time_limit': c.time_limit,
+            'active': c.is_active
+        }
+        for c in Challenge.query.all()
+    ]
+    tournament_data = [
+        serialize_tournament(tournament)
+        for tournament in Tournament.query.order_by(Tournament.created_at.desc()).all()
+    ]
+    admin_actions = [
+        {
+            'id': action.id,
+            'tournament_id': action.tournament_id,
+            'tournament_match_id': action.tournament_match_id,
+            'admin': action.admin.username if action.admin else None,
+            'player': action.player.username if action.player else None,
+            'action_type': action.action_type,
+            'reason': action.reason,
+            'admin_note': action.admin_note,
+            'timestamp': action.timestamp.isoformat() if action.timestamp else None
+        }
+        for action in AdminAction.query.order_by(AdminAction.timestamp.desc()).all()
+    ]
+    return jsonify({'users': user_data, 'rooms': room_data, 'challenges': challenge_data, 'tournaments': tournament_data, 'admin_actions': admin_actions})
+
+@app.route('/admin/maintenance/clear-data', methods=['POST'])
+@admin_required
+def admin_clear_created_data():
+    try:
+        ensure_schema_upgrades()
+        data = request.get_json(silent=True) or {}
+        if data.get('confirm') != 'CLEAR':
+            return jsonify({'success': False, 'error': 'Type CLEAR to confirm the reset'}), 400
+
+        counts = clear_created_platform_data()
+        return jsonify({'success': True, 'counts': counts})
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception('Failed to clear created platform data')
+        return jsonify({
+            'success': False,
+            'error': f'Clear data failed on the server: {exc.__class__.__name__}'
+        }), 500
 
 @app.route('/admin/create_challenge', methods=['POST'])
 @admin_required
 def create_challenge():
     challenge_type = request.form.get('challenge_type', 'image')
-    title = request.form.get('title')
-    difficulty = request.form.get('difficulty')
-    time_limit = int(request.form.get('time_limit', 120))
+    room_visibility = request.form.get('room_visibility', 'private')
+    room_is_public = room_visibility == 'public'
+    title = (request.form.get('title') or '').strip()
+    difficulty = request.form.get('difficulty') or 'Medium'
+    try:
+        time_limit = int(request.form.get('time_limit', 120))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Invalid time limit'}), 400
     description = request.form.get('description', '')
+
+    if challenge_type not in {'image', 'html'}:
+        return jsonify({'success': False, 'error': 'Invalid challenge type'}), 400
+    if not title:
+        return jsonify({'success': False, 'error': 'Challenge name is required'}), 400
     
     new_challenge = Challenge(
         title=title,
@@ -232,12 +1620,21 @@ def create_challenge():
             new_challenge.target_image_path = filename
             new_challenge.html_locked = False
     else:
-        target_html = request.form.get('target_html', '')
+        target_html = (request.form.get('target_html') or '').strip()
         target_css = request.form.get('target_css', '')
+        starter_html = (request.form.get('starter_html') or target_html).strip()
+        starter_css = request.form.get('starter_css', '')
         html_locked = request.form.get('html_locked') == 'true'
+
+        if not target_html:
+            return jsonify({'success': False, 'error': 'Target HTML is required'}), 400
+        if not starter_html:
+            return jsonify({'success': False, 'error': 'Player starter HTML is required'}), 400
         
         new_challenge.target_html = target_html
         new_challenge.target_css = target_css
+        new_challenge.starter_html = starter_html
+        new_challenge.starter_css = starter_css
         new_challenge.html_locked = html_locked
     
     db.session.add(new_challenge)
@@ -247,7 +1644,8 @@ def create_challenge():
     new_room = Room(
         room_code=room_code,
         challenge_id=new_challenge.id,
-        status='waiting'
+        status='waiting',
+        is_public=room_is_public
     )
     db.session.add(new_room)
     db.session.commit()
@@ -256,6 +1654,7 @@ def create_challenge():
         'success': True,
         'room_code': room_code,
         'room_id': new_room.id,
+        'is_public': bool(new_room.is_public),
         'challenge_type': challenge_type
     })
 
@@ -272,6 +1671,9 @@ def room_action(room_id):
         if room.status == 'waiting' or room.status == 'paused':
             room.status = 'running'
             room.started_by = session['user_id']
+            tournament_match = TournamentMatch.query.filter_by(room_id=room.id).first()
+            if tournament_match and tournament_match.status == 'waiting':
+                tournament_match.status = 'live'
             db.session.commit()
             challenge = room.challenge
             if room.id not in room_timers or room_timers.get(room.id, 0) <= 0:
@@ -288,15 +1690,20 @@ def room_action(room_id):
         if room.status == 'running':
             room.status = 'paused'
             db.session.commit()
-            socketio.emit('challenge_paused', {'remaining': room_timers.get(room_id, 0)}, room=str(room_id))
+            emit_challenge_paused(room)
     elif action == 'resume':
         if room.status == 'paused':
             room.status = 'running'
             db.session.commit()
-            socketio.emit('challenge_resumed', {}, room=str(room_id))
+            emit_challenge_resumed(room)
+    elif action == 'add_time':
+        seconds = int((request.json or {}).get('seconds', 30))
+        room_timers[room_id] = room_timers.get(room_id, room.challenge.time_limit if room.challenge else 0) + seconds
+        socketio.emit('timer_tick', {'remaining': room_timers[room_id]}, room=str(room_id))
     elif action == 'end':
         room.status = 'ended'
         room.ended_at = datetime.now(timezone.utc)
+        finalize_room_results(room)
         db.session.commit()
         room_timers[room_id] = 0
         socketio.emit('challenge_ended', {'room_id': room_id}, room=str(room_id))
@@ -308,8 +1715,14 @@ def room_action(room_id):
         room.ended_at = None
         db.session.commit()
         room_timers[room_id] = 0
+    elif action == 'make_public':
+        room.is_public = True
+        db.session.commit()
+    elif action == 'make_private':
+        room.is_public = False
+        db.session.commit()
     
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'is_public': bool(room.is_public)})
 
 @app.route('/admin/kick', methods=['POST'])
 @admin_required
@@ -319,14 +1732,206 @@ def kick_player():
     room_id = data.get('room_id')
     
     room = db.session.get(Room, room_id)
+    kicked = False
     if room:
         if room.player1 and room.player1.username == username:
             room.player1_id = None
+            kicked = True
         elif room.player2 and room.player2.username == username:
             room.player2_id = None
+            kicked = True
+    
+    if room_id in room_spectators and username in room_spectators[room_id]:
+        room_spectators[room_id].discard(username)
+        if not room_spectators[room_id]:
+            del room_spectators[room_id]
+        emit_spectator_list(room_id)
+        kicked = True
+    
+    if room and kicked:
         db.session.commit()
     
-    socketio.emit('kicked', {'message': 'You were kicked by the admin'}, room=f"user_{username}")
+    socketio.emit('kicked', {'message': 'You were removed by the admin'}, room=f"user_{username}")
+    return jsonify({'success': True, 'removed': kicked})
+
+@app.route('/admin/tournament/create', methods=['POST'])
+@admin_required
+def admin_create_tournament():
+    data = request.get_json(silent=True) or request.form
+    name = (data.get('name') or '').strip()
+    try:
+        size = int(data.get('size', 8))
+        challenge_id = int(data.get('challenge_id'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Invalid tournament size or challenge'}), 400
+
+    participant_ids = data.get('participant_ids', [])
+    if isinstance(participant_ids, str):
+        participant_ids = [value for value in participant_ids.split(',') if value.strip()]
+    try:
+        participant_ids = [int(pid) for pid in participant_ids]
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Invalid participant list'}), 400
+
+    if size not in TOURNAMENT_SIZES:
+        return jsonify({'success': False, 'error': 'Tournament size must be 4, 8, 16, or 32'}), 400
+    if not name:
+        return jsonify({'success': False, 'error': 'Tournament name is required'}), 400
+    if len(set(participant_ids)) != size:
+        return jsonify({'success': False, 'error': f'Select exactly {size} unique players'}), 400
+    challenge = db.session.get(Challenge, challenge_id)
+    if not challenge or not challenge.is_active:
+        return jsonify({'success': False, 'error': 'Active challenge not found'}), 404
+
+    users = User.query.filter(User.id.in_(participant_ids), User.role == 'player').all()
+    if len(users) != size:
+        return jsonify({'success': False, 'error': 'All participants must be player accounts'}), 400
+
+    ordered_users = sorted(users, key=lambda player: participant_ids.index(player.id))
+    auto_value = data.get('auto_advance', True)
+    auto_advance = auto_value if isinstance(auto_value, bool) else str(auto_value).lower() != 'false'
+    tournament = Tournament(
+        name=name,
+        size=size,
+        challenge_id=challenge_id,
+        status='live',
+        auto_advance=auto_advance,
+        created_by=session['user_id'],
+        started_at=datetime.now(timezone.utc)
+    )
+    db.session.add(tournament)
+    db.session.flush()
+
+    for seed, player in enumerate(ordered_users, start=1):
+        db.session.add(TournamentParticipant(
+            tournament_id=tournament.id,
+            user_id=player.id,
+            seed=seed,
+            status='active',
+            position='Participant'
+        ))
+
+    seeded = []
+    left = 0
+    right = len(ordered_users) - 1
+    while left <= right:
+        seeded.append(ordered_users[left])
+        if left != right:
+            seeded.append(ordered_users[right])
+        left += 1
+        right -= 1
+
+    round_name = tournament_round_name(size)
+    for index in range(0, len(seeded), 2):
+        create_tournament_match(
+            tournament,
+            1,
+            round_name,
+            (index // 2) + 1,
+            seeded[index].id,
+            seeded[index + 1].id
+        )
+
+    log_admin_action(
+        session['user_id'],
+        'create_tournament',
+        f'Created {size}-player tournament',
+        tournament_id=tournament.id,
+        admin_note=name
+    )
+    db.session.commit()
+    socketio.emit('tournament_bracket_update', {'tournament': serialize_tournament(tournament)}, room=f"tournament_{tournament.id}")
+    return jsonify({'success': True, 'tournament_id': tournament.id, 'redirect': url_for('tournament_detail', tournament_id=tournament.id)})
+
+@app.route('/admin/tournament/<int:tournament_id>/match/<int:match_id>/advance', methods=['POST'])
+@admin_required
+def admin_advance_tournament_match(tournament_id, match_id):
+    data = request.get_json(silent=True) or {}
+    match = db.session.get(TournamentMatch, match_id)
+    if not match or match.tournament_id != tournament_id:
+        return jsonify({'success': False, 'error': 'Tournament match not found'}), 404
+    try:
+        winner_id = int(data.get('winner_id'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'winner_id is required'}), 400
+    reason = (data.get('reason') or 'Manual admin advancement').strip()
+    note = (data.get('admin_note') or '').strip()
+    if not complete_tournament_match(match, winner_id, 'manual'):
+        return jsonify({'success': False, 'error': 'Winner must be one of the match players'}), 400
+    log_admin_action(session['user_id'], 'manual_advance', reason, tournament_id=tournament_id, tournament_match_id=match.id, player_id=winner_id, admin_note=note)
+    db.session.commit()
+    socketio.emit('tournament_bracket_update', {'tournament': serialize_tournament(match.tournament)}, room=f"tournament_{tournament_id}")
+    socketio.emit('tournament_notification', {'message': 'Admin advanced a player in the tournament.'}, room=f"tournament_{tournament_id}")
+    return jsonify({'success': True, 'tournament': serialize_tournament(match.tournament)})
+
+@app.route('/admin/tournament/<int:tournament_id>/player/<int:player_id>/discipline', methods=['POST'])
+@admin_required
+def admin_discipline_tournament_player(tournament_id, player_id):
+    data = request.get_json(silent=True) or {}
+    action_type = (data.get('action_type') or 'disqualify').strip()
+    reason = (data.get('reason') or '').strip()
+    admin_note = (data.get('admin_note') or '').strip()
+    if action_type not in {'kick', 'disqualify', 'remove', 'force_qualify'}:
+        return jsonify({'success': False, 'error': 'Invalid action type'}), 400
+    if not reason:
+        return jsonify({'success': False, 'error': 'Reason is required'}), 400
+    participant = get_participant(tournament_id, player_id)
+    if not participant:
+        return jsonify({'success': False, 'error': 'Participant not found'}), 404
+
+    if action_type == 'force_qualify':
+        participant.status = 'active'
+        participant.position = 'Force Qualified'
+    else:
+        active_matches = TournamentMatch.query.filter(
+            TournamentMatch.tournament_id == tournament_id,
+            TournamentMatch.status.in_(['waiting', 'live']),
+            ((TournamentMatch.player1_id == player_id) | (TournamentMatch.player2_id == player_id))
+        ).all()
+        for match in active_matches:
+            opponent_id = match.player2_id if match.player1_id == player_id else match.player1_id
+            if opponent_id:
+                complete_tournament_match(match, opponent_id, 'manual')
+            else:
+                match.status = 'disqualified'
+        participant.status = 'kicked' if action_type == 'kick' else 'disqualified'
+        participant.position = 'Disqualified' if action_type == 'disqualify' else 'Removed'
+    participant.reason = reason
+    participant.admin_note = admin_note or None
+
+    log_admin_action(session['user_id'], action_type, reason, tournament_id=tournament_id, player_id=player_id, admin_note=admin_note)
+    db.session.commit()
+    user = db.session.get(User, player_id)
+    if user:
+        socketio.emit('tournament_kick', {
+            'message': f'Tournament action: {action_type}. Reason: {reason}',
+            'reason': reason,
+            'admin_note': admin_note
+        }, room=f"user_{user.username}")
+    tournament = db.session.get(Tournament, tournament_id)
+    socketio.emit('tournament_bracket_update', {'tournament': serialize_tournament(tournament)}, room=f"tournament_{tournament_id}")
+    return jsonify({'success': True})
+
+@app.route('/admin/tournament/<int:tournament_id>/score-override', methods=['POST'])
+@admin_required
+def admin_tournament_score_override(tournament_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        match_id = int(data.get('match_id'))
+        player_id = int(data.get('player_id'))
+        score = float(data.get('score'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'match_id, player_id, and score are required'}), 400
+    reason = (data.get('reason') or 'Manual score override').strip()
+    admin_note = (data.get('admin_note') or '').strip()
+    match = db.session.get(TournamentMatch, match_id)
+    if not match or match.tournament_id != tournament_id or player_id not in {match.player1_id, match.player2_id}:
+        return jsonify({'success': False, 'error': 'Invalid match/player'}), 400
+    save_match_result(match, player_id, score, match.winner_id == player_id, 'manual')
+    update_participant_from_result(tournament_id, player_id, score)
+    log_admin_action(session['user_id'], 'score_override', reason, tournament_id=tournament_id, tournament_match_id=match.id, player_id=player_id, admin_note=admin_note)
+    db.session.commit()
+    socketio.emit('tournament_score_update', {'tournament_id': tournament_id, 'match': serialize_tournament_match(match)}, room=f"tournament_{tournament_id}")
     return jsonify({'success': True})
 
 # ========== CHALLENGE MANAGEMENT ROUTES ==========
@@ -336,10 +1941,31 @@ def delete_challenge(challenge_id):
     challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
         return jsonify({'success': False, 'error': 'Challenge not found'}), 404
-    
-    challenge.is_active = False
+
+    if request.args.get('mode') == 'soft':
+        challenge.is_active = False
+        db.session.commit()
+        return jsonify({'success': True, 'deleted': 'soft'})
+
+    affected_user_ids = set()
+    for room in list(challenge.rooms):
+        affected_user_ids.update(delete_room_data(room))
+
+    target_image_path = challenge.target_image_path
+    db.session.delete(challenge)
+    sync_users_by_id(affected_user_ids)
     db.session.commit()
-    return jsonify({'success': True})
+
+    if target_image_path:
+        upload_path = os.path.abspath(os.path.join(app.root_path, app.config['UPLOAD_FOLDER'], target_image_path))
+        upload_root = os.path.abspath(os.path.join(app.root_path, app.config['UPLOAD_FOLDER']))
+        if upload_path.startswith(upload_root) and os.path.exists(upload_path):
+            try:
+                os.remove(upload_path)
+            except OSError:
+                pass
+
+    return jsonify({'success': True, 'deleted': 'permanent'})
 
 @app.route('/admin/challenge/<int:challenge_id>/details')
 @admin_required
@@ -359,6 +1985,8 @@ def challenge_details(challenge_id):
         'target_image_url': url_for('static', filename='uploads/' + challenge.target_image_path) if challenge.target_image_path else None,
         'target_html': challenge.target_html,
         'target_css': challenge.target_css,
+        'starter_html': challenge.starter_html or challenge.target_html,
+        'starter_css': challenge.starter_css or '',
         'html_locked': challenge.html_locked,
         'is_active': challenge.is_active
     })
@@ -382,14 +2010,25 @@ def delete_user(user_id):
     if not user:
         return jsonify({'success': False, 'error': 'User not found'}), 404
     
-    if user.role == 'admin':
-        return jsonify({'success': False, 'error': 'Cannot delete admin users'}), 400
+    if user.id == session.get('user_id'):
+        return jsonify({'success': False, 'error': 'You cannot delete your own admin account'}), 400
+
+    if user.role == 'admin' and User.query.filter_by(role='admin').count() <= 1:
+        return jsonify({'success': False, 'error': 'Cannot delete the last admin'}), 400
     
+    affected_user_ids = set()
+    for room in Room.query.filter((Room.player1_id == user_id) | (Room.player2_id == user_id)).all():
+        affected_user_ids.update({room.player1_id, room.player2_id})
+
     Submission.query.filter_by(user_id=user_id).delete()
     ChatMessage.query.filter_by(user_id=user_id).delete()
+    AwardCard.query.filter_by(user_id=user_id).delete()
+    AwardCard.query.filter_by(awarded_by=user_id).delete()
     Room.query.filter_by(player1_id=user_id).update({Room.player1_id: None})
     Room.query.filter_by(player2_id=user_id).update({Room.player2_id: None})
     db.session.delete(user)
+    remove_profile_record(user_id)
+    sync_users_by_id(affected_user_ids - {user_id})
     db.session.commit()
     
     return jsonify({'success': True})
@@ -426,6 +2065,7 @@ def reset_player_stats(user_id):
     user.matches_played = 0
     user.best_accuracy = 0
     user.total_wins = 0
+    user.leaderboard_unlocked_at = None
     Submission.query.filter_by(user_id=user_id, is_final=False).delete()
     db.session.commit()
     
@@ -438,13 +2078,9 @@ def delete_room(room_id):
     if not room:
         return jsonify({'success': False, 'error': 'Room not found'}), 404
     
-    Submission.query.filter_by(room_id=room_id).delete()
-    ChatMessage.query.filter_by(room_id=room_id).delete()
-    db.session.delete(room)
+    affected_user_ids = delete_room_data(room)
+    sync_users_by_id(affected_user_ids)
     db.session.commit()
-    
-    if room_id in room_timers:
-        del room_timers[room_id]
     
     return jsonify({'success': True})
 
@@ -452,6 +2088,7 @@ def delete_room(room_id):
 @app.route('/arena/<int:room_id>')
 @login_required
 def arena(room_id):
+    ensure_schema_upgrades()
     user = get_current_user()
     room = db.session.get(Room, room_id)
     
@@ -483,6 +2120,7 @@ def arena(room_id):
 @app.route('/results/<int:room_id>')
 @login_required
 def results(room_id):
+    ensure_schema_upgrades()
     user = get_current_user()
     room = db.session.get(Room, room_id)
     
@@ -497,11 +2135,21 @@ def results(room_id):
     if not final_subs:
         final_subs = Submission.query.filter_by(room_id=room_id).all()
     
+    best_submissions = {}
     for sub in final_subs:
+        current = best_submissions.get(sub.user_id)
+        if not current or sub.accuracy > current.accuracy or (sub.is_final and not current.is_final):
+            best_submissions[sub.user_id] = sub
         if sub.user_id == room.player1_id:
-            p1_sub = sub
+            p1_sub = sub if not p1_sub or sub.accuracy >= p1_sub.accuracy else p1_sub
         elif sub.user_id == room.player2_id:
-            p2_sub = sub
+            p2_sub = sub if not p2_sub or sub.accuracy >= p2_sub.accuracy else p2_sub
+
+    result_rows = sorted(
+        best_submissions.values(),
+        key=lambda sub: (sub.accuracy or 0, datetime_sort_value(sub.submitted_at)),
+        reverse=True
+    )
     
     winner = None
     if p1_sub and p2_sub:
@@ -516,23 +2164,81 @@ def results(room_id):
         update_user_stats(room.player1_id)
     if room.player2_id:
         update_user_stats(room.player2_id)
+    finalize_room_results(room)
+    db.session.commit()
     
     return render_template('results.html',
                          room=room,
                          p1_sub=p1_sub,
                          p2_sub=p2_sub,
+                         result_rows=result_rows,
                          winner=winner,
                          user=user)
+
+@app.route('/tournament')
+@login_required
+def tournament():
+    latest = Tournament.query.order_by(Tournament.created_at.desc()).first()
+    if latest:
+        return redirect(url_for('tournament_detail', tournament_id=latest.id))
+    user = get_current_user()
+    return render_template('tournament.html',
+                           user=user,
+                           tournament=None,
+                           tournaments=[])
+
+@app.route('/tournament/<int:tournament_id>')
+@login_required
+def tournament_detail(tournament_id):
+    ensure_schema_upgrades()
+    user = get_current_user()
+    tournament_obj = db.session.get(Tournament, tournament_id)
+    if not tournament_obj:
+        return redirect(url_for('dashboard'))
+    return render_template('tournament.html',
+                           user=user,
+                           tournament=serialize_tournament(tournament_obj),
+                           tournaments=Tournament.query.order_by(Tournament.created_at.desc()).all())
+
+@app.route('/api/tournament/<int:tournament_id>')
+@login_required
+def tournament_api(tournament_id):
+    tournament_obj = db.session.get(Tournament, tournament_id)
+    if not tournament_obj:
+        return jsonify({'success': False, 'error': 'Tournament not found'}), 404
+    return jsonify({'success': True, 'tournament': serialize_tournament(tournament_obj)})
+
+@app.route('/certificate/verify/<certificate_id>')
+def verify_certificate(certificate_id):
+    participant = TournamentParticipant.query.filter_by(certificate_id=certificate_id).first()
+    if not participant:
+        return jsonify({'valid': False, 'error': 'Certificate not found'}), 404
+    return jsonify({
+        'valid': True,
+        'certificate_id': participant.certificate_id,
+        'username': participant.user.username if participant.user else None,
+        'tournament': participant.tournament.name if participant.tournament else None,
+        'position': participant.position,
+        'final_score': round(participant.final_score or 0, 1),
+        'matches_played': participant.matches_played,
+        'issued_at': participant.tournament.ended_at.isoformat() if participant.tournament and participant.tournament.ended_at else None
+    })
 
 @app.route('/submission/save', methods=['POST'])
 @login_required
 def save_submission():
     data = request.json
     user = get_current_user()
+    room = db.session.get(Room, data.get('room_id'))
+
+    if not room:
+        return jsonify({'success': False, 'error': 'Room not found'}), 404
+    if room.status == 'ended':
+        return jsonify({'success': False, 'error': 'Match has ended'}), 403
     
     existing = Submission.query.filter_by(
         user_id=user.id,
-        room_id=data['room_id'],
+        room_id=room.id,
         is_final=False
     ).first()
     
@@ -545,7 +2251,7 @@ def save_submission():
     else:
         submission = Submission(
             user_id=user.id,
-            room_id=data['room_id'],
+            room_id=room.id,
             challenge_id=data.get('challenge_id'),
             html_code=data.get('html_code', ''),
             css_code=data.get('css_code', ''),
@@ -555,43 +2261,64 @@ def save_submission():
         db.session.add(submission)
     
     db.session.commit()
-    broadcast_leaderboard(data['room_id'])
+    broadcast_leaderboard(room.id)
+    tournament_match = TournamentMatch.query.filter_by(room_id=room.id).first()
+    if tournament_match:
+        socketio.emit('tournament_score_update', {
+            'tournament_id': tournament_match.tournament_id,
+            'match': serialize_tournament_match(tournament_match)
+        }, room=f"tournament_{tournament_match.tournament_id}")
     
     return jsonify({'success': True})
 
 @app.route('/room/join', methods=['POST'])
 @login_required
 def join_room_route():
-    data = request.json
+    data = request.json or {}
     room_id = data.get('room_id')
+    join_as = data.get('join_as', 'player')
     user = get_current_user()
     
-    print(f"🔵 Join room request: room_id={room_id}, user={user.username if user else 'None'}")
+    print(f"Join room request: room_id={room_id}, user={user.username if user else 'None'}")
     
     room = db.session.get(Room, room_id)
     
     if not room:
-        print(f"❌ Room {room_id} not found")
+        print(f"Room {room_id} not found")
         return jsonify({'success': False, 'error': 'Room not found'}), 400
     
     print(f"Room status: {room.status}, Player1: {room.player1_id}, Player2: {room.player2_id}")
+
+    if join_as == 'spectator':
+        if room.status == 'ended':
+            return jsonify({'success': False, 'error': 'This match has ended'}), 400
+        return jsonify({'success': True, 'room_id': room_id, 'role': 'spectator'})
+
+    if user.role != 'admin':
+        provided_code = str(data.get('room_code') or data.get('match_room_id') or '').strip().upper()
+        expected_code = (room.room_code or '').strip().upper()
+        if provided_code != expected_code:
+            return jsonify({
+                'success': False,
+                'error': 'Enter the correct match room ID to join as a player'
+            }), 403
     
     if room.status != 'waiting':
-        print(f"❌ Room status is {room.status}, cannot join")
+        print(f"Room status is {room.status}, cannot join")
         return jsonify({'success': False, 'error': 'Room already started'}), 400
     
     if room.player1_id == user.id or room.player2_id == user.id:
-        print(f"✅ User {user.username} already in room")
-        return jsonify({'success': True, 'room_id': room_id})
+        print(f"User {user.username} already in room")
+        return jsonify({'success': True, 'room_id': room_id, 'role': 'player'})
     
     if not room.player1_id:
         room.player1_id = user.id
-        print(f"✅ Assigned {user.username} as Player 1")
+        print(f"Assigned {user.username} as Player 1")
     elif not room.player2_id and room.player1_id != user.id:
         room.player2_id = user.id
-        print(f"✅ Assigned {user.username} as Player 2")
+        print(f"Assigned {user.username} as Player 2")
     else:
-        print(f"❌ Room is full")
+        print("Room is full")
         return jsonify({'success': False, 'error': 'Room is full'}), 400
     
     db.session.commit()
@@ -609,12 +2336,33 @@ def join_room_route():
         'timestamp': datetime.now(timezone.utc).isoformat()
     }, room=str(room_id))
     
-    return jsonify({'success': True, 'room_id': room_id})
+    return jsonify({'success': True, 'room_id': room_id, 'role': 'player'})
+
+@app.route('/room/spectate', methods=['POST'])
+@login_required
+def spectate_room_route():
+    data = request.json or {}
+    room_id = data.get('room_id')
+    room = db.session.get(Room, room_id)
+    if not room:
+        return jsonify({'success': False, 'error': 'Room not found'}), 400
+    if room.status == 'ended':
+        return jsonify({'success': False, 'error': 'This match has ended'}), 400
+    return jsonify({'success': True, 'room_id': room_id, 'role': 'spectator'})
 
 @app.route('/room/list')
 def room_list():
+    ensure_schema_upgrades()
     rooms = Room.query.filter(Room.status != 'ended').all()
-    return jsonify([{'id': r.id, 'room_code': r.room_code, 'status': r.status} for r in rooms])
+    return jsonify([
+        {
+            'id': r.id,
+            'room_code': r.room_code if r.is_public else None,
+            'is_public': bool(r.is_public),
+            'status': r.status
+        }
+        for r in rooms
+    ])
 
 @app.route('/static/uploads/<filename>')
 def uploaded_file(filename):
@@ -625,8 +2373,44 @@ def uploaded_file(filename):
 @login_required
 def leaderboard():
     user = get_current_user()
-    players = User.query.filter_by(role='player').order_by(User.best_accuracy.desc()).all()
-    return render_template('leaderboard.html', players=players, user=user)
+    leaderboard_rows = build_leaderboard_rows()
+    current_row = next((row for row in leaderboard_rows if row['user'].id == user.id), None)
+    current_rank = next((index + 1 for index, row in enumerate(leaderboard_rows) if row['user'].id == user.id), None)
+    award_card = build_leaderboard_award_card(user, current_row, current_rank) if current_row else None
+    return render_template('leaderboard.html',
+                           players=[row['user'] for row in leaderboard_rows],
+                           leaderboard_rows=leaderboard_rows,
+                           current_row=current_row,
+                           award_card=award_card,
+                           streak_target=LEADERBOARD_STREAK_TARGET,
+                           user=user)
+
+@app.route('/api/leaderboard')
+def leaderboard_api():
+    rows = build_leaderboard_rows()
+    return jsonify([
+        {
+            'rank': index + 1,
+            'id': row['user'].id,
+            'username': row['user'].username,
+            'matches_played': row['record']['matches_played'],
+            'wins': row['record']['wins'],
+            'losses': row['record']['losses'],
+            'draws': row['record']['draws'],
+            'win_rate': row['record']['win_rate'],
+            'best_accuracy': row['record']['best_accuracy'],
+            'avg_accuracy': row['record']['avg_accuracy'],
+            'current_streak': row['record']['current_streak'],
+            'best_streak': row['record']['best_streak'],
+            'power_score': row['record']['power_score'],
+        'leaderboard_unlocked': row['leaderboard_unlocked'],
+            'unlock_reason': row['unlock_reason'],
+            'award_reason': row['user'].leaderboard_award_reason,
+            'award_details': row['user'].leaderboard_award_details,
+            'award_color': row['user'].leaderboard_award_color
+        }
+        for index, row in enumerate(rows)
+    ])
 
 @app.route('/profile/<int:user_id>')
 @login_required
@@ -637,16 +2421,184 @@ def profile(user_id):
     if not target_user:
         return redirect(url_for('dashboard'))
     
-    recent_matches = Submission.query.filter_by(user_id=user_id).order_by(Submission.submitted_at.desc()).limit(20).all()
-    
-    all_players = User.query.filter_by(role='player').order_by(User.best_accuracy.desc()).all()
-    rank = next((i+1 for i, p in enumerate(all_players) if p.id == target_user.id), None)
+    leaderboard_rows = build_leaderboard_rows()
+    target_row = next((row for row in leaderboard_rows if row['user'].id == target_user.id), None)
+    record = target_row['record'] if target_row else sync_user_competition_state(target_user)
+    rank = next((i+1 for i, row in enumerate(leaderboard_rows) if row['user'].id == target_user.id), None)
+    recent_matches = [event['submission'] for event in record['events'][:20] if event['submission']]
+    award_card = build_leaderboard_award_card(target_user, target_row, rank) if target_row else None
+    achievements = build_profile_achievements(target_user, record, rank, award_card)
     
     return render_template('profile.html',
                          target_user=target_user,
                          current_user=current_user,
+                         user=current_user,
+                         target_profile=get_profile_view_data(target_user.id),
                          recent_matches=recent_matches,
-                         rank=rank)
+                         rank=rank,
+                         leaderboard_record=record,
+                         leaderboard_unlocked=user_has_leaderboard_access(target_user, record),
+                         leaderboard_awarded=bool(target_user.leaderboard_awarded),
+                         leaderboard_streak_target=LEADERBOARD_STREAK_TARGET,
+                         achievements=achievements,
+                         award_card=award_card)
+
+@app.route('/profile/<int:user_id>/achievements')
+@login_required
+def profile_achievements(user_id):
+    target_user = db.session.get(User, user_id)
+    current_user = get_current_user()
+    if not target_user:
+        return redirect(url_for('dashboard'))
+    leaderboard_rows = build_leaderboard_rows()
+    target_row = next((row for row in leaderboard_rows if row['user'].id == target_user.id), None)
+    record = target_row['record'] if target_row else sync_user_competition_state(target_user)
+    rank = next((i + 1 for i, row in enumerate(leaderboard_rows) if row['user'].id == target_user.id), None)
+    award_card = build_leaderboard_award_card(target_user, target_row, rank) if target_row else None
+    achievements = build_profile_achievements(target_user, record, rank, award_card)
+    return render_template('achievements.html',
+                           user=current_user,
+                           current_user=current_user,
+                           target_user=target_user,
+                           target_profile=get_profile_view_data(target_user.id),
+                           leaderboard_record=record,
+                           leaderboard_unlocked=user_has_leaderboard_access(target_user, record),
+                           achievements=achievements,
+                           award_card=award_card)
+
+@app.route('/awards')
+@login_required
+def my_awards():
+    current_user = get_current_user()
+    cards = AwardCard.query.filter_by(user_id=current_user.id).order_by(AwardCard.created_at.desc()).all()
+    return render_template(
+        'student_awards.html',
+        user=current_user,
+        target_user=current_user,
+        cards=[serialize_award_card(card) for card in cards],
+        card_templates=CARD_TEMPLATES,
+        avatar_templates=AVATAR_TEMPLATES,
+        admin_mode=False
+    )
+
+@app.route('/awards/<int:card_id>/color', methods=['POST'])
+@login_required
+def update_award_card_color(card_id):
+    current_user = get_current_user()
+    card = db.session.get(AwardCard, card_id)
+    if not card or card.user_id != current_user.id:
+        return jsonify({'success': False, 'error': 'Award card not found'}), 404
+    data = request.get_json(silent=True) or {}
+    card.student_color = clean_hex_color(data.get('color'), card.primary_color)
+    db.session.commit()
+    return jsonify({'success': True, 'card': serialize_award_card(card)})
+
+@app.route('/api/profile/me', methods=['GET', 'POST'])
+@login_required
+def profile_me_api():
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+
+    if request.method == 'GET':
+        return jsonify({'success': True, 'user': profile_payload(user)})
+
+    username = (request.form.get('username') or '').strip()
+    bio = (request.form.get('bio') or '').strip()
+
+    if not username:
+        return jsonify({'success': False, 'error': 'Username is required'}), 400
+
+    existing = User.query.filter(User.username == username, User.id != user.id).first()
+    if existing:
+        return jsonify({'success': False, 'error': 'Username already exists'}), 400
+
+    username_changed = username != user.username
+    user.username = username[:80]
+    profiles, profile = get_profile_record(user.id)
+    profile['bio'] = bio[:500]
+
+    avatar = request.files.get('avatar')
+    if avatar and avatar.filename:
+        if not allowed_file(avatar.filename):
+            return jsonify({'success': False, 'error': 'Avatar must be png, jpg, jpeg, or gif'}), 400
+        ext = secure_filename(avatar.filename).rsplit('.', 1)[1].lower()
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        avatar.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        profile['avatar_filename'] = filename
+
+    try:
+        db.session.commit()
+        save_profile_store(profiles)
+    except (OSError, SQLAlchemyError):
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'Profile storage is not writable. Restart the app from your VS Code terminal and try again.'}), 500
+    session['username'] = user.username
+    return jsonify({'success': True, 'user': profile_payload(user)})
+
+@app.route('/api/account/password', methods=['POST'])
+@login_required
+def account_change_password():
+    user = get_current_user()
+    data = request.get_json() or {}
+    current_password = data.get('current_password') or ''
+    new_password = data.get('new_password') or ''
+    confirm_password = data.get('confirm_password') or ''
+
+    if not user.check_password(current_password):
+        return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
+    if len(new_password) < 8:
+        return jsonify({'success': False, 'error': 'New password must be at least 8 characters'}), 400
+    if new_password != confirm_password:
+        return jsonify({'success': False, 'error': 'New passwords do not match'}), 400
+
+    user.set_password(new_password)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/account/2fa/setup', methods=['POST'])
+@login_required
+def account_2fa_setup():
+    user = get_current_user()
+    data = request.get_json() or {}
+    if not user.check_password(data.get('current_password') or ''):
+        return jsonify({'success': False, 'error': 'Current password is required'}), 400
+    if not user.two_factor_secret:
+        user.two_factor_secret = generate_totp_secret()
+        db.session.commit()
+    return jsonify({
+        'success': True,
+        'secret': user.two_factor_secret,
+        'otpauth_uri': totp_otpauth_uri(user, user.two_factor_secret),
+        'enabled': bool(user.two_factor_enabled)
+    })
+
+@app.route('/api/account/2fa/enable', methods=['POST'])
+@login_required
+def account_2fa_enable():
+    user = get_current_user()
+    data = request.get_json() or {}
+    if not user.two_factor_secret:
+        return jsonify({'success': False, 'error': 'Start two-step setup first'}), 400
+    if not verify_totp(user.two_factor_secret, data.get('code')):
+        return jsonify({'success': False, 'error': 'Invalid verification code'}), 400
+    user.two_factor_enabled = True
+    db.session.commit()
+    return jsonify({'success': True, 'enabled': True})
+
+@app.route('/api/account/2fa/disable', methods=['POST'])
+@login_required
+def account_2fa_disable():
+    user = get_current_user()
+    data = request.get_json() or {}
+    if not user.check_password(data.get('current_password') or ''):
+        return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
+    if user.two_factor_enabled and not verify_totp(user.two_factor_secret, data.get('code')):
+        return jsonify({'success': False, 'error': 'Invalid verification code'}), 400
+    user.two_factor_enabled = False
+    user.two_factor_secret = None
+    db.session.commit()
+    return jsonify({'success': True, 'enabled': False})
 
 @app.route('/api/user/<int:user_id>/matches/all')
 @login_required
@@ -655,17 +2607,21 @@ def get_user_all_matches(user_id):
     if not user:
         return jsonify({'success': False, 'error': 'User not found'}), 404
     
-    submissions = Submission.query.filter_by(user_id=user_id).order_by(Submission.submitted_at.desc()).all()
-    
     matches = []
-    for s in submissions:
+    for event in get_user_match_events(user_id):
+        s = event['submission']
+        if not s:
+            continue
+        challenge = event['room'].challenge if event['room'] else s.challenge
         matches.append({
             'id': s.id,
-            'date': s.submitted_at.strftime('%Y-%m-%d %H:%M') if s.submitted_at else 'Unknown',
-            'challenge': s.challenge.title if s.challenge else 'Unknown',
-            'type': s.challenge.challenge_type.upper() if s.challenge else '—',
+            'date': event['completed_at'].strftime('%Y-%m-%d %H:%M') if event['completed_at'] else 'Unknown',
+            'challenge': challenge.title if challenge else 'Unknown',
+            'type': s.challenge.challenge_type.upper() if s.challenge else 'Ã¢â‚¬â€',
             'accuracy': round(s.accuracy, 1),
-            'status': 'Forfeit' if s.is_forfeit else 'Completed'
+            'status': 'Forfeit' if s.is_forfeit else event['result'].title(),
+            'result': event['result'],
+            'is_winner': event['result'] == 'win'
         })
     
     return jsonify({'success': True, 'matches': matches})
@@ -695,122 +2651,145 @@ def get_user_stats_api(user_id):
     if not user:
         return jsonify({'success': False, 'error': 'User not found'}), 404
     
-    submissions = Submission.query.filter_by(user_id=user_id, is_forfeit=False).order_by(Submission.submitted_at.desc()).all()
-    
-    total_matches = len(submissions)
-    wins = sum(1 for s in submissions if s.accuracy > 50)
-    win_rate = round((wins / total_matches * 100) if total_matches > 0 else 0, 1)
-    avg_accuracy = round(sum(s.accuracy for s in submissions) / total_matches, 1) if total_matches > 0 else 0
-    
-    current_streak = 0
-    best_streak = 0
-    for s in submissions:
-        if s.accuracy >= 50:
-            current_streak += 1
-            best_streak = max(best_streak, current_streak)
-        else:
-            current_streak = 0
-    
+    record = sync_user_competition_state(user)
+    db.session.commit()
+    submissions = [event['submission'] for event in record['events'] if event['submission'] and not event['submission'].is_forfeit]
+
     image_count = sum(1 for s in submissions if s.challenge and s.challenge.challenge_type == 'image')
     html_count = sum(1 for s in submissions if s.challenge and s.challenge.challenge_type == 'html')
     
     return jsonify({
         'success': True,
         'username': user.username,
-        'matches_played': user.matches_played,
-        'best_accuracy': round(user.best_accuracy, 1),
-        'total_wins': user.total_wins,
-        'win_rate': win_rate,
-        'avg_accuracy': avg_accuracy,
-        'best_streak': best_streak,
-        'total_submissions': total_matches,
+        'matches_played': record['matches_played'],
+        'best_accuracy': record['best_accuracy'],
+        'total_wins': record['wins'],
+        'win_rate': record['win_rate'],
+        'avg_accuracy': record['avg_accuracy'],
+        'current_streak': record['current_streak'],
+        'best_streak': record['best_streak'],
+        'total_submissions': len(submissions),
         'image_count': image_count,
         'html_count': html_count,
-        'total_score': round(sum(s.accuracy for s in submissions), 1)
+        'total_score': round(sum(s.accuracy for s in submissions), 1),
+        'power_score': record['power_score'],
+        'leaderboard_unlocked': user_has_leaderboard_access(user, record),
+        'leaderboard_awarded': bool(user.leaderboard_awarded),
+        'leaderboard_unlock_target': LEADERBOARD_STREAK_TARGET
     })
-
-@app.route('/setup-test-accounts')
-def setup_test_accounts():
-    player1 = User.query.filter_by(username='Player1').first()
-    if not player1:
-        player1 = User(username='Player1', role='player')
-        player1.set_password('player1')
-        db.session.add(player1)
-    
-    player2 = User.query.filter_by(username='Player2').first()
-    if not player2:
-        player2 = User(username='Player2', role='player')
-        player2.set_password('player2')
-        db.session.add(player2)
-    
-    spectator = User.query.filter_by(username='Spectator').first()
-    if not spectator:
-        spectator = User(username='Spectator', role='player')
-        spectator.set_password('spectator')
-        db.session.add(spectator)
-    
-    db.session.commit()
-    
-    return jsonify({
-        'success': True,
-        'message': 'Test accounts created!',
-        'accounts': [
-            {'username': 'admin', 'password': 'admin123', 'role': 'admin'},
-            {'username': 'Player1', 'password': 'player1', 'role': 'player'},
-            {'username': 'Player2', 'password': 'player2', 'role': 'player'},
-            {'username': 'Spectator', 'password': 'spectator', 'role': 'player'}
-        ]
-    })
-
-
-@app.route('/preview')
-def preview():
-    return render_template('preview.html')
 
 # ========== SOCKET.IO EVENTS ==========
 @socketio.on('connect')
 def handle_connect():
-    print(f"✅ Client connected: {request.sid}")
+    print(f"Ã¢Å“â€¦ Client connected: {request.sid}")
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print(f"❌ Client disconnected: {request.sid}")
-    if request.sid in connected_users:
-        del connected_users[request.sid]
+    print(f"Ã¢ÂÅ’ Client disconnected: {request.sid}")
+    info = connected_users.pop(request.sid, None)
+    if info:
+        room_id = info.get('room_id')
+        if room_id in room_spectators:
+            room_spectators[room_id].discard(info.get('username'))
+            if not room_spectators[room_id]:
+                del room_spectators[room_id]
+            emit_spectator_list(room_id)
+        if room_id in room_typing_users:
+            room_typing_users[room_id].discard(info.get('username'))
+        emit_presence(room_id)
+
+
+def get_spectator_names(room_id):
+    return sorted(list(room_spectators.get(room_id, set())))
+
+
+def emit_spectator_list(room_id):
+    socketio.emit('spectator_list_update', {
+        'spectators': get_spectator_names(room_id),
+        'count': len(room_spectators.get(room_id, set()))
+    }, room=str(room_id))
+
+
+def emit_presence(room_id):
+    users_by_name = {}
+    for info in connected_users.values():
+        if info.get('room_id') == room_id and info.get('username'):
+            users_by_name[info['username']] = {
+                'username': info['username'],
+                'role': info.get('role', 'spectator')
+            }
+    socketio.emit('presence_update', {
+        'users': sorted(users_by_name.values(), key=lambda item: (item['role'], item['username'].lower()))
+    }, room=str(room_id))
+
 
 @socketio.on('join_room')
 def handle_join_room(data):
     room_id = data.get('room_id')
     username = data.get('username')
+    user_role = data.get('user_role', 'spectator')
     
-    print(f"🔵 SOCKET join_room: {username} joining room {room_id}")
+    print(f"Ã°Å¸â€Âµ SOCKET join_room: {username} joining room {room_id} as {user_role}")
     
     if username:
-        connected_users[request.sid] = {'username': username, 'room_id': room_id}
+        connected_users[request.sid] = {'username': username, 'room_id': room_id, 'role': user_role}
+    
+    if user_role == 'spectator':
+        room_spectators.setdefault(room_id, set()).add(username)
+        emit_spectator_list(room_id)
     
     join_room(str(room_id))
     
     room = db.session.get(Room, room_id)
+    if room:
+        recent_messages = ChatMessage.query.filter_by(room_id=room_id).order_by(ChatMessage.sent_at.desc()).limit(50).all()
+        emit('chat_history', {
+            'messages': [serialize_chat_message(msg) for msg in reversed(recent_messages)]
+        }, room=request.sid)
     
     # CRITICAL: Send current status to the joining player
     if room:
         if room.status == 'running':
             challenge = room.challenge
-            # Send via socket
             emit('challenge_started', {
                 'time_limit': challenge.time_limit,
                 'challenge_title': challenge.title,
                 'room_id': room.id
             }, room=request.sid)
-            print(f"🟢 Sent challenge_started to newly joined player {username}")
+            print(f"Ã°Å¸Å¸Â¢ Sent challenge_started to newly joined player {username}")
+        elif room.status == 'paused':
+            emit('challenge_paused', {
+                'room_id': room.id,
+                'remaining': room_timers.get(room.id, 0),
+                'message': 'Match is currently paused by admin'
+            }, room=request.sid)
     
+    if room and user_role == 'spectator':
+        emit('spectator_preview_state', {
+            'previews': [
+                {'username': preview_username, 'compiled_html': compiled_html}
+                for preview_username, compiled_html in room_preview_data.get(room_id, {}).items()
+            ]
+        }, room=request.sid)
+
+    join_room(f"user_{username}")
+    emit_presence(room_id)
     socketio.emit('chat_message', {
         'username': 'SYSTEM',
-        'message': f'{username} joined the arena!',
+        'message': f'{username} joined the arena as {user_role.replace("player1", "Player 1").replace("player2", "Player 2").replace("spectator", "Spectator")}!',
         'is_system': True,
         'timestamp': datetime.now(timezone.utc).isoformat()
     }, room=str(room_id))
 
+@socketio.on('join_tournament')
+def handle_join_tournament(data):
+    tournament_id = data.get('tournament_id')
+    user = db.session.get(User, session.get('user_id')) if session.get('user_id') else None
+    if not tournament_id or not user:
+        return
+    join_room(f"tournament_{int(tournament_id)}")
+    join_room(f"user_{user.username}")
+    emit('tournament_notification', {'message': 'Connected to live tournament updates.'}, room=request.sid)
 
 
 @socketio.on('leave_room')
@@ -819,6 +2798,16 @@ def handle_leave_room(data):
     username = data.get('username')
     
     leave_room(str(room_id))
+    
+    # Remove spectator when leaving
+    if room_id in room_spectators and username in room_spectators[room_id]:
+        room_spectators[room_id].discard(username)
+        if not room_spectators[room_id]:
+            del room_spectators[room_id]
+        emit_spectator_list(room_id)
+    if room_id in room_typing_users:
+        room_typing_users[room_id].discard(username)
+    emit_presence(room_id)
     
     socketio.emit('chat_message', {
         'username': 'SYSTEM',
@@ -842,28 +2831,117 @@ def handle_progress_update(data):
 
 @socketio.on('chat_message')
 def handle_chat_message(data):
-    room_id = data.get('room_id')
-    username = data.get('username')
-    message = data.get('message')
+    try:
+        room_id = int(data.get('room_id'))
+    except (TypeError, ValueError):
+        return
+    socket_user = connected_users.get(request.sid, {})
+    session_user = db.session.get(User, session.get('user_id')) if session.get('user_id') else None
+    username = session_user.username if session_user else socket_user.get('username') or data.get('username')
+    message = (data.get('message') or '').strip()
+    if not message:
+        return
+    message = message[:500]
     
     room = db.session.get(Room, room_id)
-    user = User.query.filter_by(username=username).first()
-    
-    if room and user:
-        chat_msg = ChatMessage(
-            room_id=room_id,
-            user_id=user.id,
-            message=message,
-            is_system=False
-        )
-        db.session.add(chat_msg)
-        db.session.commit()
-    
-    socketio.emit('chat_message', {
-        'username': username,
-        'message': message,
-        'is_system': False,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+    user = session_user or User.query.filter_by(username=username).first()
+    if not room or not user:
+        emit('chat_warning', {
+            'message': 'Join the room before sending chat messages.'
+        }, room=request.sid)
+        return
+
+    if contains_bad_language(message):
+        if room_id in room_typing_users:
+            room_typing_users[room_id].discard(username)
+        emit('chat_warning', {
+            'message': 'Please keep the arena chat respectful. Your message was not sent.'
+        }, room=request.sid)
+        socketio.emit('typing_update', {
+            'users': sorted(room_typing_users.get(room_id, set()))
+        }, room=str(room_id))
+        return
+
+    auto_flagged = contains_sensitive_language(message)
+    chat_msg = ChatMessage(
+        room_id=room_id,
+        user_id=user.id,
+        message=message,
+        is_system=False,
+        is_flagged=auto_flagged,
+        flag_reason='Auto-flagged for sensitive language' if auto_flagged else None
+    )
+    db.session.add(chat_msg)
+    db.session.commit()
+
+    socketio.emit('chat_message', serialize_chat_message(chat_msg), room=str(room_id))
+    socketio.emit('admin_chat_message', serialize_admin_chat_message(chat_msg))
+    if auto_flagged:
+        emit('chat_warning', {
+            'message': 'Your message was sent but flagged for admin review because it contains sensitive language.'
+        }, room=request.sid)
+        socketio.emit('chat_flag_notice', {
+            'message_id': chat_msg.id,
+            'message': f'Message from {user.username} was auto-flagged for admin review.'
+        }, room=str(room_id))
+    if room_id in room_typing_users:
+        room_typing_users[room_id].discard(username)
+    socketio.emit('typing_update', {
+        'users': sorted(room_typing_users.get(room_id, set()))
+    }, room=str(room_id))
+
+
+@socketio.on('flag_chat_message')
+def handle_flag_chat_message(data):
+    session_user = db.session.get(User, session.get('user_id')) if session.get('user_id') else None
+    if not session_user or session_user.role != 'admin':
+        emit('chat_warning', {'message': 'Only admins can flag chat messages.'}, room=request.sid)
+        return
+
+    try:
+        message_id = int(data.get('message_id'))
+    except (TypeError, ValueError):
+        return
+
+    chat_msg = db.session.get(ChatMessage, message_id)
+    if not chat_msg or chat_msg.is_system:
+        return
+
+    reason = (data.get('reason') or 'Flagged by admin').strip()[:160]
+    chat_msg.is_flagged = True
+    chat_msg.flag_reason = reason
+    chat_msg.flagged_by = session_user.id
+    db.session.commit()
+
+    payload = {
+        'id': chat_msg.id,
+        'is_flagged': True,
+        'flag_reason': reason
+    }
+    socketio.emit('chat_message_flagged', payload, room=str(chat_msg.room_id))
+    socketio.emit('admin_chat_message_flagged', {
+        'id': chat_msg.id,
+        'flag_reason': reason
+    })
+    socketio.emit('chat_flag_notice', {
+        'message_id': chat_msg.id,
+        'message': f'Admin flagged a chat message from {chat_msg.user.username if chat_msg.user else "a user"}.'
+    }, room=str(chat_msg.room_id))
+
+
+@socketio.on('typing')
+def handle_typing(data):
+    room_id = data.get('room_id')
+    username = data.get('username')
+    is_typing = bool(data.get('is_typing'))
+    if not room_id or not username:
+        return
+    if is_typing:
+        room_typing_users.setdefault(room_id, set()).add(username)
+    elif room_id in room_typing_users:
+        room_typing_users[room_id].discard(username)
+    socketio.emit('typing_update', {
+        'users': sorted(room_typing_users.get(room_id, set()))
     }, room=str(room_id))
 
 @socketio.on('cam_frame')
@@ -890,7 +2968,7 @@ def handle_code_preview(data):
     socketio.emit('admin_preview', {
         'username': username,
         'compiled_html': compiled_html
-    })
+    }, room=str(room_id))
 
 @socketio.on('forfeit')
 def handle_forfeit(data):
@@ -912,19 +2990,19 @@ def handle_forfeit(data):
 
 @socketio.on('start_challenge')
 def on_start(data):
-    print(f"🚀 START_CHALLENGE called with data: {data}")
+    print(f"Ã°Å¸Å¡â‚¬ START_CHALLENGE called with data: {data}")
     
     if session.get('role') != 'admin':
-        print("❌ Not admin")
+        print("Ã¢ÂÅ’ Not admin")
         return
     
     room = db.session.get(Room, data['room_id'])
     if not room:
-        print(f"❌ Room {data['room_id']} not found")
+        print(f"Ã¢ÂÅ’ Room {data['room_id']} not found")
         return
     
     if room.status not in ['waiting', 'paused']:
-        print(f"❌ Room status is {room.status}")
+        print(f"Ã¢ÂÅ’ Room status is {room.status}")
         return
     
     challenge = room.challenge
@@ -945,7 +3023,7 @@ def on_start(data):
     thread.daemon = True
     thread.start()
     
-    print(f"✅ Challenge started for room {room.id}")
+    print(f"Ã¢Å“â€¦ Challenge started for room {room.id}")
 
 @socketio.on('pause_challenge')
 def on_pause(data):
@@ -955,7 +3033,7 @@ def on_pause(data):
     if room and room.status == 'running':
         room.status = 'paused'
         db.session.commit()
-        socketio.emit('challenge_paused', {'remaining': room_timers.get(data['room_id'], 0)}, room=str(data['room_id']))
+        emit_challenge_paused(room)
 
 @socketio.on('resume_challenge')
 def on_resume(data):
@@ -965,7 +3043,7 @@ def on_resume(data):
     if room and room.status == 'paused':
         room.status = 'running'
         db.session.commit()
-        socketio.emit('challenge_resumed', {}, room=str(data['room_id']))
+        emit_challenge_resumed(room)
 
 @socketio.on('add_time')
 def on_add_time(data):
@@ -985,6 +3063,7 @@ def on_end(data):
     if room:
         room.status = 'ended'
         room.ended_at = datetime.now(timezone.utc)
+        finalize_room_results(room)
         db.session.commit()
     socketio.emit('challenge_ended', {'room_id': rid}, room=str(rid))
 
@@ -1011,7 +3090,7 @@ def on_kick(data):
 
 @socketio.on('check_challenge_status')
 def handle_check_status(data):
-    print(f"📡 Status check request from {request.sid}")
+    print(f"Ã°Å¸â€œÂ¡ Status check request from {request.sid}")
     room = db.session.get(Room, data['room_id'])
     if room and room.status == 'running':
         challenge = room.challenge
@@ -1020,7 +3099,7 @@ def handle_check_status(data):
             'challenge_title': challenge.title,
             'room_id': room.id
         })
-        print(f"📡 Sent challenge_started to {request.sid}")
+        print(f"Ã°Å¸â€œÂ¡ Sent challenge_started to {request.sid}")
 
 
 # ========== DEBUG ROUTES ==========
@@ -1040,32 +3119,6 @@ def debug_room(room_id):
         'connected_clients': list(connected_users.values())
     })
 
-@app.route('/debug/add-player/<int:room_id>/<string:player_type>')
-@admin_required
-def debug_add_player(room_id, player_type):
-    room = db.session.get(Room, room_id)
-    if not room:
-        return jsonify({'error': 'Room not found'}), 404
-    
-    player1 = User.query.filter_by(username='Player1').first()
-    player2 = User.query.filter_by(username='Player2').first()
-    
-    if player_type == 'p1' and player1:
-        room.player1_id = player1.id
-    elif player_type == 'p2' and player2:
-        room.player2_id = player2.id
-    
-    db.session.commit()
-    
-    return jsonify({
-        'success': True,
-        'room_id': room.id,
-        'player1': room.player1.username if room.player1 else None,
-        'player2': room.player2.username if room.player2 else None
-    })
-
-
-
 # Add this endpoint to check challenge status via HTTP (more reliable than WebSocket)
 @app.route('/api/challenge-status/<int:room_id>')
 @login_required
@@ -1084,6 +3137,7 @@ def api_challenge_status(room_id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+        ensure_schema_upgrades()
         
         admin = User.query.filter_by(role='admin').first()
         if not admin:
@@ -1099,10 +3153,14 @@ if __name__ == '__main__':
         else:
             print("Admin user already exists")
     
+    port = int(os.environ.get('PORT', 5001))
+
     print("\n" + "=" * 50)
     print("UI BATTLE ARENA is starting...")
-    print("Open http://localhost:5001 in your browser")
+    print(f"Open http://localhost:{port} in your browser")
     print("=" * 50 + "\n")
     
-    # Use eventlet as the async mode
-    socketio.run(app, host='0.0.0.0', port=8080, debug=True, use_reloader=False)
+    debug_mode = os.environ.get('FLASK_DEBUG') == '1'
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug_mode, use_reloader=False, allow_unsafe_werkzeug=True)
+
+

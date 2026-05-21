@@ -142,7 +142,8 @@ function initRoomActions() {
 // Kick player handler
 function initKickPlayer() {
     window.kickPlayer = async (roomId, username) => {
-        if (!confirm(`Kick ${username} from the room?`)) return;
+        const confirmed = await showConfirm(`Kick ${username} from the room?`, 'Kick user');
+        if (!confirmed) return;
         
         try {
             const response = await fetch('/admin/kick', {
@@ -192,7 +193,8 @@ function initBroadcast() {
 // Delete challenge handler
 function initDeleteChallenge() {
     window.deleteChallenge = async (challengeId) => {
-        if (!confirm('Delete this challenge? This action cannot be undone.')) return;
+        const confirmed = await showConfirm('Delete this challenge? This action cannot be undone.', 'Delete challenge');
+        if (!confirmed) return;
         
         try {
             const response = await fetch(`/admin/challenge/${challengeId}/delete`, {
@@ -212,7 +214,8 @@ function initDeleteChallenge() {
 // Delete room handler
 function initDeleteRoom() {
     window.deleteRoom = async (roomId) => {
-        if (!confirm('Delete this room? All associated data will be lost.')) return;
+        const confirmed = await showConfirm('Delete this room? All associated data will be lost.', 'Delete room');
+        if (!confirmed) return;
         
         try {
             const response = await fetch(`/admin/room/${roomId}/delete`, {
@@ -338,6 +341,7 @@ function initCreateChallengeForm() {
         formData.append('difficulty', document.getElementById('difficulty')?.value || 'Medium');
         formData.append('time_limit', document.getElementById('time-limit')?.value || '120');
         formData.append('description', document.getElementById('description')?.value || '');
+        formData.append('room_visibility', document.getElementById('room-visibility')?.value || 'private');
         
         const challengeType = document.getElementById('challenge-type')?.value;
         
@@ -372,7 +376,8 @@ function initCreateChallengeForm() {
             const data = await response.json();
             
             if (data.success) {
-                showToast(`Challenge created! Room code: ${data.room_code}`, 'success');
+                const visibility = data.is_public ? 'public' : 'private';
+                showToast(`Challenge created as ${visibility}! Room code: ${data.room_code}`, 'success');
                 setTimeout(() => location.reload(), 1500);
             } else {
                 showToast(data.error || 'Failed to create challenge', 'error');

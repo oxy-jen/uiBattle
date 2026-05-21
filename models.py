@@ -9,11 +9,23 @@ class User(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=True)
     password_hash = db.Column(db.String(200), nullable=False)
+    auth_provider = db.Column(db.String(20), default='local')
+    google_sub = db.Column(db.String(255), unique=True, nullable=True)
+    two_factor_secret = db.Column(db.String(64), nullable=True)
+    two_factor_enabled = db.Column(db.Boolean, default=False)
     role = db.Column(db.String(10), default='player')
     matches_played = db.Column(db.Integer, default=0)
     best_accuracy = db.Column(db.Float, default=0.0)
     total_wins = db.Column(db.Integer, default=0)
+    leaderboard_unlocked_at = db.Column(db.DateTime, nullable=True)
+    leaderboard_awarded = db.Column(db.Boolean, default=False)
+    leaderboard_awarded_at = db.Column(db.DateTime, nullable=True)
+    leaderboard_awarded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    leaderboard_award_reason = db.Column(db.String(200), nullable=True)
+    leaderboard_award_details = db.Column(db.Text, nullable=True)
+    leaderboard_award_color = db.Column(db.String(20), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def set_password(self, password):
@@ -29,7 +41,8 @@ class User(db.Model):
             'role': self.role,
             'matches_played': self.matches_played,
             'best_accuracy': round(self.best_accuracy, 1),
-            'total_wins': self.total_wins
+            'total_wins': self.total_wins,
+            'leaderboard_unlocked': bool(self.leaderboard_unlocked_at or self.leaderboard_awarded)
         }
 
 class Challenge(db.Model):
@@ -46,6 +59,8 @@ class Challenge(db.Model):
     target_image_path = db.Column(db.String(200), nullable=True)
     target_html = db.Column(db.Text, nullable=True)
     target_css = db.Column(db.Text, nullable=True)
+    starter_html = db.Column(db.Text, nullable=True)
+    starter_css = db.Column(db.Text, nullable=True)
     html_locked = db.Column(db.Boolean, default=True)
     
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
@@ -64,10 +79,128 @@ class Room(db.Model):
     started_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     ended_at = db.Column(db.DateTime, nullable=True)
+    is_public = db.Column(db.Boolean, default=False)
     
     challenge = db.relationship('Challenge', backref='rooms')
     player1 = db.relationship('User', foreign_keys=[player1_id])
     player2 = db.relationship('User', foreign_keys=[player2_id])
+
+class Tournament(db.Model):
+    __tablename__ = 'tournaments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(140), nullable=False)
+    size = db.Column(db.Integer, nullable=False, default=8)
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
+    status = db.Column(db.String(20), default='waiting')
+    auto_advance = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    ended_at = db.Column(db.DateTime, nullable=True)
+
+    challenge = db.relationship('Challenge', backref='tournaments')
+    creator = db.relationship('User', foreign_keys=[created_by])
+
+class TournamentParticipant(db.Model):
+    __tablename__ = 'tournament_participants'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    seed = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), default='active')
+    position = db.Column(db.String(40), default='Participant')
+    final_score = db.Column(db.Float, default=0.0)
+    matches_played = db.Column(db.Integer, default=0)
+    certificate_id = db.Column(db.String(64), nullable=True)
+    admin_note = db.Column(db.Text, nullable=True)
+    reason = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tournament = db.relationship('Tournament', backref='participants')
+    user = db.relationship('User', backref='tournament_entries')
+
+class TournamentMatch(db.Model):
+    __tablename__ = 'tournament_matches'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
+    round_number = db.Column(db.Integer, nullable=False)
+    round_name = db.Column(db.String(40), nullable=False)
+    match_number = db.Column(db.Integer, nullable=False)
+    room_id = db.Column(db.Integer, db.ForeignKey('rooms.id'), nullable=True)
+    player1_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    player2_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    status = db.Column(db.String(20), default='waiting')
+    is_manual_override = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    tournament = db.relationship('Tournament', backref='matches')
+    room = db.relationship('Room', backref='tournament_match')
+    player1 = db.relationship('User', foreign_keys=[player1_id])
+    player2 = db.relationship('User', foreign_keys=[player2_id])
+    winner = db.relationship('User', foreign_keys=[winner_id])
+
+class MatchResult(db.Model):
+    __tablename__ = 'match_results'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_match_id = db.Column(db.Integer, db.ForeignKey('tournament_matches.id'), nullable=False)
+    room_id = db.Column(db.Integer, db.ForeignKey('rooms.id'), nullable=False)
+    player_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    score = db.Column(db.Float, default=0.0)
+    is_winner = db.Column(db.Boolean, default=False)
+    source = db.Column(db.String(20), default='auto')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tournament_match = db.relationship('TournamentMatch', backref='results')
+    room = db.relationship('Room', backref='match_results')
+    player = db.relationship('User', backref='match_results')
+
+class AdminAction(db.Model):
+    __tablename__ = 'admin_actions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
+    tournament_match_id = db.Column(db.Integer, db.ForeignKey('tournament_matches.id'), nullable=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    player_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    action_type = db.Column(db.String(40), nullable=False)
+    reason = db.Column(db.String(200), nullable=False)
+    admin_note = db.Column(db.Text, nullable=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tournament = db.relationship('Tournament', backref='admin_actions')
+    tournament_match = db.relationship('TournamentMatch', backref='admin_actions')
+    admin = db.relationship('User', foreign_keys=[admin_id])
+    player = db.relationship('User', foreign_keys=[player_id])
+
+class AwardCard(db.Model):
+    __tablename__ = 'award_cards'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    awarded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    title = db.Column(db.String(140), nullable=False)
+    reason = db.Column(db.String(200), nullable=True)
+    message = db.Column(db.Text, nullable=True)
+    card_template = db.Column(db.String(40), default='champion')
+    avatar_template = db.Column(db.String(40), default='spark')
+    accent_icon = db.Column(db.String(40), default='fa-award')
+    avatar_label = db.Column(db.String(80), nullable=True)
+    primary_color = db.Column(db.String(20), default='#22d3ee')
+    secondary_color = db.Column(db.String(20), default='#f59e0b')
+    student_color = db.Column(db.String(20), nullable=True)
+    shape = db.Column(db.String(20), default='rounded')
+    avatar_shape = db.Column(db.String(20), default='circle')
+    layout = db.Column(db.String(20), default='classic')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', foreign_keys=[user_id], backref='award_cards')
+    admin = db.relationship('User', foreign_keys=[awarded_by])
 
 class Submission(db.Model):
     __tablename__ = 'submissions'
@@ -85,6 +218,8 @@ class Submission(db.Model):
     submitted_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     user = db.relationship('User', backref='submissions')
+    room = db.relationship('Room', backref='submissions')
+    challenge = db.relationship('Challenge', backref='submissions')
 
 class ChatMessage(db.Model):
     __tablename__ = 'chat_messages'
@@ -94,6 +229,10 @@ class ChatMessage(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     message = db.Column(db.Text, nullable=False)
     is_system = db.Column(db.Boolean, default=False)
+    is_flagged = db.Column(db.Boolean, default=False)
+    flag_reason = db.Column(db.String(160), nullable=True)
+    flagged_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     sent_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    user = db.relationship('User', backref='messages')
+    user = db.relationship('User', foreign_keys=[user_id], backref='messages')
+    flagger = db.relationship('User', foreign_keys=[flagged_by])

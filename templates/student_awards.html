@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="award-page">
+    <header class="award-header">
+        <div>
+            <p>My Recognition Cards</p>
+            <h1>{{ target_user.username }} Cards</h1>
+            <span>Cards and avatars awarded by your admins. You can adjust color, download, or print them.</span>
+        </div>
+        <div class="award-header-actions">
+            <a class="btn-secondary" href="{{ url_for('dashboard') }}"><i class="fas fa-arrow-left"></i> Dashboard</a>
+            <a class="btn-secondary" href="{{ url_for('profile', user_id=target_user.id) }}"><i class="fas fa-user"></i> Profile</a>
+        </div>
+    </header>
+
+    {% if cards %}
+    <section class="student-award-grid">
+        {% for card in cards %}
+        <article class="student-award-wrap">
+            <div id="student-award-{{ card.id }}" class="student-award-card layout-{{ card.layout }} shape-{{ card.shape }}" style="--primary: {{ card.display_color }}; --secondary: {{ card.secondary_color }};">
+                <div class="student-award-bg"></div>
+                <div class="student-award-avatar avatar-{{ card.avatar_shape }}">
+                    <i class="fas {{ card.avatar_icon }}"></i>
+                </div>
+                <div class="student-award-content">
+                    <span>{{ card.template_name }}</span>
+                    <h2>{{ card.title }}</h2>
+                    <h3>{{ card.avatar_label }}</h3>
+                    <p>{{ card.message }}</p>
+                    <div><i class="fas {{ card.accent_icon }}"></i> {{ card.reason }}</div>
+                </div>
+                <footer>
+                    <span>Issued {{ card.created_at.strftime('%B %d, %Y') if card.created_at else '' }}</span>
+                    <strong>UI Battle Arena</strong>
+                </footer>
+            </div>
+            <div class="student-card-actions">
+                <label>Color <input type="color" value="{{ card.display_color }}" data-card-color="{{ card.id }}"></label>
+                <button type="button" class="btn-secondary" onclick="saveStudentColor({{ card.id }})"><i class="fas fa-save"></i> Save Color</button>
+                <button type="button" class="btn-secondary" onclick="downloadStudentAward({{ card.id }}, 'png')"><i class="fas fa-download"></i> PNG</button>
+                <button type="button" class="btn-secondary" onclick="downloadStudentAward({{ card.id }}, 'jpeg')"><i class="fas fa-file-image"></i> JPEG</button>
+                <button type="button" class="btn-primary" onclick="printStudentAward({{ card.id }})"><i class="fas fa-print"></i> Print</button>
+            </div>
+        </article>
+        {% endfor %}
+    </section>
+    {% else %}
+    <section class="empty-award-state">
+        <i class="fas fa-id-card-clip"></i>
+        <h2>No award cards yet</h2>
+        <p>When an admin sends you a loyalty, consistency, or performance card, it will appear here.</p>
+    </section>
+    {% endif %}
+</div>
+
+<style>
+.award-page { min-height: 100vh; padding: 32px; background: var(--page-gradient); color: var(--text-primary); }
+.award-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 22px; }
+.award-header p { margin: 0 0 6px; color: var(--accent-primary); font-weight: 700; text-transform: uppercase; }
+.award-header h1 { margin: 0; font-family: 'Rajdhani', sans-serif; font-size: 42px; }
+.award-header span { color: var(--text-secondary); }
+.award-header-actions, .student-card-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.award-header-actions .btn-secondary, .student-card-actions .btn-secondary, .student-card-actions .btn-primary { text-decoration: none; border-radius: 6px; padding: 10px 13px; }
+.student-award-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 20px; }
+.student-award-wrap { display: grid; gap: 10px; min-width: 0; }
+.student-award-card { position: relative; min-height: 360px; border-radius: 8px; overflow: hidden; color: #fff; background: var(--secondary); padding: 24px; display: grid; grid-template-rows: auto 1fr auto; box-shadow: 0 20px 42px rgba(0,0,0,0.34); isolation: isolate; }
+.student-award-bg { position: absolute; inset: 0; background: radial-gradient(circle at 18% 12%, var(--primary), transparent 28%), linear-gradient(135deg, var(--secondary), var(--primary)); z-index: -1; opacity: 0.96; }
+.student-award-card.shape-ticket { border-radius: 6px; clip-path: polygon(5% 0, 95% 0, 100% 10%, 100% 90%, 95% 100%, 5% 100%, 0 90%, 0 10%); }
+.student-award-card.shape-hex { clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%); }
+.student-award-card.shape-wave { border-radius: 28px 8px 28px 8px; }
+.student-award-card.shape-sharp { border-radius: 0; }
+.student-award-avatar { width: 92px; height: 92px; display: grid; place-items: center; background: #fff; color: var(--primary); font-size: 40px; border: 4px solid rgba(255,255,255,0.72); }
+.avatar-circle { border-radius: 50%; }
+.avatar-shield { border-radius: 28px 28px 42px 42px; }
+.avatar-blob { border-radius: 42% 58% 48% 52%; }
+.avatar-square { border-radius: 8px; }
+.avatar-hex { clip-path: polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%); }
+.student-award-content { align-self: center; }
+.student-award-content span { color: #ffffff; text-transform: uppercase; font-weight: 700; font-size: 12px; }
+.student-award-content h2 { margin: 8px 0 0; font-family: 'Rajdhani', sans-serif; font-size: 36px; line-height: 1; }
+.student-award-content h3 { margin: 2px 0 12px; font-size: 24px; color: #ffffff; }
+.student-award-content p { line-height: 1.45; }
+.student-award-content div { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,0.14); font-weight: 700; }
+.student-award-card footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 14px; }
+.layout-badge { place-items: center; text-align: center; }
+.layout-badge .student-award-avatar { margin: 0 auto; width: 110px; height: 110px; }
+.layout-split { grid-template-columns: 130px 1fr; grid-template-rows: 1fr auto; align-items: center; column-gap: 18px; }
+.layout-split .student-award-avatar { grid-row: 1; }
+.layout-split .student-award-content { grid-column: 2; }
+.layout-split footer { grid-column: 1 / -1; }
+.layout-diagonal .student-award-bg { background: linear-gradient(145deg, var(--primary) 0 42%, var(--secondary) 42% 100%); }
+.student-card-actions { align-items: center; border: 1px solid var(--border-default); border-radius: 8px; padding: 10px; background: rgba(26,26,46,0.82); }
+.student-card-actions label { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary); font-weight: 700; }
+.student-card-actions input { width: 44px; height: 34px; padding: 0; border: none; background: transparent; }
+.empty-award-state { display: grid; place-items: center; gap: 10px; min-height: 360px; border: 1px solid var(--border-default); border-radius: 8px; background: rgba(26,26,46,0.84); text-align: center; }
+.empty-award-state i { font-size: 56px; color: var(--accent-primary); }
+.empty-award-state h2 { margin: 0; }
+.empty-award-state p { margin: 0; color: var(--text-secondary); }
+@media (max-width: 620px) { .student-award-grid { grid-template-columns: 1fr; } .award-page { padding: 20px; } .layout-split { grid-template-columns: 1fr; } .layout-split .student-award-content { grid-column: auto; } }
+@media print { .theme-toggle-global, .award-header, .student-card-actions, .empty-award-state { display: none !important; } .award-page { padding: 0; background: #fff; } .student-award-grid { display: block; } .student-award-wrap { break-after: page; } .student-award-card { box-shadow: none; } }
+</style>
+
+<script>
+document.querySelectorAll('[data-card-color]').forEach((input) => {
+    input.addEventListener('input', () => {
+        document.getElementById(`student-award-${input.dataset.cardColor}`)?.style.setProperty('--primary', input.value);
+    });
+});
+
+async function saveStudentColor(cardId) {
+    const input = document.querySelector(`[data-card-color="${cardId}"]`);
+    const res = await fetch(`/awards/${cardId}/color`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        body: JSON.stringify({color: input.value})
+    });
+    const data = await res.json();
+    showToast(data.success ? 'Card color saved' : (data.error || 'Could not save color'), data.success ? 'success' : 'error');
+}
+
+async function downloadStudentAward(cardId, format) {
+    const node = document.getElementById(`student-award-${cardId}`);
+    const canvas = await html2canvas(node, {scale: 2, backgroundColor: null});
+    const link = document.createElement('a');
+    link.download = `ui-battle-award-${cardId}.${format === 'jpeg' ? 'jpg' : 'png'}`;
+    link.href = canvas.toDataURL(format === 'jpeg' ? 'image/jpeg' : 'image/png', 0.95);
+    link.click();
+}
+
+function printStudentAward(cardId) {
+    document.querySelectorAll('.student-award-wrap').forEach((wrap) => {
+        wrap.hidden = !wrap.querySelector(`#student-award-${cardId}`);
+    });
+    window.print();
+    document.querySelectorAll('.student-award-wrap').forEach((wrap) => { wrap.hidden = false; });
+}
+</script>
+{% endblock %}

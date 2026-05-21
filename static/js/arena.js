@@ -1,9 +1,18 @@
-// Arena-specific JavaScript
+﻿// Arena-specific JavaScript
 let htmlEditor, cssEditor, jsEditor;
 let currentTab = 'html';
 let diffCheckInterval = null;
-let sliderActive = false;
 let sliderPercent = 50;
+let sliderInitialized = false;
+let sliderMode = 'opacity';
+let liveDiffTimer = null;
+let diffInProgress = false;
+let diffPending = false;
+let matchIsRunning = false;
+let lastLiveSaveAt = 0;
+
+const LIVE_DIFF_DELAY = 350;
+const LIVE_SAVE_INTERVAL = 1000;
 
 // Get DOM elements safely
 function getElement(id) {
@@ -11,20 +20,26 @@ function getElement(id) {
 }
 
 // Get configuration from hidden inputs
-const ROOM_ID = parseInt(getElement('room-id')?.value || '0');
-const ROOM_CODE = getElement('room-code')?.value || '';
-const CURRENT_USERNAME = getElement('current-username')?.value || '';
-const USER_ROLE = getElement('user-role')?.value || '';
-const CHALLENGE_TYPE = getElement('challenge-type')?.value || 'image';
-const HTML_LOCKED = getElement('html-locked')?.value === 'true';
-const TIME_LIMIT = parseInt(getElement('challenge-time-limit')?.value || '120');
-const TARGET_IMAGE_URL = getElement('target-image-url')?.value || '';
-const TARGET_HTML_RAW = getElement('target-html-data')?.value || '';
-const TARGET_CSS_RAW = getElement('target-css-data')?.value || '';
+const arenaConfig = window.ARENA_CONFIG || {};
+const ROOM_ID = parseInt(getElement('room-id')?.value || arenaConfig.roomId || '0');
+const ROOM_CODE = getElement('room-code')?.value || arenaConfig.roomCode || '';
+const CHALLENGE_ID = parseInt(getElement('challenge-id')?.value || arenaConfig.challengeId || '0');
+const CURRENT_USERNAME = getElement('current-username')?.value || arenaConfig.currentUsername || '';
+const USER_ROLE = getElement('user-role')?.value || arenaConfig.userRole || '';
+const CHALLENGE_TYPE = getElement('challenge-type')?.value || arenaConfig.challengeType || 'image';
+const HTML_LOCKED = getElement('html-locked')?.value === 'true' || arenaConfig.htmlLocked === true;
+const TIME_LIMIT = parseInt(getElement('challenge-time-limit')?.value || arenaConfig.timeLimit || '120');
+const TARGET_IMAGE_URL = getElement('target-image-url')?.value || arenaConfig.targetImageUrl || '';
+const TARGET_HTML_RAW = getElement('target-html-data')?.value || arenaConfig.targetHtml || '';
+const TARGET_CSS_RAW = getElement('target-css-data')?.value || arenaConfig.targetCss || '';
+const STARTER_HTML_RAW = getElement('starter-html-data')?.value || arenaConfig.starterHtml || '';
+const STARTER_CSS_RAW = getElement('starter-css-data')?.value || arenaConfig.starterCss || '';
 
 // Parse target HTML/CSS (handle JSON escaping)
 let TARGET_HTML = TARGET_HTML_RAW;
 let TARGET_CSS = TARGET_CSS_RAW;
+let STARTER_HTML = STARTER_HTML_RAW;
+let STARTER_CSS = STARTER_CSS_RAW;
 try {
     if (TARGET_HTML_RAW && TARGET_HTML_RAW.startsWith('"')) {
         TARGET_HTML = JSON.parse(TARGET_HTML_RAW);
@@ -32,7 +47,160 @@ try {
     if (TARGET_CSS_RAW && TARGET_CSS_RAW.startsWith('"')) {
         TARGET_CSS = JSON.parse(TARGET_CSS_RAW);
     }
+    if (STARTER_HTML_RAW && STARTER_HTML_RAW.startsWith('"')) {
+        STARTER_HTML = JSON.parse(STARTER_HTML_RAW);
+    }
+    if (STARTER_CSS_RAW && STARTER_CSS_RAW.startsWith('"')) {
+        STARTER_CSS = JSON.parse(STARTER_CSS_RAW);
+    }
 } catch(e) {}
+
+function getActiveEditor() {
+    if (currentTab === 'css') return cssEditor;
+    if (currentTab === 'js') return jsEditor;
+    return htmlEditor;
+}
+
+function getEditorHint(editor) {
+    if (!window.CodeMirror?.hint) return null;
+    const modeName = editor?.getOption('mode');
+    if (modeName === 'css') return CodeMirror.hint.css;
+    if (modeName === 'javascript') return CodeMirror.hint.javascript;
+    if (modeName === 'htmlmixed') return CodeMirror.hint.html;
+    return null;
+}
+
+function showEditorHint(editor) {
+    if (!editor || editor.getOption('readOnly') || !editor.showHint) return;
+    const hint = getEditorHint(editor);
+    editor.showHint({
+        hint: hint || undefined,
+        completeSingle: false,
+        alignWithWord: true,
+        closeOnUnfocus: true
+    });
+}
+
+function maybeShowEditorHint(editor, change) {
+    if (!editor || editor.getOption('readOnly') || !editor.showHint || editor.state.completionActive) return;
+    if (!change.origin || !change.origin.startsWith('+input')) return;
+    const typed = change.text?.join('') || '';
+    if (!/^[\w.#:<-]$/.test(typed)) return;
+    showEditorHint(editor);
+}
+
+function moveCurrentLine(editor, direction) {
+    const cursor = editor.getCursor();
+    const lineNo = cursor.line;
+    const swapLineNo = lineNo + direction;
+    if (swapLineNo < 0 || swapLineNo >= editor.lineCount()) return;
+
+    editor.operation(() => {
+        const line = editor.getLine(lineNo);
+        const swapLine = editor.getLine(swapLineNo);
+        editor.replaceRange(swapLine, { line: lineNo, ch: 0 }, { line: lineNo, ch: line.length });
+        editor.replaceRange(line, { line: swapLineNo, ch: 0 }, { line: swapLineNo, ch: swapLine.length });
+        editor.setCursor({ line: swapLineNo, ch: cursor.ch });
+    });
+}
+
+function duplicateCurrentLine(editor) {
+    const cursor = editor.getCursor();
+    const line = editor.getLine(cursor.line);
+    editor.replaceRange(`${line}\n`, { line: cursor.line, ch: 0 });
+    editor.setCursor({ line: cursor.line + 1, ch: cursor.ch });
+}
+
+function deleteCurrentLine(editor) {
+    const cursor = editor.getCursor();
+    const lastLine = editor.lineCount() - 1;
+    const from = { line: cursor.line, ch: 0 };
+    const to = cursor.line === lastLine
+        ? { line: cursor.line, ch: editor.getLine(cursor.line).length }
+        : { line: cursor.line + 1, ch: 0 };
+    editor.replaceRange('', from, to);
+    editor.setCursor({ line: Math.min(cursor.line, editor.lineCount() - 1), ch: 0 });
+}
+
+function formatEditorSelection(editor) {
+    editor.operation(() => {
+        if (editor.somethingSelected()) {
+            const from = editor.getCursor('from');
+            const to = editor.getCursor('to');
+            for (let line = from.line; line <= to.line; line += 1) editor.indentLine(line, 'smart');
+            return;
+        }
+        for (let line = 0; line < editor.lineCount(); line += 1) editor.indentLine(line, 'smart');
+    });
+}
+
+function selectNextOccurrence(editor) {
+    const selected = editor.getSelection() || editor.findWordAt(editor.getCursor());
+    const query = typeof selected === 'string' ? selected : editor.getRange(selected.anchor, selected.head);
+    if (!query) return;
+    const cursor = editor.getSearchCursor ? editor.getSearchCursor(query, editor.getCursor('to')) : null;
+    if (cursor && cursor.findNext()) {
+        editor.addSelection(cursor.from(), cursor.to());
+    }
+}
+
+function getEditorExtraKeys() {
+    return {
+        'Ctrl-Space': showEditorHint,
+        'Cmd-Space': showEditorHint,
+        'Ctrl-/': (editor) => editor.toggleComment ? editor.toggleComment({ indent: true }) : null,
+        'Cmd-/': (editor) => editor.toggleComment ? editor.toggleComment({ indent: true }) : null,
+        'Alt-Up': (editor) => moveCurrentLine(editor, -1),
+        'Alt-Down': (editor) => moveCurrentLine(editor, 1),
+        'Shift-Alt-Up': duplicateCurrentLine,
+        'Shift-Alt-Down': duplicateCurrentLine,
+        'Ctrl-Shift-K': deleteCurrentLine,
+        'Cmd-Shift-K': deleteCurrentLine,
+        'Ctrl-D': selectNextOccurrence,
+        'Cmd-D': selectNextOccurrence,
+        'Shift-Alt-F': formatEditorSelection,
+        'Ctrl-S': (editor) => {
+            saveArenaToLocal();
+            updatePreview();
+            showToast('Code saved locally', 'success');
+            editor.focus();
+        },
+        'Cmd-S': (editor) => {
+            saveArenaToLocal();
+            updatePreview();
+            showToast('Code saved locally', 'success');
+            editor.focus();
+        },
+        'Ctrl-Enter': () => runDiffCheck({ silent: false, live: false, save: true }),
+        'Cmd-Enter': () => runDiffCheck({ silent: false, live: false, save: true }),
+        'Ctrl-1': () => switchTab('html'),
+        'Ctrl-2': () => switchTab('css'),
+        'Ctrl-3': () => switchTab('js'),
+        'Cmd-1': () => switchTab('html'),
+        'Cmd-2': () => switchTab('css'),
+        'Cmd-3': () => switchTab('js'),
+        'Tab': (editor) => editor.somethingSelected() ? editor.execCommand('indentMore') : editor.replaceSelection('  ', 'end'),
+        'Shift-Tab': (editor) => editor.execCommand('indentLess')
+    };
+}
+
+function getEditorOptions(mode) {
+    return {
+        mode,
+        theme: 'dracula',
+        lineNumbers: true,
+        tabSize: 2,
+        indentUnit: 2,
+        indentWithTabs: false,
+        lineWrapping: false,
+        autoCloseBrackets: true,
+        autoCloseTags: mode === 'htmlmixed',
+        matchBrackets: true,
+        styleActiveLine: true,
+        viewportMargin: Infinity,
+        extraKeys: getEditorExtraKeys()
+    };
+}
 
 // Initialize CodeMirror editors
 function initEditors() {
@@ -42,49 +210,21 @@ function initEditors() {
     
     if (!htmlEditorElem) return;
     
-    htmlEditor = CodeMirror(htmlEditorElem, {
-        mode: 'htmlmixed',
-        theme: 'dracula',
-        lineNumbers: true,
-        tabSize: 2,
-        indentWithTabs: false,
-        lineWrapping: false,
-        autoCloseBrackets: true,
-        matchBrackets: true,
-        extraKeys: { "Tab": "indentMore", "Shift-Tab": "indentLess" }
-    });
+    htmlEditor = CodeMirror(htmlEditorElem, getEditorOptions('htmlmixed'));
     
-    cssEditor = CodeMirror(cssEditorElem, {
-        mode: 'css',
-        theme: 'dracula',
-        lineNumbers: true,
-        tabSize: 2,
-        indentWithTabs: false,
-        lineWrapping: false,
-        autoCloseBrackets: true,
-        matchBrackets: true
-    });
+    cssEditor = CodeMirror(cssEditorElem, getEditorOptions('css'));
     
-    jsEditor = CodeMirror(jsEditorElem, {
-        mode: 'javascript',
-        theme: 'dracula',
-        lineNumbers: true,
-        tabSize: 2,
-        indentWithTabs: false,
-        lineWrapping: false,
-        autoCloseBrackets: true,
-        matchBrackets: true
-    });
+    jsEditor = CodeMirror(jsEditorElem, getEditorOptions('javascript'));
     
     // Set initial content based on challenge type
     if (CHALLENGE_TYPE === 'html') {
-        if (TARGET_HTML) htmlEditor.setValue(TARGET_HTML);
+        htmlEditor.setValue(STARTER_HTML || TARGET_HTML || '');
         if (HTML_LOCKED) {
             htmlEditor.setOption('readOnly', true);
             const htmlTab = document.querySelector('[data-tab="html"]');
-            if (htmlTab) htmlTab.innerHTML = '🔒 HTML';
+            if (htmlTab) htmlTab.innerHTML = 'ðŸ”’ HTML';
         }
-        cssEditor.setValue('');
+        cssEditor.setValue(STARTER_CSS || '');
         jsEditor.setValue('');
         // Switch to CSS tab by default
         switchTab('css');
@@ -107,33 +247,58 @@ function initEditors() {
     // Add change listeners
     htmlEditor.on('change', debounce(() => {
         updatePreview();
-        saveToLocal();
+        saveArenaToLocal();
+        scheduleLiveDiffCheck();
     }, 300));
     
     cssEditor.on('change', debounce(() => {
         updatePreview();
-        saveToLocal();
+        saveArenaToLocal();
+        scheduleLiveDiffCheck();
     }, 300));
     
     jsEditor.on('change', debounce(() => {
         updatePreview();
-        saveToLocal();
+        saveArenaToLocal();
+        scheduleLiveDiffCheck();
     }, 300));
     
     // Cursor position display
     htmlEditor.on('cursorActivity', updateCursorPosition);
     cssEditor.on('cursorActivity', updateCursorPosition);
     jsEditor.on('cursorActivity', updateCursorPosition);
+    [htmlEditor, cssEditor, jsEditor].forEach((editor) => {
+        editor.on('inputRead', maybeShowEditorHint);
+    });
     
     // Initially lock editors until challenge starts
     const isSpectator = USER_ROLE === 'spectator';
-    const isWaiting = getElement('room-status')?.textContent === 'WAITING';
+    const roomStatus = getElement('room-status')?.textContent?.trim().toUpperCase();
+    const isWaiting = roomStatus === 'WAITING';
+    const isEnded = roomStatus === 'ENDED';
     
-    if (isSpectator || isWaiting) {
+    if (isSpectator || isWaiting || isEnded) {
         htmlEditor.setOption('readOnly', true);
         cssEditor.setOption('readOnly', true);
         jsEditor.setOption('readOnly', true);
     }
+
+    if (isEnded) {
+        const overlay = getElement('editor-overlay');
+        if (overlay) {
+            overlay.classList.remove('hidden');
+            const overlayText = overlay.querySelector('.overlay-content span');
+            if (overlayText) overlayText.textContent = 'Match ended. Coding is closed.';
+        }
+        ['submit-btn', 'reset-code-btn'].forEach((id) => {
+            const btn = getElement(id);
+            if (btn) btn.disabled = true;
+        });
+    }
+
+    window.htmlEditor = htmlEditor;
+    window.cssEditor = cssEditor;
+    window.jsEditor = jsEditor;
 }
 
 function updateCursorPosition() {
@@ -161,6 +326,8 @@ function updateCursorPosition() {
 }
 
 function updatePreview() {
+    if (!htmlEditor || !cssEditor || !jsEditor) return;
+
     const html = htmlEditor.getValue();
     const css = cssEditor.getValue();
     const js = jsEditor.getValue();
@@ -183,12 +350,83 @@ function updatePreview() {
     }
 }
 
-function saveToLocal() {
-    if (!HTML_LOCKED || CHALLENGE_TYPE !== 'html') {
-        saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_html`, htmlEditor.getValue());
+function getScorableCode() {
+    if (!htmlEditor || !cssEditor || !jsEditor) return '';
+    if (CHALLENGE_TYPE === 'html' && HTML_LOCKED) {
+        return `${cssEditor.getValue()}\n${jsEditor.getValue()}`.trim();
     }
-    saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_css`, cssEditor.getValue());
-    saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_js`, jsEditor.getValue());
+    return `${htmlEditor.getValue()}\n${cssEditor.getValue()}\n${jsEditor.getValue()}`.trim();
+}
+
+function hasPlayerAttempted() {
+    return getScorableCode().length > 0;
+}
+
+function setArenaMatchRunning(isRunning) {
+    matchIsRunning = isRunning;
+    if (isRunning) {
+        scheduleLiveDiffCheck(120);
+    } else if (liveDiffTimer) {
+        clearTimeout(liveDiffTimer);
+        liveDiffTimer = null;
+    }
+}
+
+function canRunLiveDiff() {
+    return matchIsRunning && USER_ROLE !== 'spectator' && Boolean(htmlEditor && cssEditor && jsEditor);
+}
+
+function scheduleLiveDiffCheck(delay = LIVE_DIFF_DELAY) {
+    if (!canRunLiveDiff()) return;
+    if (liveDiffTimer) clearTimeout(liveDiffTimer);
+    liveDiffTimer = setTimeout(() => {
+        liveDiffTimer = null;
+        runDiffCheck({ silent: true, live: true, save: true, disableButton: false });
+    }, delay);
+}
+
+function waitForFramePaint(frame) {
+    return new Promise((resolve) => {
+        if (!frame) {
+            resolve();
+            return;
+        }
+        const finish = () => requestAnimationFrame(() => requestAnimationFrame(resolve));
+        try {
+            if (frame.contentDocument?.readyState === 'complete') {
+                finish();
+            } else {
+                frame.addEventListener('load', finish, { once: true });
+                setTimeout(finish, 250);
+            }
+        } catch (err) {
+            resolve();
+        }
+    });
+}
+
+function waitForImageLoad(img) {
+    return new Promise((resolve, reject) => {
+        if (!img) {
+            resolve();
+            return;
+        }
+        if (img.complete && img.naturalWidth > 0) {
+            resolve();
+            return;
+        }
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', reject, { once: true });
+        setTimeout(resolve, 1000);
+    });
+}
+
+function saveArenaToLocal() {
+    if (!HTML_LOCKED || CHALLENGE_TYPE !== 'html') {
+        window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_html`, htmlEditor.getValue());
+    }
+    window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_css`, cssEditor.getValue());
+    window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_js`, jsEditor.getValue());
 }
 
 // Tab switching
@@ -254,24 +492,136 @@ function initTarget() {
     }
 }
 
+function compareMeaningfulPixels(outPixels, targetPixels, diffPixels, width, height, threshold = 0.12) {
+    let mismatched = 0;
+    let compared = 0;
+    const limit = width * height * 4;
+    const thresholdValue = threshold * 255;
+    const whiteCutoff = 246;
+
+    function isMeaningfulPixel(pixels, i) {
+        const alpha = pixels[i + 3];
+        if (alpha < 20) return false;
+        return pixels[i] < whiteCutoff || pixels[i + 1] < whiteCutoff || pixels[i + 2] < whiteCutoff;
+    }
+
+    for (let i = 0; i < limit; i += 4) {
+        const dr = Math.abs(outPixels[i] - targetPixels[i]);
+        const dg = Math.abs(outPixels[i + 1] - targetPixels[i + 1]);
+        const db = Math.abs(outPixels[i + 2] - targetPixels[i + 2]);
+        const da = Math.abs(outPixels[i + 3] - targetPixels[i + 3]);
+        const delta = (dr + dg + db + da) / 4;
+        const shouldCompare = isMeaningfulPixel(targetPixels, i) || isMeaningfulPixel(outPixels, i) || delta > thresholdValue;
+        const isMismatch = delta > thresholdValue;
+
+        if (shouldCompare) {
+            compared++;
+            if (isMismatch) mismatched++;
+        }
+
+        if (!shouldCompare) {
+            diffPixels[i] = 24;
+            diffPixels[i + 1] = 30;
+            diffPixels[i + 2] = 44;
+            diffPixels[i + 3] = 50;
+        } else {
+            diffPixels[i] = isMismatch ? 255 : 80;
+            diffPixels[i + 1] = isMismatch ? 82 : 255;
+            diffPixels[i + 2] = isMismatch ? 112 : 150;
+            diffPixels[i + 3] = isMismatch ? 230 : 180;
+        }
+    }
+
+    return { mismatched, compared };
+}
+
+async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
+    if (!matchIsRunning && live) return;
+
+    const now = Date.now();
+    if (live && now - lastLiveSaveAt < LIVE_SAVE_INTERVAL) {
+        return;
+    }
+    lastLiveSaveAt = now;
+
+    const response = await fetch('/submission/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            room_id: ROOM_ID,
+            challenge_id: CHALLENGE_ID || null,
+            html_code: htmlEditor.getValue(),
+            css_code: cssEditor.getValue(),
+            js_code: jsEditor.getValue(),
+            accuracy: accuracy
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error('Could not save submission');
+    }
+
+    if (window.socket) {
+        window.socket.emit('progress_update', {
+            room_id: ROOM_ID,
+            username: CURRENT_USERNAME,
+            accuracy: accuracy
+        });
+    }
+}
+
 // Diff check system
-async function runDiffCheck() {
+async function runDiffCheck(options = {}) {
+    const {
+        silent = false,
+        live = false,
+        save = true,
+        disableButton = true
+    } = options;
+
+    if (!htmlEditor || !cssEditor || !jsEditor) return 0;
+
+    if (diffInProgress) {
+        diffPending = true;
+        return 0;
+    }
+    diffInProgress = true;
+
     const btn = getElement('submit-btn');
-    if (btn) {
+    if (btn && disableButton) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
     }
     
     try {
+        if (!hasPlayerAttempted()) {
+            clearDiffViews();
+            updateMyProgressBar(0);
+            updateAccuracyBadge(0);
+            if (save) {
+                await saveAndBroadcastScore(0, { live });
+            }
+            if (!silent) {
+                showToast('No code entered yet. Score is 0%.', 'info');
+            }
+            return 0;
+        }
+
         const W = 400, H = 300;
         
         // Screenshot player's output
         const outputFrame = getElement('output-frame');
         if (!outputFrame) throw new Error('Output frame not found');
+
+        await waitForFramePaint(outputFrame);
         
         const outputFrameDoc = outputFrame.contentDocument || outputFrame.contentWindow.document;
         const outputCanvas = await html2canvas(outputFrameDoc.body, {
-            width: W, height: H, scale: 1,
+            width: W,
+            height: H,
+            windowWidth: W,
+            windowHeight: H,
+            scale: 1,
             backgroundColor: '#ffffff',
             useCORS: true,
             logging: false
@@ -287,15 +637,21 @@ async function runDiffCheck() {
         
         if (CHALLENGE_TYPE === 'image') {
             const targetImg = getElement('target-image');
+            await waitForImageLoad(targetImg);
             if (targetImg && targetImg.complete && targetImg.naturalWidth > 0) {
                 tCtx.drawImage(targetImg, 0, 0, W, H);
             }
         } else {
             const targetFrame = getElement('target-frame');
             if (targetFrame) {
+                await waitForFramePaint(targetFrame);
                 const targetFrameDoc = targetFrame.contentDocument || targetFrame.contentWindow.document;
                 const tFrameCanvas = await html2canvas(targetFrameDoc.body, {
-                    width: W, height: H, scale: 1,
+                    width: W,
+                    height: H,
+                    windowWidth: W,
+                    windowHeight: H,
+                    scale: 1,
                     backgroundColor: '#ffffff',
                     useCORS: true,
                     logging: false
@@ -315,16 +671,18 @@ async function runDiffCheck() {
             const dCtx = diffCanvas.getContext('2d');
             const diffImgData = dCtx.createImageData(W, H);
             
-            const mismatched = pixelmatch(
+            const result = compareMeaningfulPixels(
                 outData.data, tgtData.data, diffImgData.data,
-                W, H, { threshold: 0.1, includeAA: true }
+                W, H, 0.035
             );
             
             dCtx.putImageData(diffImgData, 0, 0);
             
             // Calculate accuracy
-            const total = W * H;
-            const accuracy = parseFloat((((total - mismatched) / total) * 100).toFixed(1));
+            const total = result.compared || W * H;
+            const accuracy = result.compared > 0
+                ? parseFloat((((total - result.mismatched) / total) * 100).toFixed(1))
+                : 0;
             
             // Update UI
             updateMyProgressBar(accuracy);
@@ -333,39 +691,29 @@ async function runDiffCheck() {
             // Populate slider canvases
             populateSliderCanvases(outputCanvas, targetCanvas);
             
-            // Save submission
-            await fetch('/submission/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    room_id: ROOM_ID,
-                    challenge_id: null,
-                    html_code: htmlEditor.getValue(),
-                    css_code: cssEditor.getValue(),
-                    js_code: jsEditor.getValue(),
-                    accuracy: accuracy
-                })
-            });
-            
-            // Broadcast accuracy
-            if (window.socket) {
-                socket.emit('progress_update', {
-                    room_id: ROOM_ID,
-                    username: CURRENT_USERNAME,
-                    accuracy: accuracy
-                });
+            if (save) {
+                await saveAndBroadcastScore(accuracy, { live });
             }
             
-            showToast(`Score: ${accuracy}% match`, accuracy >= 80 ? 'success' : 'info');
+            if (!silent) {
+                showToast(`Score: ${accuracy}% match`, accuracy >= 80 ? 'success' : 'info');
+            }
             return accuracy;
         }
     } catch (err) {
         console.error('Diff failed:', err);
-        showToast('Comparison failed. Try again.', 'error');
+        if (!silent) {
+            showToast('Comparison failed. Try again.', 'error');
+        }
     } finally {
-        if (btn) {
+        diffInProgress = false;
+        if (btn && disableButton) {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-check-circle"></i> SUBMIT & CHECK';
+        }
+        if (diffPending) {
+            diffPending = false;
+            scheduleLiveDiffCheck(150);
         }
     }
     return 0;
@@ -391,65 +739,98 @@ function updateAccuracyBadge(accuracy) {
     const badge = getElement('accuracy-badge');
     if (badge) {
         badge.textContent = accuracy + '% MATCH';
-        badge.className = accuracy >= 80 ? 'badge-success' : 
+        const stateClass = accuracy >= 80 ? 'badge-success' : 
                          accuracy >= 50 ? 'badge-warning' : 'badge-danger';
+        badge.className = `accuracy-badge ${stateClass}`;
     }
+}
+
+function clearDiffViews() {
+    const diffCanvas = getElement('diff-canvas');
+    if (diffCanvas) {
+        diffCanvas.width = 400;
+        diffCanvas.height = 300;
+        const ctx = diffCanvas.getContext('2d');
+        ctx.clearRect(0, 0, diffCanvas.width, diffCanvas.height);
+    }
+
+    ['slider-output-canvas', 'slider-target-canvas'].forEach(id => {
+        const canvas = getElement(id);
+        if (!canvas) return;
+        canvas.width = 400;
+        canvas.height = 300;
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    });
 }
 
 // Slider diff functions
 function initSlider() {
     const container = getElement('slider-diff-container');
-    const divider = getElement('slider-divider');
-    const rightWrap = getElement('slider-right-wrapper');
-    
-    if (!container || !divider) return;
-    
-    divider.addEventListener('mousedown', (e) => {
-        sliderActive = true;
-        e.preventDefault();
+    const slider = getElement('comparison-opacity-slider');
+    const pills = container?.querySelectorAll('[data-compare-mode]');
+
+    if (!container || !slider || sliderInitialized) return;
+    sliderInitialized = true;
+    container.dataset.compareMode = sliderMode;
+
+    slider.addEventListener('input', () => {
+        updateSliderPosition(slider.value);
+        applySliderMode('opacity');
     });
-    
-    document.addEventListener('mousemove', (e) => {
-        if (!sliderActive) return;
-        const rect = container.getBoundingClientRect();
-        let x = e.clientX - rect.left;
-        x = Math.max(0, Math.min(x, rect.width));
-        sliderPercent = (x / rect.width) * 100;
-        updateSliderPosition(sliderPercent);
+
+    pills.forEach((pill) => {
+        pill.addEventListener('click', () => applySliderMode(pill.dataset.compareMode || 'opacity'));
     });
-    
-    document.addEventListener('mouseup', () => {
-        sliderActive = false;
-    });
-    
-    // Touch support
-    divider.addEventListener('touchstart', (e) => {
-        sliderActive = true;
-        e.preventDefault();
-    });
-    
-    document.addEventListener('touchmove', (e) => {
-        if (!sliderActive) return;
-        const rect = container.getBoundingClientRect();
-        let x = e.touches[0].clientX - rect.left;
-        x = Math.max(0, Math.min(x, rect.width));
-        sliderPercent = (x / rect.width) * 100;
-        updateSliderPosition(sliderPercent);
-    });
-    
-    document.addEventListener('touchend', () => {
-        sliderActive = false;
-    });
+
+    updateSliderPosition(sliderPercent);
+    applySliderMode(sliderMode);
 }
 
 function updateSliderPosition(percent) {
-    const divider = getElement('slider-divider');
-    const rightWrap = getElement('slider-right-wrapper');
-    const leftTint = getElement('slider-output-tint');
-    
-    if (divider) divider.style.left = percent + '%';
-    if (rightWrap) rightWrap.style.width = (100 - percent) + '%';
-    if (leftTint) leftTint.style.width = percent + '%';
+    const slider = getElement('comparison-opacity-slider');
+    const outputLayer = getElement('slider-output-layer');
+    const nextPercent = Math.max(0, Math.min(100, Number(percent) || 0));
+
+    sliderPercent = nextPercent;
+    if (slider) {
+        slider.value = String(Math.round(nextPercent));
+        slider.style.setProperty('background', `linear-gradient(to right, #ff6b35 0%, #ff6b35 ${nextPercent}%, #1e1e35 ${nextPercent}%, #1e1e35 100%)`, 'important');
+    }
+    if (outputLayer && sliderMode === 'opacity') {
+        outputLayer.style.opacity = String(nextPercent / 100);
+    }
+}
+
+function applySliderMode(mode) {
+    const nextMode = ['overlay', 'diff', 'opacity'].includes(mode) ? mode : 'opacity';
+    const container = getElement('slider-diff-container');
+    const outputLayer = getElement('slider-output-layer');
+    const slider = getElement('comparison-opacity-slider');
+    const pills = document.querySelectorAll('[data-compare-mode]');
+
+    sliderMode = nextMode;
+    if (container) container.dataset.compareMode = nextMode;
+
+    pills.forEach((pill) => {
+        pill.classList.toggle('active', pill.dataset.compareMode === nextMode);
+        pill.setAttribute('aria-pressed', pill.dataset.compareMode === nextMode ? 'true' : 'false');
+    });
+
+    if (slider) {
+        slider.disabled = nextMode !== 'opacity';
+        slider.setAttribute('aria-disabled', nextMode !== 'opacity' ? 'true' : 'false');
+    }
+
+    if (outputLayer) {
+        outputLayer.style.mixBlendMode = nextMode === 'diff' ? 'difference' : 'normal';
+        outputLayer.style.opacity = nextMode === 'opacity' ? String(sliderPercent / 100) : '1';
+    }
+
+    if (nextMode === 'opacity') {
+        updateSliderPosition(sliderPercent);
+    } else if (slider) {
+        slider.style.setProperty('background', `linear-gradient(to right, #ff6b35 0%, #ff6b35 ${sliderPercent}%, #1e1e35 ${sliderPercent}%, #1e1e35 100%)`, 'important');
+    }
 }
 
 function populateSliderCanvases(outputCanvas, targetCanvas) {
@@ -468,7 +849,8 @@ function populateSliderCanvases(outputCanvas, targetCanvas) {
         sliderTgt.getContext('2d').drawImage(targetCanvas, 0, 0);
     }
     
-    updateSliderPosition(50);
+    updateSliderPosition(sliderPercent || 50);
+    applySliderMode(sliderMode);
 }
 
 // Diff view toggle
@@ -490,7 +872,7 @@ function initDiffToggle() {
     if (sliderBtn) {
         sliderBtn.addEventListener('click', () => {
             if (diffCanvas) diffCanvas.style.display = 'none';
-            if (sliderContainer) sliderContainer.style.display = 'block';
+            if (sliderContainer) sliderContainer.style.display = 'flex';
             sliderBtn.classList.add('active');
             if (pixelBtn) pixelBtn.classList.remove('active');
             initSlider();
@@ -500,15 +882,36 @@ function initDiffToggle() {
 
 // Camera setup
 async function setupCamera() {
+    if (USER_ROLE === 'spectator') return;
     const camFeed = getElement('cam-feed');
     const camPlaceholder = getElement('cam-placeholder');
     const recBadge = getElement('rec-badge');
     const enableBtn = getElement('enable-cam-btn');
     
     if (!camFeed) return;
+
+    function getCameraSupportMessage() {
+        const host = window.location.hostname;
+        const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(host);
+        const isSecureCameraContext = window.isSecureContext || isLocalHost;
+
+        if (!isSecureCameraContext) {
+            return 'Camera access needs HTTPS after deployment. Local testing works on localhost or 127.0.0.1.';
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            return 'This browser does not support camera access here. Try Chrome, Edge, or Firefox with camera permissions enabled.';
+        }
+
+        return '';
+    }
     
     async function enableCamera() {
         try {
+            const supportMessage = getCameraSupportMessage();
+            if (supportMessage) {
+                throw new Error(supportMessage);
+            }
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             camFeed.srcObject = stream;
             if (camPlaceholder) camPlaceholder.style.display = 'none';
@@ -521,11 +924,12 @@ async function setupCamera() {
             canvas.height = 120;
             const ctx = canvas.getContext('2d');
             
-            setInterval(() => {
+            if (window.arenaCamInterval) clearInterval(window.arenaCamInterval);
+            window.arenaCamInterval = setInterval(() => {
                 if (camFeed.readyState >= camFeed.HAVE_ENOUGH_DATA) {
                     ctx.drawImage(camFeed, 0, 0, 160, 120);
                     if (window.socket) {
-                        socket.emit('cam_frame', {
+                        window.socket.emit('cam_frame', {
                             room_id: ROOM_ID,
                             username: CURRENT_USERNAME,
                             frame_data: canvas.toDataURL('image/jpeg', 0.3)
@@ -535,7 +939,12 @@ async function setupCamera() {
             }, 2000);
         } catch (err) {
             console.error('Camera error:', err);
-            showToast('Could not access camera', 'error');
+            if (camPlaceholder) {
+                camPlaceholder.style.display = 'block';
+                const text = camPlaceholder.querySelector('p');
+                if (text) text.textContent = err.message || 'Could not access camera';
+            }
+            showToast(err.message || 'Could not access camera', 'error');
         }
     }
     
@@ -547,34 +956,39 @@ async function setupCamera() {
 }
 
 // Reset code
-function resetCode() {
-    if (confirm('Reset your code? This cannot be undone.')) {
-        if (CHALLENGE_TYPE === 'html' && HTML_LOCKED) {
-            // Only reset CSS and JS
-            cssEditor.setValue('');
-            jsEditor.setValue('');
-            showToast('CSS and JS reset. HTML structure preserved.', 'info');
-        } else {
-            htmlEditor.setValue('');
-            cssEditor.setValue('');
-            jsEditor.setValue('');
-            showToast('Code reset', 'info');
-        }
-        updatePreview();
+async function resetCode() {
+    const confirmed = await showConfirm('Reset your code? This cannot be undone.', 'Reset code');
+    if (!confirmed) return;
+    if (CHALLENGE_TYPE === 'html' && HTML_LOCKED) {
+        // Only reset CSS and JS
+        cssEditor.setValue(STARTER_CSS || '');
+        jsEditor.setValue('');
+        showToast('CSS reset to the admin starter CSS. HTML structure preserved.', 'info');
+    } else if (CHALLENGE_TYPE === 'html') {
+        htmlEditor.setValue(STARTER_HTML || TARGET_HTML || '');
+        cssEditor.setValue(STARTER_CSS || '');
+        jsEditor.setValue('');
+        showToast('Code reset to the admin starter code.', 'info');
+    } else {
+        htmlEditor.setValue('');
+        cssEditor.setValue('');
+        jsEditor.setValue('');
+        showToast('Code reset', 'info');
     }
+    updatePreview();
 }
 
 // Forfeit
-function forfeit() {
-    if (confirm('Forfeit the match? This will end your participation.')) {
-        if (window.socket) {
-            socket.emit('forfeit', {
-                room_id: ROOM_ID,
-                username: CURRENT_USERNAME
-            });
-        }
-        window.location.href = '/dashboard';
+async function forfeit() {
+    const confirmed = await showConfirm('Forfeit the match? This will end your participation.', 'Forfeit match');
+    if (!confirmed) return;
+    if (window.socket) {
+        window.socket.emit('forfeit', {
+            room_id: ROOM_ID,
+            username: CURRENT_USERNAME
+        });
     }
+    window.location.href = '/dashboard';
 }
 
 // Code preview for admin (every 5 seconds)
@@ -587,7 +1001,7 @@ function startCodePreview() {
             const compiled = `<!DOCTYPE html><html><head><style>${css}</style></head><body>${html}<script>${js}<\/script></body></html>`;
             
             if (window.socket) {
-                socket.emit('code_preview', {
+                window.socket.emit('code_preview', {
                     room_id: ROOM_ID,
                     username: CURRENT_USERNAME,
                     compiled_html: compiled
@@ -600,22 +1014,588 @@ function startCodePreview() {
 // Collapse editor
 function initCollapseEditor() {
     const collapseBtn = getElement('collapse-editor-btn');
+    const collapseBtnBottom = getElement('collapse-editor-btn-bottom');
+    const sidebarBtn = getElement('toggle-sidebar-btn');
+    const chatBtn = getElement('toggle-chat-btn');
+    const chatBtnNav = getElement('toggle-chat-btn-nav');
+    const closeChatBtn = getElement('close-chat-drawer');
+    const arenaRoot = document.querySelector('.arena-root');
+    const arenaMain = document.querySelector('.arena-main');
     const editorPanel = getElement('editor-panel');
+    const sidebar = document.querySelector('.right-sidebar');
     
-    if (collapseBtn && editorPanel) {
-        collapseBtn.addEventListener('click', () => {
-            editorPanel.classList.toggle('collapsed');
-            if (editorPanel.classList.contains('collapsed')) {
-                collapseBtn.innerHTML = '<i class="fas fa-chevron-right"></i> Expand Editor';
+    let layoutSyncTimer = null;
+
+    function refreshArenaSurfaces() {
+        if (htmlEditor) htmlEditor.refresh();
+        if (cssEditor) cssEditor.refresh();
+        if (jsEditor) jsEditor.refresh();
+
+        const outputFrame = getElement('output-frame');
+        const targetFrame = getElement('target-frame');
+        if (outputFrame) outputFrame.dispatchEvent(new Event('resize'));
+        if (targetFrame) targetFrame.dispatchEvent(new Event('resize'));
+        if (typeof scheduleLiveDiffCheck === 'function') scheduleLiveDiffCheck(180);
+    }
+
+    function syncArenaLayout() {
+        if (!arenaMain) return;
+
+        const compact = window.innerWidth <= 980;
+        const drawer = false;
+        arenaRoot?.classList.toggle('arena-compact', compact);
+        arenaRoot?.classList.toggle('arena-drawer-sidebar', drawer);
+
+        if (compact) {
+            arenaMain.style.removeProperty('--editor-width');
+            arenaMain.style.removeProperty('--sidebar-width');
+        } else {
+            const available = arenaMain.clientWidth || window.innerWidth;
+            const maxEditor = Math.max(280, Math.min(520, available - 620));
+            const maxSidebar = Math.max(240, Math.min(420, available - 700));
+            const currentEditor = parseFloat(getComputedStyle(arenaMain).getPropertyValue('--editor-width')) || 380;
+            const currentSidebar = parseFloat(getComputedStyle(arenaMain).getPropertyValue('--sidebar-width')) || 300;
+            arenaMain.style.setProperty('--editor-width', `${Math.min(Math.max(currentEditor, 280), maxEditor)}px`);
+            arenaMain.style.setProperty('--sidebar-width', `${Math.min(Math.max(currentSidebar, 240), maxSidebar)}px`);
+        }
+
+        window.clearTimeout(layoutSyncTimer);
+        layoutSyncTimer = window.setTimeout(refreshArenaSurfaces, 260);
+    }
+
+    function queueArenaLayoutSync(delay = 0) {
+        window.clearTimeout(layoutSyncTimer);
+        layoutSyncTimer = window.setTimeout(syncArenaLayout, delay);
+    }
+    function syncCollapseLabels() {
+        const editorCollapsed = arenaMain?.classList.contains('editor-collapsed');
+        const sidebarCollapsed = arenaMain?.classList.contains('sidebar-collapsed');
+
+        if (collapseBtn) {
+            collapseBtn.innerHTML = editorCollapsed ? '<i class="fas fa-chevron-right"></i>' : '<i class="fas fa-chevron-left"></i>';
+            collapseBtn.title = editorCollapsed ? 'Expand editor' : 'Collapse editor';
+        }
+        if (collapseBtnBottom) {
+            collapseBtnBottom.innerHTML = editorCollapsed ? '<i class="fas fa-chevron-right"></i> Expand Editor' : '<i class="fas fa-chevron-left"></i> Collapse Editor';
+        }
+        if (sidebarBtn) {
+            sidebarBtn.innerHTML = sidebarCollapsed ? '<i class="fas fa-chevron-left"></i> Show Sidebar' : '<i class="fas fa-chevron-right"></i> Hide Sidebar';
+        }
+        const chatOpen = arenaRoot?.classList.contains('chat-open');
+        [chatBtn, chatBtnNav].forEach((btn) => {
+            if (!btn) return;
+            btn.classList.toggle('active', Boolean(chatOpen));
+            btn.setAttribute('aria-expanded', chatOpen ? 'true' : 'false');
+        });
+    }
+
+    function toggleEditor() {
+        if (!arenaMain || !editorPanel) return;
+        arenaMain.classList.toggle('editor-collapsed');
+        editorPanel.classList.toggle('collapsed', arenaMain.classList.contains('editor-collapsed'));
+        syncCollapseLabels();
+        queueArenaLayoutSync();
+    }
+
+    function toggleSidebar() {
+        if (!arenaMain || !sidebar) return;
+        arenaMain.classList.toggle('sidebar-collapsed');
+        sidebar.classList.toggle('collapsed', arenaMain.classList.contains('sidebar-collapsed'));
+        if (!arenaMain.classList.contains('sidebar-collapsed')) {
+            arenaRoot?.classList.add('chat-open');
+        } else {
+            arenaRoot?.classList.remove('chat-open');
+        }
+        syncCollapseLabels();
+        queueArenaLayoutSync();
+    }
+
+    function toggleChat(forceOpen = null) {
+        if (!arenaRoot || !sidebar) return;
+        const shouldOpen = forceOpen === null ? !arenaRoot.classList.contains('chat-open') : Boolean(forceOpen);
+        arenaRoot.classList.toggle('chat-open', shouldOpen);
+        if (shouldOpen) {
+            arenaMain?.classList.remove('sidebar-collapsed');
+            sidebar.classList.remove('collapsed');
+            window.activateArenaSidebarCard?.('chat');
+            setTimeout(() => getElement('chat-input')?.focus(), 160);
+        } else {
+            arenaMain?.classList.add('sidebar-collapsed');
+            sidebar.classList.add('collapsed');
+        }
+        syncCollapseLabels();
+        queueArenaLayoutSync();
+    }
+
+    window.setArenaChatOpen = toggleChat;
+
+    if (collapseBtn) collapseBtn.addEventListener('click', toggleEditor);
+    if (collapseBtnBottom) collapseBtnBottom.addEventListener('click', toggleEditor);
+    if (sidebarBtn) sidebarBtn.addEventListener('click', toggleSidebar);
+    if (chatBtn) chatBtn.addEventListener('click', () => toggleChat());
+    if (chatBtnNav) chatBtnNav.addEventListener('click', () => toggleChat());
+    if (closeChatBtn) closeChatBtn.addEventListener('click', () => toggleChat(false));
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') toggleChat(false);
+    });
+
+    window.addEventListener('resize', () => queueArenaLayoutSync(120));
+    initArenaResizers(arenaMain);
+    if (USER_ROLE !== 'spectator') {
+        arenaRoot?.classList.add('chat-open');
+        arenaMain?.classList.remove('sidebar-collapsed');
+        sidebar?.classList.remove('collapsed');
+    }
+    syncCollapseLabels();
+    syncArenaLayout();
+}
+
+function initArenaResizers(arenaMain) {
+    if (!arenaMain || window.innerWidth < 900 || arenaMain.dataset.resizersReady) return;
+    arenaMain.dataset.resizersReady = 'true';
+
+    const editorHandle = document.createElement('button');
+    editorHandle.type = 'button';
+    editorHandle.className = 'arena-resizer editor-resizer';
+    editorHandle.setAttribute('aria-label', 'Resize editor');
+
+    const sidebarHandle = document.createElement('button');
+    sidebarHandle.type = 'button';
+    sidebarHandle.className = 'arena-resizer sidebar-resizer';
+    sidebarHandle.setAttribute('aria-label', 'Resize sidebar');
+
+    arenaMain.append(editorHandle, sidebarHandle);
+
+    function startResize(kind, event) {
+        event.preventDefault();
+        const startX = event.clientX;
+        const styles = getComputedStyle(arenaMain);
+        const startEditor = parseFloat(styles.getPropertyValue('--editor-width')) || 380;
+        const startSidebar = parseFloat(styles.getPropertyValue('--sidebar-width')) || 300;
+
+        function move(moveEvent) {
+            const dx = moveEvent.clientX - startX;
+            if (kind === 'editor') {
+                const next = Math.max(280, Math.min(520, startEditor + dx));
+                arenaMain.style.setProperty('--editor-width', `${next}px`);
             } else {
-                collapseBtn.innerHTML = '<i class="fas fa-chevron-left"></i> Collapse Editor';
+                const next = Math.max(240, Math.min(420, startSidebar - dx));
+                arenaMain.style.setProperty('--sidebar-width', `${next}px`);
             }
-            // Refresh CodeMirror
             if (htmlEditor) htmlEditor.refresh();
             if (cssEditor) cssEditor.refresh();
             if (jsEditor) jsEditor.refresh();
+        }
+
+        function stop() {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', stop);
+            document.body.classList.remove('is-resizing-arena');
+        }
+
+        document.body.classList.add('is-resizing-arena');
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop, { once: true });
+    }
+
+    editorHandle.addEventListener('pointerdown', (event) => startResize('editor', event));
+    sidebarHandle.addEventListener('pointerdown', (event) => startResize('sidebar', event));
+}
+
+function initPanelCollapse() {
+    function installCollapse(target, headerSelector, collapsedClass, bodySelector = null) {
+        const header = target.querySelector(headerSelector);
+        if (!header || header.querySelector('.panel-collapse-btn')) return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'panel-collapse-btn';
+        btn.innerHTML = '<i class="fas fa-minus"></i>';
+        btn.title = 'Collapse panel';
+        header.appendChild(btn);
+
+        function sync() {
+            const collapsed = target.classList.contains(collapsedClass);
+            btn.innerHTML = collapsed ? '<i class="fas fa-plus"></i>' : '<i class="fas fa-minus"></i>';
+            btn.title = collapsed ? 'Expand panel' : 'Collapse panel';
+            target.querySelectorAll(bodySelector || ':scope > :not(.panel-header):not(.sidebar-card-header)').forEach((el) => {
+                el.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+            });
+        }
+
+        btn.addEventListener('click', () => {
+            target.classList.toggle(collapsedClass);
+            sync();
+            setTimeout(() => {
+                if (htmlEditor) htmlEditor.refresh();
+                if (cssEditor) cssEditor.refresh();
+                if (jsEditor) jsEditor.refresh();
+            }, 120);
+        });
+        sync();
+    }
+
+    document.querySelectorAll('.panel').forEach((panel) => {
+        installCollapse(panel, '.panel-header', 'panel-collapsed');
+    });
+
+    document.querySelectorAll('.sidebar-card').forEach((card) => {
+        installCollapse(card, ':scope > .sidebar-card-header', 'sidebar-card-collapsed');
+    });
+
+    const collapseAllBtn = getElement('collapse-all-panels-btn');
+    const expandAllBtn = getElement('expand-all-panels-btn');
+    const setAllCollapsed = (collapsed) => {
+        document.querySelectorAll('.panel').forEach((panel) => {
+            panel.classList.toggle('panel-collapsed', collapsed);
+            panel.querySelectorAll(':scope > :not(.panel-header)').forEach((el) => {
+                el.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+            });
+        });
+        document.querySelectorAll('.panel > .panel-header .panel-collapse-btn').forEach((btn) => {
+            btn.innerHTML = collapsed ? '<i class="fas fa-plus"></i>' : '<i class="fas fa-minus"></i>';
+            btn.title = collapsed ? 'Expand panel' : 'Collapse panel';
+        });
+    };
+    if (collapseAllBtn) collapseAllBtn.addEventListener('click', () => setAllCollapsed(true));
+    if (expandAllBtn) expandAllBtn.addEventListener('click', () => setAllCollapsed(false));
+}
+
+function initSidebarTabs() {
+    const sidebar = document.querySelector('.right-sidebar');
+    if (!sidebar || sidebar.dataset.tabsReady) return;
+
+    const cards = Array.from(sidebar.querySelectorAll(':scope > .sidebar-card'));
+    if (!cards.length) return;
+
+    sidebar.dataset.tabsReady = 'true';
+    sidebar.classList.add('sidebar-tabs');
+
+    const drawerHeader = sidebar.querySelector(':scope > .sidebar-drawer-header');
+    const nav = document.createElement('div');
+    nav.className = 'sidebar-tab-nav';
+    nav.setAttribute('aria-label', 'Arena sidebar sections');
+
+    const contentPane = document.createElement('div');
+    contentPane.className = 'sidebar-tab-content';
+
+    if (drawerHeader) {
+        drawerHeader.insertAdjacentElement('afterend', nav);
+    } else {
+        sidebar.prepend(nav);
+    }
+    nav.insertAdjacentElement('afterend', contentPane);
+    cards.forEach((card) => contentPane.appendChild(card));
+
+    function activateCard(activeCard) {
+        cards.forEach((card) => {
+            const isActive = card === activeCard;
+            card.classList.toggle('sidebar-card-active', isActive);
+            card.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+            card.hidden = !isActive;
+            card.style.display = isActive ? '' : 'none';
+            const button = nav.querySelector(`[data-sidebar-target="${card.id}"]`);
+            if (button) button.setAttribute('aria-expanded', isActive ? 'true' : 'false');
         });
     }
+
+    window.activateArenaSidebarCard = (target = 'chat') => {
+        const normalized = String(target).toLowerCase();
+        const match = cards.find((card) => {
+            const headerText = card.querySelector(':scope > .sidebar-card-header')?.textContent?.toLowerCase() || '';
+            return card.classList.contains(`${normalized}-card`)
+                || card.id === normalized
+                || headerText.includes(normalized);
+        });
+        activateCard(match || sidebar.querySelector('.chat-card') || cards[0]);
+    };
+
+    cards.forEach((card, index) => {
+        const header = card.querySelector(':scope > .sidebar-card-header');
+        if (!header) return;
+        if (!card.id) card.id = `arena-sidebar-card-${index + 1}`;
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'sidebar-tab-button';
+        button.setAttribute('aria-expanded', 'false');
+        button.setAttribute('aria-controls', card.id);
+        button.dataset.sidebarTarget = card.id;
+
+        const icon = header.querySelector('i')?.cloneNode(true);
+        const title = header.textContent.replace(/\s+/g, ' ').replace('View Full â†’', '').trim() || `Section ${index + 1}`;
+        if (icon) button.appendChild(icon);
+        const label = document.createElement('span');
+        label.textContent = title;
+        button.appendChild(label);
+        nav.appendChild(button);
+
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            activateCard(card);
+        });
+    });
+
+    window.activateArenaSidebarCard('chat');
+}
+
+function initSurfaceZoom() {
+    const zoomState = { output: 1, target: 1 };
+    const minZoom = 0.2;
+    const maxZoom = 3;
+    const step = 0.25;
+
+    function getSurface(name) {
+        return document.querySelector(`[data-zoom-surface="${name}"]`);
+    }
+
+    function getPrimaryContent(name) {
+        const surface = getSurface(name);
+        if (!surface) return null;
+        return Array.from(surface.querySelectorAll('.surface-zoom-content')).find((el) => {
+            const styles = getComputedStyle(el);
+            return styles.display !== 'none';
+        }) || surface.querySelector('.surface-zoom-content');
+    }
+
+    function measureContent(name) {
+        const surface = getSurface(name);
+        const content = getPrimaryContent(name);
+        if (!surface || !content) return null;
+
+        if (content.tagName === 'IMG') {
+            return {
+                width: content.naturalWidth || surface.clientWidth,
+                height: content.naturalHeight || surface.clientHeight
+            };
+        }
+
+        if (content.tagName === 'IFRAME') {
+            try {
+                const doc = content.contentDocument || content.contentWindow?.document;
+                const body = doc?.body;
+                const html = doc?.documentElement;
+                if (body || html) {
+                    return {
+                        width: Math.max(body?.scrollWidth || 0, html?.scrollWidth || 0, body?.offsetWidth || 0, html?.offsetWidth || 0, surface.clientWidth),
+                        height: Math.max(body?.scrollHeight || 0, html?.scrollHeight || 0, body?.offsetHeight || 0, html?.offsetHeight || 0, surface.clientHeight)
+                    };
+                }
+            } catch (error) {}
+        }
+
+        return {
+            width: content.scrollWidth || content.offsetWidth || surface.clientWidth,
+            height: content.scrollHeight || content.offsetHeight || surface.clientHeight
+        };
+    }
+
+    function setBaseSize(name, width = null, height = null) {
+        const surface = getSurface(name);
+        if (!surface) return;
+        const nextWidth = Math.max(1, Math.ceil(width || surface.clientWidth || 1));
+        const nextHeight = Math.max(1, Math.ceil(height || surface.clientHeight || 1));
+        surface.style.setProperty('--surface-base-width', `${nextWidth}px`);
+        surface.style.setProperty('--surface-base-height', `${nextHeight}px`);
+    }
+
+    function setZoom(name, value, { fit = false } = {}) {
+        const surface = getSurface(name);
+        if (!surface) return;
+        const next = Math.max(minZoom, Math.min(maxZoom, value));
+        zoomState[name] = next;
+        surface.style.setProperty('--surface-zoom', next.toFixed(3));
+        surface.classList.toggle('surface-fit-mode', fit);
+        document.querySelectorAll(`[data-zoom-value="${name}"]`).forEach((label) => {
+            label.textContent = fit ? `Fit ${Math.round(next * 100)}%` : `${Math.round(next * 100)}%`;
+        });
+    }
+
+    function fitSurface(name) {
+        const surface = getSurface(name);
+        if (!surface) return;
+        const measured = measureContent(name);
+        if (!measured) return;
+        setBaseSize(name, measured.width, measured.height);
+        const fitScale = Math.min(
+            surface.clientWidth / Math.max(1, measured.width),
+            surface.clientHeight / Math.max(1, measured.height),
+            1
+        );
+        setZoom(name, fitScale, { fit: true });
+    }
+
+    function resetSurface(name) {
+        const surface = getSurface(name);
+        if (!surface) return;
+        setBaseSize(name, surface.clientWidth, surface.clientHeight);
+        setZoom(name, 1);
+    }
+
+    ['output-frame', 'target-frame'].forEach((id) => {
+        const frame = getElement(id);
+        if (!frame) return;
+        const name = id === 'output-frame' ? 'output' : 'target';
+        frame.addEventListener('load', () => setTimeout(() => fitSurface(name), 80));
+    });
+
+    const targetImage = getElement('target-image');
+    if (targetImage) {
+        targetImage.addEventListener('load', () => setTimeout(() => fitSurface('target'), 80));
+    }
+
+    document.querySelectorAll('[data-zoom-panel]').forEach((group) => {
+        const name = group.dataset.zoomPanel;
+        group.querySelectorAll('[data-zoom-action]').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const action = button.dataset.zoomAction;
+                if (action === 'in') setZoom(name, zoomState[name] + step);
+                if (action === 'out') setZoom(name, zoomState[name] - step);
+                if (action === 'fit') fitSurface(name);
+                if (action === 'reset') resetSurface(name);
+            });
+        });
+        resetSurface(name);
+        setTimeout(() => fitSurface(name), 180);
+    });
+
+    window.addEventListener('resize', debounce(() => {
+        Object.keys(zoomState).forEach((name) => fitSurface(name));
+    }, 160));
+}
+function initPanelSizing() {
+    const centerPanel = document.querySelector('.center-panel');
+    if (!centerPanel) return;
+
+    const buttons = document.querySelectorAll('.panel-size-btn[data-panel-size]');
+    const cameraPanel = centerPanel.querySelector('.cam-panel');
+    const cameraCompactBtn = getElement('toggle-camera-compact');
+    const focusClasses = ['expand-output', 'expand-target', 'expand-diff'];
+
+    function refreshVisibleSurfaces() {
+        setTimeout(() => {
+            const outputFrame = getElement('output-frame');
+            const targetFrame = getElement('target-frame');
+            if (outputFrame) outputFrame.dispatchEvent(new Event('resize'));
+            if (targetFrame) targetFrame.dispatchEvent(new Event('resize'));
+            if (typeof drawLiveDiff === 'function') scheduleLiveDiffCheck(150);
+        }, 180);
+    }
+
+    function syncCameraButton() {
+        if (!cameraCompactBtn) return;
+        const compact = centerPanel.classList.contains('camera-compact') || centerPanel.classList.contains('has-expanded-panel');
+        cameraCompactBtn.classList.toggle('active', compact);
+        cameraCompactBtn.setAttribute('aria-pressed', compact ? 'true' : 'false');
+        cameraCompactBtn.title = compact ? 'Restore camera' : 'Minimize camera';
+        cameraCompactBtn.setAttribute('aria-label', cameraCompactBtn.title);
+    }
+
+    function clearFocusClasses() {
+        focusClasses.forEach((className) => centerPanel.classList.remove(className));
+    }
+
+    function setExpanded(panel, button) {
+        const isExpanded = panel.classList.contains('panel-expanded');
+        centerPanel.querySelectorAll('.panel-expanded').forEach((expandedPanel) => {
+            expandedPanel.classList.remove('panel-expanded');
+        });
+        buttons.forEach((btn) => {
+            btn.classList.remove('active');
+            btn.innerHTML = '<i class="fas fa-up-right-and-down-left-from-center"></i>';
+            btn.title = `Focus ${btn.dataset.panelSize} view`;
+        });
+        clearFocusClasses();
+
+        if (!isExpanded) {
+            panel.classList.remove('panel-collapsed');
+            panel.classList.add('panel-expanded');
+            centerPanel.classList.add('has-expanded-panel');
+            centerPanel.classList.remove('camera-compact');
+            centerPanel.classList.add(`expand-${button.dataset.panelSize}`);
+            button.classList.add('active');
+            button.innerHTML = '<i class="fas fa-down-left-and-up-right-to-center"></i>';
+            button.title = 'Restore arena grid';
+        } else {
+            centerPanel.classList.remove('has-expanded-panel');
+        }
+
+        if (!centerPanel.querySelector('.panel-expanded')) {
+            centerPanel.classList.remove('has-expanded-panel');
+            clearFocusClasses();
+        }
+        syncCameraButton();
+        refreshVisibleSurfaces();
+    }
+
+    buttons.forEach((button) => {
+        const panel = button.closest('.panel');
+        if (!panel) return;
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            setExpanded(panel, button);
+        });
+    });
+
+    if (cameraCompactBtn) {
+        cameraCompactBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            centerPanel.querySelectorAll('.panel-expanded').forEach((expandedPanel) => {
+                expandedPanel.classList.remove('panel-expanded');
+            });
+            buttons.forEach((btn) => {
+                btn.classList.remove('active');
+                btn.innerHTML = '<i class="fas fa-up-right-and-down-left-from-center"></i>';
+                btn.title = `Focus ${btn.dataset.panelSize} view`;
+            });
+            centerPanel.classList.remove('has-expanded-panel');
+            clearFocusClasses();
+            centerPanel.classList.toggle('camera-compact');
+            syncCameraButton();
+            refreshVisibleSurfaces();
+        });
+    }
+
+    if (cameraPanel) {
+        cameraPanel.addEventListener('click', (event) => {
+            if (!centerPanel.classList.contains('camera-compact') && !centerPanel.classList.contains('has-expanded-panel')) return;
+            if (event.target.closest('button')) return;
+            centerPanel.classList.remove('camera-compact', 'has-expanded-panel');
+            clearFocusClasses();
+            centerPanel.querySelectorAll('.panel-expanded').forEach((expandedPanel) => {
+                expandedPanel.classList.remove('panel-expanded');
+            });
+            buttons.forEach((btn) => {
+                btn.classList.remove('active');
+                btn.innerHTML = '<i class="fas fa-up-right-and-down-left-from-center"></i>';
+                btn.title = `Focus ${btn.dataset.panelSize} view`;
+            });
+            syncCameraButton();
+            refreshVisibleSurfaces();
+        });
+    }
+
+    syncCameraButton();
+}
+
+function initSpectatorMode() {
+    if (USER_ROLE !== 'spectator') return;
+    document.querySelector('.arena-root')?.classList.add('spectator-mode', 'chat-open');
+    document.querySelector('.arena-main')?.classList.add('editor-collapsed');
+    getElement('editor-panel')?.classList.add('collapsed');
+    ['toggle-chat-btn', 'toggle-chat-btn-nav'].forEach((id) => {
+        const el = getElement(id);
+        if (el) {
+            el.classList.add('active');
+            el.setAttribute('aria-expanded', 'true');
+        }
+    });
+    ['submit-btn', 'reset-code-btn', 'forfeit-btn', 'collapse-editor-btn-bottom', 'toggle-sidebar-btn'].forEach((id) => {
+        const el = getElement(id);
+        if (el) el.style.display = 'none';
+    });
 }
 
 // Admin controls
@@ -629,26 +1609,27 @@ function initAdminControls() {
     
     if (pauseBtn) {
         pauseBtn.addEventListener('click', () => {
-            socket.emit('pause_challenge', { room_id: ROOM_ID });
+            window.socket.emit('pause_challenge', { room_id: ROOM_ID });
         });
     }
     
     if (resumeBtn) {
         resumeBtn.addEventListener('click', () => {
-            socket.emit('resume_challenge', { room_id: ROOM_ID });
+            window.socket.emit('resume_challenge', { room_id: ROOM_ID });
         });
     }
     
     if (addTimeBtn) {
         addTimeBtn.addEventListener('click', () => {
-            socket.emit('add_time', { room_id: ROOM_ID, seconds: 30 });
+            window.socket.emit('add_time', { room_id: ROOM_ID, seconds: 30 });
         });
     }
     
     if (endBtn) {
-        endBtn.addEventListener('click', () => {
-            if (confirm('End this challenge?')) {
-                socket.emit('end_challenge', { room_id: ROOM_ID });
+        endBtn.addEventListener('click', async () => {
+            const confirmed = await showConfirm('End this challenge?', 'End challenge');
+            if (confirmed) {
+                window.socket.emit('end_challenge', { room_id: ROOM_ID });
             }
         });
     }
@@ -661,6 +1642,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initDiffToggle();
     setupCamera();
     initCollapseEditor();
+    initPanelCollapse();
+    initSidebarTabs();
+    initPanelSizing();
+    initSurfaceZoom();
+    initSpectatorMode();
     initAdminControls();
     startCodePreview();
     
@@ -704,10 +1690,10 @@ document.addEventListener('DOMContentLoaded', () => {
 let statusPollingInterval = null;
 
 function startStatusPolling() {
-    const roomId = document.getElementById('room-id')?.value;
+    const roomId = document.getElementById('room-id')?.value || window.ARENA_CONFIG?.roomId;
     if (!roomId) return;
     
-    console.log('🔄 Starting status polling for room', roomId);
+    console.log('ðŸ”„ Starting status polling for room', roomId);
     
     if (statusPollingInterval) {
         clearInterval(statusPollingInterval);
@@ -719,7 +1705,8 @@ function startStatusPolling() {
             const data = await response.json();
             
             if (data.status === 'running') {
-                console.log('🏁 Polling detected challenge started!');
+                console.log('ðŸ Polling detected challenge started!');
+                setArenaMatchRunning(true);
                 
                 // Stop polling once started
                 if (statusPollingInterval) {
@@ -740,13 +1727,13 @@ function startStatusPolling() {
                 }
                 
                 // Enable editors
-                const userRole = document.getElementById('user-role')?.value;
+                const userRole = document.getElementById('user-role')?.value || window.ARENA_CONFIG?.userRole;
                 if (userRole !== 'spectator') {
                     if (window.cssEditor) window.cssEditor.setOption('readOnly', false);
                     if (window.jsEditor) window.jsEditor.setOption('readOnly', false);
                     
-                    const challengeType = document.getElementById('challenge-type')?.value;
-                    const htmlLocked = document.getElementById('html-locked')?.value === 'true';
+                    const challengeType = document.getElementById('challenge-type')?.value || window.ARENA_CONFIG?.challengeType;
+                    const htmlLocked = document.getElementById('html-locked')?.value === 'true' || window.ARENA_CONFIG?.htmlLocked === true;
                     if (!(challengeType === 'html' && htmlLocked)) {
                         if (window.htmlEditor) window.htmlEditor.setOption('readOnly', false);
                     }
@@ -759,9 +1746,9 @@ function startStatusPolling() {
                 showToast(`Challenge started! ${data.time_limit}s on the clock!`, 'success');
                 
                 // Also try to emit a socket event to confirm
-                if (socket) {
-                    socket.emit('check_challenge_status', { room_id: parseInt(roomId) });
-                }
+        if (window.socket) {
+            window.socket.emit('check_challenge_status', { room_id: parseInt(roomId) });
+        }
             }
         } catch (err) {
             console.error('Status poll error:', err);
@@ -771,14 +1758,21 @@ function startStatusPolling() {
 
 // Start polling when page loads
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('📄 DOM loaded, starting status polling');
+    console.log('ðŸ“„ DOM loaded, starting status polling');
+    setArenaMatchRunning(getElement('room-status')?.textContent?.trim().toUpperCase() === 'RUNNING');
     startStatusPolling();
 });
 
 
 // Expose functions globally
 window.runDiffCheck = runDiffCheck;
-window.htmlEditor = () => htmlEditor;
-window.cssEditor = () => cssEditor;
-window.jsEditor = () => jsEditor;
+window.setArenaMatchRunning = setArenaMatchRunning;
+window.htmlEditor = htmlEditor;
+window.cssEditor = cssEditor;
+window.jsEditor = jsEditor;
 window.switchTab = switchTab;
+
+
+
+
+

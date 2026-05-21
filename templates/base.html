@@ -1,33 +1,184 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>UI BATTLE ARENA</title>
+    <script>
+        (function () {
+            try {
+                document.documentElement.dataset.theme = localStorage.getItem('uiBattleTheme') || localStorage.getItem('uiBattleAdminTheme') || 'dark';
+            } catch (e) {
+                document.documentElement.dataset.theme = 'dark';
+            }
+        })();
+    </script>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closetag.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/xml-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/html-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/css-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/javascript-hint.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/pixelmatch@5.3.0/index.min.js"></script>
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'> # </text></svg>">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=arena17">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='site-icon.svg') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='site-icon.svg') }}">
+    <meta name="theme-color" content="#0f172a">
 </head>
-<body>
+<body data-theme="dark">
+    <button class="theme-toggle-global" id="global-theme-toggle" type="button" aria-label="Toggle light and dark mode">
+        <i class="fas fa-moon"></i>
+        <span>Dark</span>
+    </button>
+
     {% block content %}{% endblock %}
+
+    {% if user is defined and user %}
+    <div class="profile-menu-overlay" id="profile-menu-overlay" hidden></div>
+    <aside class="profile-menu-panel" id="profile-menu-panel" aria-label="Profile settings" hidden>
+        <div class="profile-menu-head">
+            <div class="profile-menu-avatar" id="profile-menu-avatar">
+                {% if current_profile is defined and current_profile.avatar_url %}
+                <img src="{{ current_profile.avatar_url }}" alt="{{ user.username }} avatar">
+                {% else %}
+                {{ user.username[0].upper() }}
+                {% endif %}
+            </div>
+            <div class="profile-menu-title">
+                <span>Profile</span>
+                <strong id="profile-menu-name">{{ user.username }}</strong>
+                <small>{{ user.role|upper }}</small>
+            </div>
+            <button class="profile-menu-close" id="profile-menu-close" type="button" aria-label="Close profile settings">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div class="profile-menu-stats">
+            <div>
+                <span>{{ "%.1f"|format(user.best_accuracy) }}%</span>
+                <small>Best</small>
+            </div>
+            <div>
+                <span>{{ user.matches_played }}</span>
+                <small>Matches</small>
+            </div>
+            <div>
+                <span>{{ user.total_wins }}</span>
+                <small>Wins</small>
+            </div>
+        </div>
+
+        <form class="profile-settings-form" id="profile-settings-form" enctype="multipart/form-data">
+            <label>
+                Display name
+                <input id="profile-settings-username" name="username" maxlength="80" value="{{ user.username }}" required>
+            </label>
+            <label>
+                Bio
+                <textarea id="profile-settings-bio" name="bio" maxlength="500" placeholder="Add a short bio for admins, players, and spectators.">{{ current_profile.bio if current_profile is defined else '' }}</textarea>
+            </label>
+            <label>
+                Profile image
+                <input id="profile-settings-avatar" name="avatar" type="file" accept="image/png,image/jpeg,image/gif">
+            </label>
+            <div class="profile-menu-actions">
+                <a class="profile-menu-link" href="{{ url_for('profile', user_id=user.id) }}"><i class="fas fa-user"></i> View profile</a>
+                {% if user.role != 'admin' %}
+                <a class="profile-menu-link" href="{{ url_for('my_awards') }}"><i class="fas fa-id-card-clip"></i> My cards</a>
+                {% endif %}
+                <button class="profile-menu-save" type="submit"><i class="fas fa-save"></i> Save</button>
+            </div>
+        </form>
+
+        <div class="account-security-panel">
+            <h3><i class="fas fa-shield-halved"></i> Account security</h3>
+
+            <form class="security-form" id="password-change-form">
+                <label>
+                    Current password
+                    <input id="current-password" type="password" autocomplete="current-password" required>
+                </label>
+                <label>
+                    New password
+                    <input id="new-password" type="password" autocomplete="new-password" minlength="8" required>
+                </label>
+                <label>
+                    Confirm new password
+                    <input id="confirm-password" type="password" autocomplete="new-password" minlength="8" required>
+                </label>
+                <button class="profile-menu-save" type="submit"><i class="fas fa-key"></i> Change password</button>
+            </form>
+
+            <div class="two-factor-box" id="two-factor-box" data-enabled="{{ 'true' if user.two_factor_enabled else 'false' }}">
+                <div>
+                    <strong>Two-step verification</strong>
+                    <span id="two-factor-status">{{ 'Enabled' if user.two_factor_enabled else 'Off' }}</span>
+                </div>
+                <p>Use Google Authenticator, Microsoft Authenticator, 1Password, Authy, or any app that supports 6-digit TOTP codes.</p>
+                <label>
+                    Current password
+                    <input id="two-factor-current-password" type="password" autocomplete="current-password">
+                </label>
+                <div class="two-factor-setup" id="two-factor-setup" hidden>
+                    <label>
+                        Secret key
+                        <input id="two-factor-secret" type="text" readonly>
+                    </label>
+                    <small>Add this key in your authenticator app, then enter the current 6-digit code.</small>
+                    <label>
+                        Verification code
+                        <input id="two-factor-code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+                    </label>
+                </div>
+                <div class="profile-menu-actions">
+                    <button class="profile-menu-link" id="two-factor-setup-btn" type="button"><i class="fas fa-qrcode"></i> Setup 2FA</button>
+                    <button class="profile-menu-save" id="two-factor-enable-btn" type="button" hidden><i class="fas fa-check"></i> Enable</button>
+                    <button class="profile-menu-logout" id="two-factor-disable-btn" type="button"><i class="fas fa-ban"></i> Disable</button>
+                </div>
+            </div>
+        </div>
+
+        <a class="profile-menu-logout" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </aside>
+    <script>
+        window.CURRENT_PROFILE = {
+            id: {{ user.id }},
+            username: {{ user.username|tojson }},
+            role: {{ user.role|tojson }},
+            twoFactorEnabled: {{ 'true' if user.two_factor_enabled else 'false' }},
+            bio: {{ (current_profile.bio if current_profile is defined else '')|tojson }},
+            avatarUrl: {{ (current_profile.avatar_url if current_profile is defined else None)|tojson }}
+        };
+    </script>
+    {% endif %}
     
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
+
+
+
+
+
+

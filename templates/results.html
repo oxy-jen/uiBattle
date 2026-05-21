@@ -4,12 +4,12 @@
 <div class="results-container">
     <div class="results-header">
         <h1><i class="fas fa-trophy"></i> BATTLE RESULTS</h1>
-        <p class="room-code-results">{{ room.room_code }} · {{ room.challenge.title if room.challenge else 'Challenge' }}</p>
+        <p class="room-code-results">{{ room.room_code if room.is_public or user.role == 'admin' else 'Private match' }} &middot; {{ room.challenge.title if room.challenge else 'Challenge' }}</p>
     </div>
     
     <div class="winner-banner">
         {% if winner == 'DRAW' %}
-            <div class="draw-banner">🤝 DRAW 🤝</div>
+            <div class="draw-banner"><i class="fas fa-handshake"></i> DRAW <i class="fas fa-handshake"></i></div>
         {% elif winner %}
             <div class="winner-banner-glow">
                 <i class="fas fa-crown"></i>
@@ -21,6 +21,30 @@
         {% endif %}
     </div>
     
+    {% if result_rows %}
+    <div class="results-ranking">
+        <h3><i class="fas fa-ranking-star"></i> Final Ranking</h3>
+        <div class="ranking-list">
+            {% for sub in result_rows %}
+            <div class="ranking-row rank-{{ loop.index if loop.index <= 3 else 'other' }}">
+                <div class="ranking-medal">
+                    {% if loop.index <= 3 %}
+                    <i class="fas fa-medal"></i>
+                    {% else %}
+                    #{{ loop.index }}
+                    {% endif %}
+                </div>
+                <div class="ranking-player">
+                    <span>{{ sub.user.username if sub.user else 'Player' }}</span>
+                    <small>{{ 'Forfeit' if sub.is_forfeit else 'Completed' }}</small>
+                </div>
+                <strong>{{ "%.1f"|format(sub.accuracy) }}%</strong>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="comparison-grid">
         <div class="result-card player1-result">
             <div class="result-header cyan">
@@ -86,6 +110,19 @@ JS: {{ p2_sub.js_code|length if p2_sub and p2_sub.js_code else 0 }} chars</code>
 .winner-banner { text-align: center; margin-bottom: 50px; }
 .winner-banner-glow { display: inline-block; padding: 20px 50px; background: linear-gradient(135deg, #ffd700, #ffaa00); border-radius: 60px; font-family: 'Rajdhani', sans-serif; font-size: 36px; font-weight: 700; color: #0a0a0f; box-shadow: 0 0 40px rgba(255,215,0,0.5); animation: glow-flicker 2s infinite; }
 .draw-banner { display: inline-block; padding: 20px 50px; background: linear-gradient(135deg, #8888aa, #555577); border-radius: 60px; font-family: 'Rajdhani', sans-serif; font-size: 36px; font-weight: 700; color: white; }
+.results-ranking { max-width: 760px; margin: 0 auto 36px; background: rgba(26,26,46,0.85); border: 1px solid var(--border-default); border-radius: 8px; padding: 18px; }
+.results-ranking h3 { font-family: 'Rajdhani', sans-serif; font-size: 24px; margin-bottom: 14px; color: var(--text-primary); }
+.ranking-list { display: grid; gap: 10px; }
+.ranking-row { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 14px; padding: 12px 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; }
+.ranking-medal { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; font-weight: 700; }
+.ranking-player span { display: block; font-weight: 700; }
+.ranking-player small { color: var(--text-secondary); }
+.ranking-row.rank-1 { border-color: rgba(255,215,0,0.55); background: rgba(255,215,0,0.11); }
+.ranking-row.rank-1 .ranking-medal { color: #0a0a0f; background: var(--neon-gold); }
+.ranking-row.rank-2 { border-color: rgba(192,192,192,0.55); background: rgba(192,192,192,0.1); }
+.ranking-row.rank-2 .ranking-medal { color: #0a0a0f; background: var(--neon-silver); }
+.ranking-row.rank-3 { border-color: rgba(205,127,50,0.6); background: rgba(205,127,50,0.12); }
+.ranking-row.rank-3 .ranking-medal { color: #0a0a0f; background: var(--neon-bronze); }
 .comparison-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 30px; max-width: 1200px; margin: 0 auto; }
 .result-card { background: rgba(26,26,46,0.85); backdrop-filter: blur(16px); border-radius: 20px; padding: 30px; border: 1px solid var(--border-default); }
 .result-header { text-align: center; margin-bottom: 30px; }

@@ -1,31 +1,65 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if leaderboard_record is not defined %}
+{% set leaderboard_record = {
+    'best_accuracy': target_user.best_accuracy|default(0),
+    'matches_played': target_user.matches_played|default(0),
+    'wins': target_user.total_wins|default(0),
+    'current_streak': 0,
+    'best_streak': 0,
+    'power_score': 0
+} %}
+{% endif %}
+{% set leaderboard_streak_target = leaderboard_streak_target|default(5) %}
+{% set leaderboard_unlocked = leaderboard_unlocked|default(false) %}
+{% set leaderboard_awarded = leaderboard_awarded|default(false) %}
 <div class="profile-page">
     <div class="profile-container">
         <div class="profile-header">
-            <div class="profile-avatar-large">{{ target_user.username[0].upper() }}</div>
-            <h1>{{ target_user.username }}</h1>
+            <div class="profile-avatar-large"{% if target_user.id == current_user.id %} data-profile-page-avatar{% endif %}>
+                {% if target_profile is defined and target_profile.avatar_url %}
+                <img src="{{ target_profile.avatar_url }}" alt="{{ target_user.username }} avatar">
+                {% else %}
+                {{ target_user.username[0].upper() }}
+                {% endif %}
+            </div>
+            <h1{% if target_user.id == current_user.id %} data-profile-page-name{% endif %}>{{ target_user.username }}</h1>
             <p class="member-since">Member since {{ target_user.created_at.strftime('%B %d, %Y') if target_user.created_at else 'Unknown' }}</p>
             {% if target_user.id == current_user.id %}
             <span class="badge-profile">You</span>
             {% endif %}
+            <div class="leaderboard-profile-badge {% if leaderboard_unlocked %}unlocked{% else %}locked{% endif %}">
+                <i class="fas {% if leaderboard_unlocked %}fa-unlock{% else %}fa-lock{% endif %}"></i>
+                <div>
+                    <strong>{% if leaderboard_unlocked %}Leaderboard Unlocked{% else %}Leaderboard Locked{% endif %}</strong>
+                    <span>
+                        {% if leaderboard_awarded %}
+                        Admin awarded access for strong performance.
+                        {% elif leaderboard_record.best_streak >= leaderboard_streak_target %}
+                        Earned with a {{ leaderboard_record.best_streak }} match win streak.
+                        {% else %}
+                        Win {{ leaderboard_streak_target }} matches in a row to unlock it. Current streak: {{ leaderboard_record.current_streak }}.
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
         </div>
         
         <div class="profile-stats-grid">
             <div class="stat-card-dark">
                 <i class="fas fa-bullseye"></i>
-                <div class="stat-value">{{ "%.1f"|format(target_user.best_accuracy) }}%</div>
+                <div class="stat-value">{{ "%.1f"|format(leaderboard_record.best_accuracy) }}%</div>
                 <div class="stat-label">Best Accuracy</div>
             </div>
             <div class="stat-card-dark">
                 <i class="fas fa-swords"></i>
-                <div class="stat-value">{{ target_user.matches_played }}</div>
+                <div class="stat-value">{{ leaderboard_record.matches_played }}</div>
                 <div class="stat-label">Matches Played</div>
             </div>
             <div class="stat-card-dark">
                 <i class="fas fa-trophy"></i>
-                <div class="stat-value">{{ target_user.total_wins }}</div>
+                <div class="stat-value">{{ leaderboard_record.wins }}</div>
                 <div class="stat-label">Total Wins</div>
             </div>
             <div class="stat-card-dark">
@@ -48,6 +82,14 @@
             <button class="profile-tab-btn" onclick="showTab(event, 'achievements')">
                 <i class="fas fa-medal"></i> Achievements
             </button>
+            <a class="profile-tab-link" href="{{ url_for('profile_achievements', user_id=target_user.id) }}">
+                <i class="fas fa-id-card-clip"></i> Cards
+            </a>
+            {% if target_user.id == current_user.id and current_user.role != 'admin' %}
+            <a class="profile-tab-link" href="{{ url_for('my_awards') }}">
+                <i class="fas fa-gift"></i> Award Cards
+            </a>
+            {% endif %}
         </div>
         
         <!-- Tab 1: Recent Matches -->
@@ -113,6 +155,14 @@
                         <span class="stat-detail-value" id="best-streak">--</span>
                     </div>
                     <div class="stat-detail-card">
+                        <span class="stat-detail-label">Current Streak</span>
+                        <span class="stat-detail-value" id="current-streak">--</span>
+                    </div>
+                    <div class="stat-detail-card">
+                        <span class="stat-detail-label">Power Score</span>
+                        <span class="stat-detail-value" id="power-score">--</span>
+                    </div>
+                    <div class="stat-detail-card">
                         <span class="stat-detail-label">Total Submissions</span>
                         <span class="stat-detail-value" id="total-submissions">--</span>
                     </div>
@@ -123,14 +173,14 @@
                 <h3><i class="fas fa-chart-pie"></i> Challenge Type Breakdown</h3>
                 <div class="type-breakdown">
                     <div class="breakdown-item">
-                        <span class="breakdown-label">🖼 Image Challenges</span>
+                        <span class="breakdown-label"><i class="fas fa-image"></i> Image Challenges</span>
                         <div class="breakdown-bar">
                             <div class="breakdown-fill image-fill" id="image-fill" style="width: 0%"></div>
                         </div>
                         <span class="breakdown-percent" id="image-percent">0%</span>
                     </div>
                     <div class="breakdown-item">
-                        <span class="breakdown-label">🖥 HTML Challenges</span>
+                        <span class="breakdown-label"><i class="fas fa-code"></i> HTML Challenges</span>
                         <div class="breakdown-bar">
                             <div class="breakdown-fill html-fill" id="html-fill" style="width: 0%"></div>
                         </div>
@@ -144,6 +194,16 @@
         <div id="tab-achievements" class="profile-tab-content">
             <div class="profile-section">
                 <h3><i class="fas fa-medal"></i> Achievements & Badges</h3>
+                {% if award_card %}
+                <div class="profile-award-strip" style="--award-color: {{ award_card.color }};">
+                    <i class="fas fa-certificate"></i>
+                    <div>
+                        <strong>{{ award_card.reason }}</strong>
+                        <span>{{ award_card.details }}</span>
+                    </div>
+                    <a href="{{ url_for('profile_achievements', user_id=target_user.id) }}" class="btn-primary">View Cards</a>
+                </div>
+                {% endif %}
                 <div class="achievements-grid" id="achievements-grid">
                     <div class="achievement-card locked" id="ach-first-match">
                         <i class="fas fa-flag-checkered"></i>
@@ -180,6 +240,11 @@
                         <h4>CSS Artist</h4>
                         <p>Win 5 Image challenges</p>
                     </div>
+                    <div class="achievement-card locked" id="ach-leaderboard">
+                        <i class="fas fa-ranking-star"></i>
+                        <h4>Leaderboard Elite</h4>
+                        <p>Unlock leaderboard access</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -206,10 +271,17 @@
 .profile-page { min-height: 100vh; background: linear-gradient(135deg, #0a0a0f 0%, #12121a 100%); padding: 40px; }
 .profile-container { max-width: 1000px; margin: 0 auto; }
 .profile-header { text-align: center; margin-bottom: 40px; }
-.profile-avatar-large { width: 120px; height: 120px; background: linear-gradient(135deg, #00fff5, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 56px; font-weight: 700; margin: 0 auto 20px; box-shadow: 0 0 30px rgba(0,255,245,0.3); }
+.profile-avatar-large { width: 120px; height: 120px; background: linear-gradient(135deg, #00fff5, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 56px; font-weight: 700; margin: 0 auto 20px; box-shadow: 0 0 30px rgba(0,255,245,0.3); overflow: hidden; }
+.profile-avatar-large img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .profile-header h1 { font-family: 'Rajdhani', sans-serif; font-size: 36px; margin-bottom: 5px; }
 .member-since { color: var(--text-muted); }
 .badge-profile { display: inline-block; padding: 4px 12px; background: var(--neon-cyan); color: var(--bg-primary); border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 10px; }
+.leaderboard-profile-badge { max-width: 520px; margin: 18px auto 0; display: flex; align-items: center; gap: 14px; text-align: left; padding: 14px 16px; border-radius: 8px; border: 1px solid rgba(255,170,0,0.35); background: rgba(255,170,0,0.08); }
+.leaderboard-profile-badge.unlocked { border-color: rgba(0,255,136,0.35); background: rgba(0,255,136,0.08); }
+.leaderboard-profile-badge i { color: var(--warning); font-size: 24px; }
+.leaderboard-profile-badge.unlocked i { color: var(--success); }
+.leaderboard-profile-badge strong { display: block; color: var(--text-primary); }
+.leaderboard-profile-badge span { display: block; color: var(--text-secondary); font-size: 13px; margin-top: 3px; }
 
 .profile-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
 .stat-card-dark { background: rgba(26,26,46,0.85); backdrop-filter: blur(16px); border-radius: 16px; padding: 20px; text-align: center; border: 1px solid var(--border-default); }
@@ -219,6 +291,8 @@
 .profile-tabs { display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 1px solid var(--border-default); flex-wrap: wrap; }
 .profile-tab-btn { background: none; border: none; padding: 12px 24px; color: var(--text-secondary); font-family: 'Rajdhani', sans-serif; font-weight: 600; cursor: pointer; font-size: 14px; }
 .profile-tab-btn.active { color: var(--neon-cyan); border-bottom: 2px solid var(--neon-cyan); }
+.profile-tab-link { padding: 12px 24px; color: var(--text-secondary); text-decoration: none; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 14px; }
+.profile-tab-link:hover { color: var(--neon-cyan); }
 
 .profile-tab-content { display: none; }
 .profile-tab-content.active { display: block; }
@@ -251,6 +325,10 @@
 .breakdown-percent { width: 50px; text-align: right; font-weight: 600; }
 
 .achievements-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+.profile-award-strip { margin-bottom: 20px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px; padding: 16px; border: 1px solid color-mix(in srgb, var(--award-color, #d97706) 45%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--award-color, #d97706) 12%, transparent); }
+.profile-award-strip i { color: var(--award-color, #d97706); font-size: 30px; }
+.profile-award-strip strong { display: block; color: var(--text-primary); }
+.profile-award-strip span { display: block; color: var(--text-secondary); font-size: 13px; margin-top: 3px; }
 .achievement-card { background: var(--bg-secondary); border-radius: 16px; padding: 20px; text-align: center; border: 1px solid var(--border-default); opacity: 0.5; }
 .achievement-card.unlocked { opacity: 1; border-color: var(--neon-gold); background: linear-gradient(135deg, rgba(255,215,0,0.1), rgba(255,215,0,0.05)); }
 .achievement-card.unlocked i { color: var(--neon-gold); }
@@ -271,6 +349,7 @@
 
 <script>
 const PROFILE_USER_ID = {{ target_user.id }};
+const PROFILE_LEADERBOARD_UNLOCKED = {{ 'true' if leaderboard_unlocked else 'false' }};
 
 // Tab switching
 function showTab(event, tabName) {
@@ -311,6 +390,8 @@ async function loadDetailedStats() {
             document.getElementById('win-rate').textContent = data.win_rate + '%';
             document.getElementById('avg-accuracy').textContent = data.avg_accuracy + '%';
             document.getElementById('best-streak').textContent = data.best_streak;
+            document.getElementById('current-streak').textContent = data.current_streak;
+            document.getElementById('power-score').textContent = Math.round(data.power_score);
             document.getElementById('total-submissions').textContent = data.total_submissions;
             
             const total = data.image_count + data.html_count;
@@ -373,6 +454,10 @@ async function loadAchievements() {
             if (bestStreak >= 3) {
                 document.getElementById('ach-win-streak').classList.remove('locked');
                 document.getElementById('ach-win-streak').classList.add('unlocked');
+            }
+            if (bestStreak >= 5 || PROFILE_LEADERBOARD_UNLOCKED) {
+                document.getElementById('ach-leaderboard').classList.remove('locked');
+                document.getElementById('ach-leaderboard').classList.add('unlocked');
             }
             
             // Veteran

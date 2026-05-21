@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="award-page">
+    <header class="award-header">
+        <div>
+            <p>Admin Recognition Studio</p>
+            <h1>Award {{ target_user.username }}</h1>
+            <span>Create loyalty, consistency, performance, and appreciation cards with matching avatars.</span>
+        </div>
+        <div class="award-header-actions">
+            <a class="btn-secondary" href="{{ url_for('admin_panel') }}"><i class="fas fa-arrow-left"></i> Admin</a>
+            <a class="btn-secondary" href="{{ url_for('profile', user_id=target_user.id) }}"><i class="fas fa-user"></i> Profile</a>
+        </div>
+    </header>
+
+    <main class="award-workspace">
+        <section class="award-controls">
+            <div class="control-panel">
+                <h2><i class="fas fa-id-card-clip"></i> Card Details</h2>
+                <label>Title <input id="award-title" maxlength="140" value="Loyalty Recognition Card"></label>
+                <label>Reason <input id="award-reason" maxlength="200" value="Consistent excellent effort"></label>
+                <label>Message <textarea id="award-message" maxlength="800" rows="5">Recognized for showing consistency, focus, teamwork, and growth inside UI Battle Arena.</textarea></label>
+                <label>Avatar Label <input id="award-avatar-label" maxlength="80" value="{{ target_user.username }}"></label>
+                <label>Icon
+                    <select id="award-icon">
+                        {% for icon in ['fa-award','fa-star','fa-trophy','fa-medal','fa-fire','fa-bolt','fa-heart','fa-gem','fa-crown','fa-shield-halved','fa-seedling','fa-wand-magic-sparkles'] %}
+                        <option value="{{ icon }}">{{ icon }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+
+            <div class="control-panel">
+                <h2><i class="fas fa-palette"></i> Style</h2>
+                <div class="color-grid">
+                    <label>Primary <input id="award-primary" type="color" value="#f59e0b"></label>
+                    <label>Secondary <input id="award-secondary" type="color" value="#111827"></label>
+                </div>
+                <label>Card Shape
+                    <select id="award-shape">
+                        <option value="rounded">Rounded</option>
+                        <option value="ticket">Ticket</option>
+                        <option value="hex">Hex Badge</option>
+                        <option value="wave">Wave</option>
+                        <option value="sharp">Sharp</option>
+                    </select>
+                </label>
+                <label>Layout
+                    <select id="award-layout">
+                        <option value="classic">Classic</option>
+                        <option value="badge">Badge</option>
+                        <option value="split">Split</option>
+                        <option value="diagonal">Diagonal</option>
+                    </select>
+                </label>
+                <label>Avatar Shape
+                    <select id="award-avatar-shape">
+                        <option value="circle">Circle</option>
+                        <option value="shield">Shield</option>
+                        <option value="blob">Blob</option>
+                        <option value="square">Square</option>
+                        <option value="hex">Hex</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="control-panel wide">
+                <h2><i class="fas fa-layer-group"></i> Card Templates</h2>
+                <div class="template-grid" id="card-template-grid">
+                    {% for template in card_templates %}
+                    <button type="button" class="template-chip {% if loop.first %}active{% endif %}" data-card-template="{{ template.id }}" data-layout="{{ template.layout }}" data-shape="{{ template.shape }}" data-primary="{{ template.primary }}" data-secondary="{{ template.secondary }}" data-icon="{{ template.icon }}">
+                        <span style="--chip-color: {{ template.primary }}"><i class="fas {{ template.icon }}"></i></span>
+                        {{ template.name }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="control-panel wide">
+                <h2><i class="fas fa-user-astronaut"></i> Avatar Templates</h2>
+                <div class="template-grid" id="avatar-template-grid">
+                    {% for avatar in avatar_templates %}
+                    <button type="button" class="template-chip {% if loop.first %}active{% endif %}" data-avatar-template="{{ avatar.id }}" data-avatar-shape="{{ avatar.shape }}" data-avatar-icon="{{ avatar.icon }}">
+                        <span><i class="fas {{ avatar.icon }}"></i></span>
+                        {{ avatar.name }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+
+        <section class="award-preview-column">
+            <div id="award-card-preview" class="award-card template-champion layout-classic shape-rounded" style="--primary:#f59e0b;--secondary:#111827;">
+                <div class="award-card-bg"></div>
+                <div class="award-avatar avatar-circle">
+                    <i class="fas fa-bolt"></i>
+                </div>
+                <div class="award-content">
+                    <span class="award-kicker">UI Battle Arena Recognition</span>
+                    <h2>Loyalty Recognition Card</h2>
+                    <h3>{{ target_user.username }}</h3>
+                    <p>Recognized for showing consistency, focus, teamwork, and growth inside UI Battle Arena.</p>
+                    <div class="award-reason"><i class="fas fa-award"></i><span>Consistent excellent effort</span></div>
+                </div>
+                <div class="award-footer">
+                    <span>Issued by {{ user.username }}</span>
+                    <strong>{{ target_user.username }}</strong>
+                </div>
+            </div>
+            <div class="designer-actions">
+                <button type="button" class="btn-primary" onclick="saveAwardCard()"><i class="fas fa-paper-plane"></i> Send Card</button>
+                <button type="button" class="btn-secondary" onclick="downloadAwardCard('png')"><i class="fas fa-download"></i> PNG</button>
+                <button type="button" class="btn-secondary" onclick="downloadAwardCard('jpeg')"><i class="fas fa-file-image"></i> JPEG</button>
+                <button type="button" class="btn-secondary" onclick="printAwardCard()"><i class="fas fa-print"></i> Print</button>
+            </div>
+        </section>
+    </main>
+
+    <section class="existing-awards">
+        <h2><i class="fas fa-gift"></i> Cards Already Sent</h2>
+        <div class="award-gallery">
+            {% for card in cards %}
+            <article class="award-mini">
+                <span>{{ card.template_name }}</span>
+                <strong>{{ card.title }}</strong>
+                <p>{{ card.reason }}</p>
+            </article>
+            {% else %}
+            <p class="empty-awards">No cards sent to {{ target_user.username }} yet.</p>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+
+<style>
+.award-page { min-height: 100vh; padding: 32px; background: var(--page-gradient); color: var(--text-primary); }
+.award-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 22px; }
+.award-header p { margin: 0 0 6px; color: var(--accent-primary); font-weight: 700; text-transform: uppercase; }
+.award-header h1 { margin: 0; font-family: 'Rajdhani', sans-serif; font-size: 42px; }
+.award-header span { color: var(--text-secondary); }
+.award-header-actions, .designer-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.award-workspace { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(430px, 620px); gap: 22px; align-items: start; }
+.award-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.control-panel { border: 1px solid var(--border-default); border-radius: 8px; background: rgba(26,26,46,0.88); padding: 16px; display: grid; gap: 12px; }
+.control-panel.wide { grid-column: 1 / -1; }
+.control-panel h2, .existing-awards h2 { margin: 0; font-size: 18px; }
+.control-panel label { display: grid; gap: 6px; color: var(--text-secondary); font-weight: 700; font-size: 13px; }
+.control-panel input, .control-panel textarea, .control-panel select { width: 100%; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-panel-alt); color: var(--text-primary); padding: 10px; }
+.color-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.template-chip { display: flex; align-items: center; gap: 8px; min-height: 42px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-panel-alt); color: var(--text-primary); cursor: pointer; font-weight: 700; text-align: left; }
+.template-chip span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--chip-color, var(--accent-primary)); color: #111827; }
+.template-chip.active { border-color: var(--accent-primary); box-shadow: 0 0 0 1px rgba(34,211,238,0.3); }
+.award-preview-column { position: sticky; top: 20px; display: grid; gap: 12px; }
+.award-card { position: relative; min-height: 410px; border-radius: 8px; overflow: hidden; color: #fff; background: var(--secondary); padding: 26px; display: grid; grid-template-rows: auto 1fr auto; box-shadow: 0 22px 48px rgba(0,0,0,0.36); isolation: isolate; }
+.award-card-bg { position: absolute; inset: 0; background: radial-gradient(circle at 18% 12%, var(--primary), transparent 28%), linear-gradient(135deg, var(--secondary), var(--primary)); z-index: -1; opacity: 0.96; }
+.award-card.shape-ticket { border-radius: 6px; clip-path: polygon(5% 0, 95% 0, 100% 10%, 100% 90%, 95% 100%, 5% 100%, 0 90%, 0 10%); }
+.award-card.shape-hex { clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%); }
+.award-card.shape-wave { border-radius: 28px 8px 28px 8px; }
+.award-card.shape-sharp { border-radius: 0; }
+.award-avatar { width: 98px; height: 98px; display: grid; place-items: center; background: #fff; color: var(--primary); font-size: 42px; border: 4px solid rgba(255,255,255,0.72); }
+.avatar-circle { border-radius: 50%; }
+.avatar-shield { border-radius: 28px 28px 42px 42px; }
+.avatar-blob { border-radius: 42% 58% 48% 52%; }
+.avatar-square { border-radius: 8px; }
+.avatar-hex { clip-path: polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%); }
+.award-content { align-self: center; max-width: 520px; }
+.award-kicker { color: #ffffff; text-transform: uppercase; font-weight: 700; font-size: 12px; }
+.award-content h2 { margin: 8px 0 0; font-family: 'Rajdhani', sans-serif; font-size: 42px; line-height: 1; }
+.award-content h3 { margin: 2px 0 12px; font-size: 26px; color: #ffffff; }
+.award-content p { line-height: 1.45; max-width: 500px; }
+.award-reason { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,0.14); font-weight: 700; }
+.award-footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 14px; }
+.layout-badge { place-items: center; text-align: center; }
+.layout-badge .award-avatar { margin: 0 auto; width: 118px; height: 118px; }
+.layout-split { grid-template-columns: 150px 1fr; grid-template-rows: 1fr auto; align-items: center; column-gap: 22px; }
+.layout-split .award-avatar { grid-row: 1; }
+.layout-split .award-content { grid-column: 2; }
+.layout-split .award-footer { grid-column: 1 / -1; }
+.layout-diagonal .award-card-bg { background: linear-gradient(145deg, var(--primary) 0 42%, var(--secondary) 42% 100%); }
+.designer-actions .btn-primary, .designer-actions .btn-secondary, .award-header-actions .btn-secondary { text-decoration: none; border-radius: 6px; padding: 10px 13px; }
+.existing-awards { margin-top: 24px; }
+.award-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.award-mini { border: 1px solid var(--border-default); border-radius: 8px; background: rgba(26,26,46,0.86); padding: 14px; }
+.award-mini span { color: var(--accent-primary); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.award-mini strong { display: block; margin-top: 4px; }
+.award-mini p, .empty-awards { color: var(--text-secondary); }
+@media (max-width: 980px) { .award-workspace, .award-controls { grid-template-columns: 1fr; } .award-preview-column { position: static; } }
+@media print { .theme-toggle-global, .award-header, .award-controls, .designer-actions, .existing-awards { display: none !important; } .award-page { padding: 0; background: #fff; } .award-preview-column { display: block; } .award-card { box-shadow: none; } }
+</style>
+
+<script>
+const recipientName = {{ target_user.username|tojson }};
+let selectedCardTemplate = 'champion';
+let selectedAvatarTemplate = 'spark';
+
+function updateAwardPreview() {
+    const card = document.getElementById('award-card-preview');
+    const title = document.getElementById('award-title').value || 'Recognition Card';
+    const reason = document.getElementById('award-reason').value || 'Excellent performance';
+    const message = document.getElementById('award-message').value || '';
+    const icon = document.getElementById('award-icon').value || 'fa-award';
+    const primary = document.getElementById('award-primary').value;
+    const secondary = document.getElementById('award-secondary').value;
+    const shape = document.getElementById('award-shape').value;
+    const layout = document.getElementById('award-layout').value;
+    const avatarShape = document.getElementById('award-avatar-shape').value;
+    const avatarIcon = document.querySelector('[data-avatar-template].active')?.dataset.avatarIcon || 'fa-bolt';
+    card.style.setProperty('--primary', primary);
+    card.style.setProperty('--secondary', secondary);
+    card.className = `award-card template-${selectedCardTemplate} layout-${layout} shape-${shape}`;
+    card.querySelector('.award-avatar').className = `award-avatar avatar-${avatarShape}`;
+    card.querySelector('.award-avatar i').className = `fas ${avatarIcon}`;
+    card.querySelector('.award-content h2').textContent = title;
+    card.querySelector('.award-content h3').textContent = document.getElementById('award-avatar-label').value || recipientName;
+    card.querySelector('.award-content p').textContent = message;
+    card.querySelector('.award-reason i').className = `fas ${icon}`;
+    card.querySelector('.award-reason span').textContent = reason;
+}
+
+document.querySelectorAll('input, textarea, select').forEach((input) => input.addEventListener('input', updateAwardPreview));
+document.querySelectorAll('[data-card-template]').forEach((button) => {
+    button.addEventListener('click', () => {
+        document.querySelectorAll('[data-card-template]').forEach((item) => item.classList.remove('active'));
+        button.classList.add('active');
+        selectedCardTemplate = button.dataset.cardTemplate;
+        document.getElementById('award-layout').value = button.dataset.layout;
+        document.getElementById('award-shape').value = button.dataset.shape;
+        document.getElementById('award-primary').value = button.dataset.primary;
+        document.getElementById('award-secondary').value = button.dataset.secondary;
+        document.getElementById('award-icon').value = button.dataset.icon;
+        updateAwardPreview();
+    });
+});
+document.querySelectorAll('[data-avatar-template]').forEach((button) => {
+    button.addEventListener('click', () => {
+        document.querySelectorAll('[data-avatar-template]').forEach((item) => item.classList.remove('active'));
+        button.classList.add('active');
+        selectedAvatarTemplate = button.dataset.avatarTemplate;
+        document.getElementById('award-avatar-shape').value = button.dataset.avatarShape;
+        updateAwardPreview();
+    });
+});
+
+async function saveAwardCard() {
+    const payload = {
+        title: document.getElementById('award-title').value,
+        reason: document.getElementById('award-reason').value,
+        message: document.getElementById('award-message').value,
+        avatar_label: document.getElementById('award-avatar-label').value,
+        accent_icon: document.getElementById('award-icon').value,
+        primary_color: document.getElementById('award-primary').value,
+        secondary_color: document.getElementById('award-secondary').value,
+        shape: document.getElementById('award-shape').value,
+        layout: document.getElementById('award-layout').value,
+        avatar_shape: document.getElementById('award-avatar-shape').value,
+        card_template: selectedCardTemplate,
+        avatar_template: selectedAvatarTemplate
+    };
+    const res = await fetch({{ url_for('admin_save_award_card', user_id=target_user.id)|tojson }}, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+        showToast('Award card sent to ' + recipientName, 'success');
+        setTimeout(() => location.reload(), 900);
+    } else {
+        showToast(data.error || 'Could not send award card', 'error');
+    }
+}
+
+async function downloadAwardCard(format) {
+    const node = document.getElementById('award-card-preview');
+    const canvas = await html2canvas(node, {scale: 2, backgroundColor: null});
+    const link = document.createElement('a');
+    link.download = `ui-battle-award-${recipientName}.${format === 'jpeg' ? 'jpg' : 'png'}`;
+    link.href = canvas.toDataURL(format === 'jpeg' ? 'image/jpeg' : 'image/png', 0.95);
+    link.click();
+}
+
+function printAwardCard() {
+    window.print();
+}
+
+updateAwardPreview();
+</script>
+{% endblock %}

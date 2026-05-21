@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="tournament-page" {% if tournament %}data-tournament-id="{{ tournament.id }}"{% endif %}>
+    <header class="tournament-header">
+        <div>
+            <p class="tournament-kicker">Database Tournament</p>
+            <h1>{{ tournament.name if tournament else 'No Tournament Created' }}</h1>
+            {% if tournament %}
+            <span>{{ tournament.size }} players · {{ tournament.challenge }} · {{ tournament.status|upper }}</span>
+            {% else %}
+            <span>Create a tournament from the Admin Competitions panel.</span>
+            {% endif %}
+        </div>
+        <div class="tournament-actions">
+            <a href="{{ url_for('dashboard') }}" class="btn-secondary"><i class="fas fa-home"></i> Dashboard</a>
+            {% if user.role == 'admin' %}
+            <a href="{{ url_for('admin_panel') }}" class="btn-secondary"><i class="fas fa-shield-halved"></i> Admin</a>
+            {% endif %}
+            <button type="button" class="btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+        </div>
+    </header>
+
+    {% if tournament %}
+    <section class="tournament-summary">
+        <div><strong>{{ tournament.participants|length }}</strong><span>Participants</span></div>
+        <div><strong>{{ tournament.rounds|length }}</strong><span>Rounds Created</span></div>
+        <div><strong>{{ 'Auto' if tournament.auto_advance else 'Manual' }}</strong><span>Advancement</span></div>
+        <div><strong>{{ tournament.ended_at_label if tournament.ended_at else 'Live' }}</strong><span>Certificate Date</span></div>
+    </section>
+
+    <section class="bracket-board" aria-label="Live tournament bracket">
+        {% for round in tournament.rounds %}
+        <div class="bracket-round">
+            <h2>{{ round.name }}</h2>
+            <div class="bracket-matches">
+                {% for match in round.matches %}
+                <article class="bracket-match status-{{ match.status }}" data-match-id="{{ match.id }}">
+                    <div class="match-head">
+                        <span>{{ round.name }} · Match {{ match.match_number }}</span>
+                        <strong>{{ match.status|upper }}</strong>
+                    </div>
+                    <div class="match-player {% if match.winner_id == match.player1_id %}match-winner{% endif %}">
+                        <span>{{ match.player1 or 'TBD' }}</span>
+                        <strong>{{ "%.1f"|format(match.player1_score) }}</strong>
+                    </div>
+                    <div class="match-player {% if match.winner_id == match.player2_id %}match-winner{% endif %}">
+                        <span>{{ match.player2 or 'TBD' }}</span>
+                        <strong>{{ "%.1f"|format(match.player2_score) }}</strong>
+                    </div>
+                    <div class="match-links">
+                        {% if match.room_id %}
+                        <a href="{{ url_for('arena', room_id=match.room_id) }}" class="btn-secondary"><i class="fas fa-eye"></i> Arena</a>
+                        {% endif %}
+                        {% if user.role == 'admin' and match.status != 'completed' %}
+                        <button type="button" class="btn-secondary" onclick="manualAdvance({{ match.id }}, {{ match.player1_id or 'null' }}, {{ match.player2_id or 'null' }})">
+                            <i class="fas fa-forward"></i> Advance
+                        </button>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+
+    <section class="participants-panel">
+        <div class="section-heading">
+            <div>
+                <p class="tournament-kicker">Live Standings</p>
+                <h2>Participants</h2>
+            </div>
+        </div>
+        <div class="participant-table-wrap">
+            <table class="participant-table">
+                <thead>
+                    <tr>
+                        <th>Seed</th>
+                        <th>Player</th>
+                        <th>Status</th>
+                        <th>Position</th>
+                        <th>Final Score</th>
+                        <th>Matches</th>
+                        {% if user.role == 'admin' %}<th>Admin</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for participant in tournament.participants %}
+                    <tr>
+                        <td>#{{ participant.seed }}</td>
+                        <td>{{ participant.username }}</td>
+                        <td><span class="status-pill status-{{ participant.status }}">{{ participant.status|upper }}</span></td>
+                        <td>{{ participant.position }}</td>
+                        <td>{{ "%.1f"|format(participant.final_score or 0) }}</td>
+                        <td>{{ participant.matches_played or 0 }}</td>
+                        {% if user.role == 'admin' %}
+                        <td class="admin-cell">
+                            <button type="button" class="btn-secondary" onclick="disciplinePlayer({{ participant.user_id }}, 'force_qualify')">Force</button>
+                            <button type="button" class="btn-warning" onclick="disciplinePlayer({{ participant.user_id }}, 'disqualify')">DQ</button>
+                            <button type="button" class="btn-danger" onclick="disciplinePlayer({{ participant.user_id }}, 'kick')">Kick</button>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {% if tournament.status == 'completed' %}
+    <section class="certificates-section">
+        <div class="section-heading">
+            <div>
+                <p class="tournament-kicker">Official Awards</p>
+                <h2>Verified Certificates</h2>
+            </div>
+            <div class="tournament-actions">
+                <button type="button" class="btn-secondary" onclick="downloadAllCertificates()"><i class="fas fa-file-export"></i> Export PNGs</button>
+                <button type="button" class="btn-primary" onclick="window.print()"><i class="fas fa-file-pdf"></i> Export PDF</button>
+            </div>
+        </div>
+        <div class="certificate-grid">
+            {% for participant in tournament.participants %}
+            {% set cert_type = 'champion' if participant.position == 'Champion' else 'runner-up' if participant.position == 'Runner-up' else 'semi' if participant.position == 'Semi-finalist' else 'participant' %}
+            <article class="certificate-wrap">
+                <div
+                    id="certificate-{{ participant.id }}"
+                    class="certificate-card {{ cert_type }}-certificate"
+                    data-certificate-id="{{ participant.certificate_id }}"
+                    data-verify-url="{{ url_for('verify_certificate', certificate_id=participant.certificate_id, _external=True) }}"
+                >
+                    <div class="certificate-border">
+                        <div class="certificate-topline">
+                            <span>UI Battle Arena</span>
+                            <span>Official Tournament Certificate</span>
+                            <strong>{{ participant.certificate_id }}</strong>
+                        </div>
+                        <div class="certificate-body">
+                            <div class="certificate-seal"><i class="fas {% if cert_type == 'champion' %}fa-trophy{% else %}fa-award{% endif %}"></i></div>
+                            <p class="certificate-label">Certificate of Achievement</p>
+                            <p class="certificate-awarded">This certifies that</p>
+                            <h3>{{ participant.username }}</h3>
+                            <p class="certificate-copy">
+                                has successfully completed and earned the official standing of
+                                <strong>{{ participant.position }}</strong>
+                                in <strong>{{ tournament.name }}</strong>, conducted by UI Battle Arena.
+                            </p>
+                            <div class="certificate-position">{{ participant.position }}</div>
+                            <dl class="certificate-details">
+                                <div><dt>Tournament</dt><dd>{{ tournament.name }}</dd></div>
+                                <div><dt>Certificate No.</dt><dd>{{ participant.certificate_id }}</dd></div>
+                                <div><dt>Final Score</dt><dd>{{ "%.1f"|format(participant.final_score or 0) }}</dd></div>
+                                <div><dt>Matches Played</dt><dd>{{ participant.matches_played or 0 }}</dd></div>
+                                <div><dt>Award Date</dt><dd>{{ tournament.ended_at_label if tournament.ended_at else '' }}</dd></div>
+                                <div><dt>Verification</dt><dd>Valid online</dd></div>
+                            </dl>
+                        </div>
+                        <div class="certificate-footer">
+                            <div class="certificate-qr-block">
+                                <canvas class="certificate-qr" width="116" height="116" aria-label="Certificate verification code"></canvas>
+                                <span>Verify online</span>
+                            </div>
+                            <div class="certificate-signatures">
+                                <div class="signature-line">
+                                    <span></span>
+                                    <strong>Authorized Signature</strong>
+                                    <small>Tournament Director</small>
+                                </div>
+                                <div class="signature-line">
+                                    <span></span>
+                                    <strong>Official Seal / Signature</strong>
+                                    <small>UI Battle Arena</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="certificate-buttons">
+                    <button type="button" class="btn-secondary" onclick="downloadCertificate('certificate-{{ participant.id }}', '{{ participant.username|replace("'", "") }}')">
+                        <i class="fas fa-download"></i> PNG
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="printCertificate('certificate-{{ participant.id }}')">
+                        <i class="fas fa-file-pdf"></i> PDF / Print
+                    </button>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+    {% endif %}
+</div>
+
+<style>
+.tournament-page { min-height: 100vh; padding: 34px; background: var(--page-gradient); color: var(--text-primary); }
+.tournament-header, .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.tournament-kicker { margin: 0 0 6px; color: var(--accent-primary); font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+.tournament-header h1 { margin: 0; font-size: 42px; font-family: 'Rajdhani', sans-serif; }
+.tournament-header span { color: var(--text-secondary); }
+.tournament-actions, .match-links, .certificate-buttons, .admin-cell { display: flex; gap: 10px; flex-wrap: wrap; }
+.tournament-summary { margin: 24px 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.tournament-summary div, .participants-panel, .bracket-match { background: var(--panel-glass); border: 1px solid var(--border-default); border-radius: 8px; }
+.tournament-summary div { padding: 18px; }
+.tournament-summary strong { display: block; font-size: 28px; font-family: 'Rajdhani', sans-serif; }
+.tournament-summary span { color: var(--text-secondary); }
+.bracket-board { display: grid; grid-template-columns: repeat(5, minmax(240px, 1fr)); gap: 16px; overflow-x: auto; padding-bottom: 12px; }
+.bracket-round { min-width: 240px; }
+.bracket-round h2 { margin: 0 0 12px; font-size: 20px; }
+.bracket-matches { display: grid; gap: 14px; }
+.bracket-match { position: relative; padding: 12px; }
+.bracket-match::after { content: ''; position: absolute; top: 50%; right: -16px; width: 16px; height: 2px; background: rgba(34,211,238,0.45); }
+.bracket-round:last-child .bracket-match::after { display: none; }
+.status-live { border-color: rgba(34,211,238,0.65); }
+.status-completed { border-color: rgba(34,197,94,0.65); }
+.status-disqualified { border-color: rgba(239,68,68,0.65); }
+.match-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: var(--text-muted); font-size: 12px; }
+.match-player { display: flex; justify-content: space-between; gap: 10px; padding: 9px; border-radius: 6px; color: var(--text-secondary); }
+.match-player span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match-winner { background: rgba(34,197,94,0.14); color: var(--text-primary); border: 1px solid rgba(34,197,94,0.35); box-shadow: 0 0 18px rgba(34,197,94,0.18); }
+.match-links { margin-top: 10px; }
+.participants-panel { margin-top: 28px; padding: 18px; }
+.participant-table-wrap { overflow-x: auto; }
+.participant-table { width: 100%; border-collapse: collapse; }
+.participant-table th, .participant-table td { padding: 10px; border-bottom: 1px solid var(--border-default); text-align: left; }
+.status-pill { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(148,163,184,0.18); }
+.status-champion, .status-active { color: #22c55e; }
+.status-eliminated { color: #f59e0b; }
+.status-disqualified, .status-kicked { color: #ef4444; }
+.certificates-section { margin-top: 38px; }
+.section-heading { margin-bottom: 18px; }
+.section-heading h2 { margin: 0; font-size: 30px; font-family: 'Rajdhani', sans-serif; }
+.certificate-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 18px; }
+.certificate-wrap { display: grid; gap: 10px; overflow-x: auto; }
+.certificate-card { width: 100%; min-width: 520px; aspect-ratio: 1.42 / 1; background: #f8fafc; color: #111827; border-radius: 8px; padding: 14px; box-shadow: 0 16px 36px rgba(0,0,0,0.25); }
+.certificate-border { position: relative; height: 100%; border: 2px solid #2563eb; border-radius: 6px; padding: 18px 22px; display: flex; flex-direction: column; align-items: center; text-align: center; background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(241,245,249,0.98)); overflow: hidden; }
+.certificate-border::before, .certificate-border::after { content: ''; position: absolute; inset: 10px; border: 1px solid rgba(15,23,42,0.16); pointer-events: none; }
+.certificate-border::after { inset: 18px; border-color: rgba(15,23,42,0.08); }
+.champion-certificate { background: linear-gradient(135deg, #fff7cc, #ffffff); animation: winnerPulse 2.2s infinite; }
+.champion-certificate .certificate-border { border-color: #d97706; box-shadow: inset 0 0 22px rgba(217,119,6,0.18); }
+.runner-up-certificate .certificate-border { border-color: #64748b; }
+.semi-certificate .certificate-border { border-color: #b45309; }
+.participant-certificate .certificate-border { border-color: #2563eb; }
+.certificate-topline { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; font-size: 10px; text-transform: uppercase; font-weight: 700; color: #475569; letter-spacing: 0; }
+.certificate-topline strong { justify-self: end; color: #0f172a; overflow-wrap: anywhere; }
+.certificate-body { position: relative; z-index: 1; width: 100%; display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
+.certificate-seal { width: 58px; height: 58px; display: grid; place-items: center; margin-top: 6px; border: 2px solid rgba(245,158,11,0.42); border-radius: 50%; background: #111827; color: #f59e0b; font-size: 26px; }
+.certificate-label { margin: 8px 0 0; color: #475569; text-transform: uppercase; font-weight: 700; font-size: 12px; }
+.certificate-awarded { margin: 6px 0 0; color: #64748b; font-size: 12px; }
+.certificate-card h3 { margin: 2px 0 4px; max-width: 88%; font-size: 36px; line-height: 1; font-family: 'Rajdhani', sans-serif; color: #111827; overflow-wrap: anywhere; }
+.certificate-copy { max-width: 620px; margin: 0; font-size: 13px; line-height: 1.35; color: #334155; }
+.certificate-position { margin: 9px 0; padding: 7px 14px; border-radius: 6px; background: #111827; color: #ffffff; font-weight: 700; text-transform: uppercase; font-size: 12px; }
+.certificate-details { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.certificate-details div { background: rgba(15,23,42,0.055); border: 1px solid rgba(15,23,42,0.08); border-radius: 6px; padding: 7px 6px; min-width: 0; }
+.certificate-details dt { font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+.certificate-details dd { margin: 1px 0 0; font-weight: 700; font-size: 11px; overflow-wrap: anywhere; color: #0f172a; }
+.certificate-footer { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: 116px 1fr; align-items: end; gap: 22px; margin-top: 12px; }
+.certificate-qr-block { display: grid; gap: 4px; justify-items: center; color: #475569; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.certificate-qr { width: 76px; height: 76px; border: 1px solid #cbd5e1; background: #fff; image-rendering: pixelated; }
+.certificate-signatures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.signature-line { display: grid; gap: 4px; text-align: center; color: #334155; }
+.signature-line span { display: block; height: 34px; border-bottom: 1.5px solid #334155; }
+.signature-line strong { font-size: 11px; text-transform: uppercase; color: #0f172a; }
+.signature-line small { font-size: 10px; color: #64748b; }
+.btn-warning { background: #f59e0b; color: #111827; border: 0; border-radius: 6px; padding: 8px 10px; cursor: pointer; }
+.btn-danger { background: #ef4444; color: #fff; border: 0; border-radius: 6px; padding: 8px 10px; cursor: pointer; }
+@keyframes winnerPulse { 0%,100% { box-shadow: 0 16px 36px rgba(0,0,0,0.25); } 50% { box-shadow: 0 0 34px rgba(245,158,11,0.5); } }
+@media (max-width: 780px) {
+    .tournament-page { padding: 22px; }
+    .tournament-header, .section-heading { align-items: flex-start; flex-direction: column; }
+    .tournament-summary { grid-template-columns: repeat(2, 1fr); }
+    .tournament-header h1 { font-size: 32px; }
+    .certificate-grid { grid-template-columns: 1fr; }
+}
+@media print {
+    .theme-toggle-global, .tournament-actions, .match-links, .participants-panel, .bracket-board, .certificate-buttons { display: none !important; }
+    .tournament-page { padding: 0; background: #fff; color: #111827; }
+    .certificate-grid { display: block; }
+    .certificate-wrap { break-inside: avoid; page-break-inside: avoid; margin-bottom: 18px; }
+}
+</style>
+
+<script>
+const tournamentId = document.querySelector('.tournament-page')?.dataset.tournamentId;
+if (tournamentId && typeof io !== 'undefined') {
+    const tournamentSocket = io();
+    tournamentSocket.emit('join_tournament', { tournament_id: Number(tournamentId) });
+    ['tournament_bracket_update', 'tournament_advancement', 'tournament_score_update', 'tournament_completed'].forEach((eventName) => {
+        tournamentSocket.on(eventName, (payload) => {
+            if (!payload || Number(payload.tournament_id || payload.tournament?.id) === Number(tournamentId)) {
+                window.location.reload();
+            }
+        });
+    });
+    tournamentSocket.on('tournament_notification', (payload) => {
+        if (window.showToast) showToast(payload.message || 'Tournament updated', 'info');
+    });
+}
+
+async function promptAdminReason(defaultReason) {
+    const reason = await showPrompt({
+        title: 'Admin Reason',
+        label: 'Reason',
+        value: defaultReason || '',
+        required: true,
+        confirmText: 'Continue'
+    });
+    if (!reason) return null;
+    const adminNote = await showPrompt({
+        title: 'Admin Note',
+        label: 'Optional note',
+        multiline: true,
+        confirmText: 'Continue'
+    });
+    return { reason: reason.trim(), admin_note: (adminNote || '').trim() };
+}
+
+async function manualAdvance(matchId, player1Id, player2Id) {
+    const winnerId = await showPrompt({
+        title: 'Manual Advancement',
+        message: `Choose winner user ID: ${player1Id || 'TBD'} or ${player2Id || 'TBD'}.`,
+        label: 'Winner user ID',
+        value: player1Id || player2Id || '',
+        required: true,
+        confirmText: 'Advance'
+    });
+    if (!winnerId) return;
+    const details = await promptAdminReason('Manual admin advancement');
+    if (!details) return;
+    const res = await fetch(`/admin/tournament/${tournamentId}/match/${matchId}/advance`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ winner_id: Number(winnerId), ...details })
+    });
+    const data = await res.json();
+    if (data.success) window.location.reload();
+    else showToast(data.error || 'Advance failed', 'error');
+}
+
+async function disciplinePlayer(playerId, actionType) {
+    const details = await promptAdminReason(actionType === 'disqualify' ? 'Violation of rules' : actionType === 'kick' ? 'Disconnected repeatedly' : 'Force qualified by admin');
+    if (!details) return;
+    const res = await fetch(`/admin/tournament/${tournamentId}/player/${playerId}/discipline`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action_type: actionType, ...details })
+    });
+    const data = await res.json();
+    if (data.success) window.location.reload();
+    else showToast(data.error || 'Action failed', 'error');
+}
+
+function hashCertificateText(value) {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+function drawCertificateCode(canvas, text) {
+    const context = canvas.getContext('2d');
+    const size = canvas.width;
+    const cells = 29;
+    const cell = Math.floor(size / cells);
+    const offset = Math.floor((size - (cell * cells)) / 2);
+    const seed = hashCertificateText(text);
+
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, size, size);
+    context.fillStyle = '#0f172a';
+
+    function drawFinder(x, y) {
+        context.fillRect(offset + x * cell, offset + y * cell, cell * 7, cell * 7);
+        context.fillStyle = '#ffffff';
+        context.fillRect(offset + (x + 1) * cell, offset + (y + 1) * cell, cell * 5, cell * 5);
+        context.fillStyle = '#0f172a';
+        context.fillRect(offset + (x + 2) * cell, offset + (y + 2) * cell, cell * 3, cell * 3);
+    }
+
+    drawFinder(1, 1);
+    drawFinder(21, 1);
+    drawFinder(1, 21);
+
+    for (let y = 0; y < cells; y += 1) {
+        for (let x = 0; x < cells; x += 1) {
+            const inFinder =
+                (x >= 1 && x <= 7 && y >= 1 && y <= 7) ||
+                (x >= 21 && x <= 27 && y >= 1 && y <= 7) ||
+                (x >= 1 && x <= 7 && y >= 21 && y <= 27);
+            if (inFinder) continue;
+            const mix = Math.imul(seed ^ (x * 73856093) ^ (y * 19349663), 83492791) >>> 0;
+            const hasBit = ((mix >>> ((x + y) % 16)) & 1) === 1;
+            if (hasBit || ((x + y + seed) % 11 === 0)) {
+                context.fillRect(offset + x * cell, offset + y * cell, cell, cell);
+            }
+        }
+    }
+}
+
+function applyCertificateCodes() {
+    document.querySelectorAll('.certificate-card').forEach((card) => {
+        const canvas = card.querySelector('.certificate-qr');
+        if (!canvas) return;
+        drawCertificateCode(canvas, `${card.dataset.certificateId || ''}|${card.dataset.verifyUrl || ''}`);
+    });
+}
+
+async function downloadCertificate(elementId, username) {
+    const node = document.getElementById(elementId);
+    if (!node || !window.html2canvas) return;
+    const canvas = await html2canvas(node, { scale: 2, backgroundColor: null, useCORS: true });
+    const link = document.createElement('a');
+    const safeName = String(username || 'participant').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    link.download = `ui-battle-certificate-${safeName || 'participant'}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
+
+async function downloadAllCertificates() {
+    const cards = Array.from(document.querySelectorAll('.certificate-card'));
+    for (const card of cards) {
+        const title = card.querySelector('h3')?.textContent || 'participant';
+        await downloadCertificate(card.id, title);
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
+}
+
+function printCertificate(elementId) {
+    document.querySelectorAll('.certificate-wrap').forEach((wrap) => {
+        wrap.style.display = wrap.querySelector(`#${elementId}`) ? '' : 'none';
+    });
+    window.print();
+    document.querySelectorAll('.certificate-wrap').forEach((wrap) => { wrap.style.display = ''; });
+}
+
+applyCertificateCodes();
+</script>
+{% endblock %}
