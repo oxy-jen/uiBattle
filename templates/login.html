@@ -95,6 +95,7 @@
                     </label>
                     <div class="two-factor-login-actions">
                         <button class="btn-secondary" id="admin-2fa-copy-secret-btn" type="button">Copy setup key</button>
+                        <button class="btn-secondary" id="admin-2fa-new-qr-btn" type="button">Generate new QR</button>
                         <a class="btn-secondary" id="admin-2fa-open-app-link" href="#" hidden>Try app link</a>
                     </div>
                 </div>
@@ -322,6 +323,21 @@ document.getElementById('admin-2fa-copy-secret-btn').addEventListener('click', a
 
 document.getElementById('admin-2fa-open-app-link').addEventListener('click', () => {
     showToast('If no app opens, scan the QR code or use Copy setup key. Desktop browsers often block authenticator app links.', 'info');
+});
+
+document.getElementById('admin-2fa-new-qr-btn').addEventListener('click', async () => {
+    const response = await fetch('/auth/admin/2fa/start-login-setup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reset_secret: true})
+    });
+    const data = await response.json();
+    if (response.ok && data.requires_2fa_setup) {
+        showAdmin2faSetup(data);
+        showToast('New QR created. Remove the old UI Battle Arena entry from your authenticator and scan this one.', 'info');
+    } else {
+        showToast(data.error || 'Could not create a new QR code', 'error');
+    }
 });
 
 document.getElementById('admin-2fa-setup-form').addEventListener('submit', async (e) => {

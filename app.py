@@ -12,6 +12,7 @@ import json
 import re
 import io
 import base64
+import binascii
 import hashlib
 import hmac
 import struct
@@ -481,7 +482,9 @@ def complete_login(user):
     session['csrf_token'] = secrets.token_urlsafe(32)
 
 
-def start_admin_totp_setup(user):
+def start_admin_totp_setup(user, reset_secret=False):
+    if reset_secret and not user.two_factor_enabled:
+        user.two_factor_secret = None
     if not user.two_factor_secret:
         user.two_factor_secret = generate_totp_secret()
         db.session.commit()
@@ -581,8 +584,9 @@ def generate_totp_secret():
     return base64.b32encode(secrets.token_bytes(20)).decode('ascii').rstrip('=')
 
 def _totp_digest(secret, counter):
-    padded_secret = secret + ('=' * ((8 - len(secret) % 8) % 8))
-    key = base64.b32decode(padded_secret.upper())
+    clean_secret = re.sub(r'\s+', '', str(secret or '')).upper()
+    padded_secret = clean_secret + ('=' * ((8 - len(clean_secret) % 8) % 8))
+    key = base64.b32decode(padded_secret, casefold=True)
     msg = struct.pack('>Q', counter)
     digest = hmac.new(key, msg, hashlib.sha1).digest()
     offset = digest[-1] & 0x0F
@@ -593,14 +597,17 @@ def current_totp(secret, timestamp=None):
     timestamp = int(timestamp or time.time())
     return _totp_digest(secret, timestamp // 30)
 
-def verify_totp(secret, code, window=1):
+def verify_totp(secret, code, window=4):
     if not secret or not code:
         return False
     code = re.sub(r'\s+', '', str(code))
     if not re.fullmatch(r'\d{6}', code):
         return False
     counter = int(time.time()) // 30
-    return any(hmac.compare_digest(_totp_digest(secret, counter + step), code) for step in range(-window, window + 1))
+    try:
+        return any(hmac.compare_digest(_totp_digest(secret, counter + step), code) for step in range(-window, window + 1))
+    except (binascii.Error, ValueError):
+        return False
 
 def normalize_recovery_code(code):
     return re.sub(r'[^A-Z0-9]', '', str(code or '').upper())
@@ -1673,7 +1680,8 @@ def start_admin_2fa_setup_during_login():
     user = db.session.get(User, user_id) if user_id else None
     if not user or user.role != 'admin':
         return jsonify({'success': False, 'error': 'Admin setup session expired. Sign in again.'}), 401
-    return jsonify(start_admin_totp_setup(user))
+    data = request.get_json(silent=True) or {}
+    return jsonify(start_admin_totp_setup(user, reset_secret=bool(data.get('reset_secret'))))
 
 
 @app.route('/auth/admin/2fa/enable-login', methods=['POST'])
