@@ -103,7 +103,8 @@ function setEditorPausedState(isPaused) {
     const userRole = document.getElementById('user-role')?.value || config.userRole || 'spectator';
     const challengeType = document.getElementById('challenge-type')?.value || config.challengeType;
     const htmlLocked = document.getElementById('html-locked')?.value === 'true' || config.htmlLocked === true;
-    const shouldLock = isPaused || userRole === 'spectator';
+    const isPlayer = userRole === 'player1' || userRole === 'player2';
+    const shouldLock = isPaused || !isPlayer;
 
     if (window.cssEditor) window.cssEditor.setOption('readOnly', shouldLock);
     if (window.jsEditor) window.jsEditor.setOption('readOnly', shouldLock);
@@ -113,7 +114,7 @@ function setEditorPausedState(isPaused) {
 
     ['submit-btn', 'reset-code-btn'].forEach((id) => {
         const btn = document.getElementById(id);
-        if (btn) btn.disabled = isPaused || userRole === 'spectator';
+        if (btn) btn.disabled = isPaused || !isPlayer;
     });
 }
 
@@ -195,8 +196,9 @@ socket.on('challenge_started', function(data) {
         statusPill.style.color = 'var(--success)';
     }
     
-    // Enable editors if not spectator
-    if (userRole !== 'spectator') {
+    // Enable editors only for active players. Admin and spectators observe read-only.
+    const isPlayer = userRole === 'player1' || userRole === 'player2';
+    if (isPlayer) {
         if (window.cssEditor) {
             window.cssEditor.setOption('readOnly', false);
             console.log('âœ… CSS editor unlocked');
@@ -217,7 +219,7 @@ socket.on('challenge_started', function(data) {
     // Enable submit button
     const submitBtn = document.getElementById('submit-btn');
     if (submitBtn) {
-        submitBtn.disabled = false;
+        submitBtn.disabled = !isPlayer;
     }
 
     setEditorPausedState(false);
@@ -354,6 +356,16 @@ socket.on('spectator_preview_state', (data) => {
 
 socket.on('admin_preview', (data) => {
     updateSpectatorPreview(data.username, data.compiled_html);
+    if (window.updateAdminPlayerCode) {
+        window.updateAdminPlayerCode(data.username, data);
+    }
+});
+
+socket.on('maintenance_reset', (data) => {
+    showToast(data?.message || 'The arena was reset. Please log in again.', 'warning');
+    setTimeout(() => {
+        window.location.href = '/maintenance';
+    }, 1000);
 });
 
 function appendChatMessage(username, message, isSystem = false) {
@@ -526,12 +538,18 @@ socket.on('challenge_ended', (data) => {
         if (overlaySpan) overlaySpan.textContent = 'ðŸ Challenge ended!';
     }
     
-    if (window.runDiffCheck) {
+    const userRole = document.getElementById('user-role')?.value || window.ARENA_CONFIG?.userRole;
+    const isPlayer = userRole === 'player1' || userRole === 'player2';
+    if (window.runDiffCheck && isPlayer) {
         window.runDiffCheck({ silent: false, live: false, save: true, disableButton: false }).then(() => {
             setTimeout(() => {
                 window.location.href = `/results/${data.room_id}`;
             }, 3000);
         });
+    } else {
+        setTimeout(() => {
+            window.location.href = `/results/${data.room_id}`;
+        }, 1200);
     }
 });
 
@@ -581,6 +599,8 @@ socket.on('cam_frame', (data) => {
         item.querySelector('img').src = data.frame_data;
         item.querySelector('span').textContent = data.username;
     }
+
+    updateSpectatorCamera(data.username, data.frame_data);
     
     const p1Name = document.getElementById('p1-username-data')?.value || window.ARENA_CONFIG?.player1Username;
     const p2Name = document.getElementById('p2-username-data')?.value || window.ARENA_CONFIG?.player2Username;
@@ -610,30 +630,54 @@ function escapeHtml(text) {
 }
 
 function updateSpectatorPreview(username, compiledHtml) {
-    const list = document.getElementById('spectator-preview-list');
-    if (!list || !username || !compiledHtml) return;
+    if (!username || !compiledHtml) return;
+    const lists = [
+        document.getElementById('spectator-preview-list'),
+        document.getElementById('spectator-editor-preview-list')
+    ].filter(Boolean);
 
-    const safeId = `spectator-preview-${String(username).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+    lists.forEach((list, index) => {
+        const safeId = `spectator-preview-${index}-${String(username).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+        let item = document.getElementById(safeId);
+        if (!item) {
+            item = document.createElement('div');
+            item.className = 'spectator-preview-item';
+            item.id = safeId;
+            item.innerHTML = `
+                <div class="spectator-preview-title">
+                    <span></span>
+                    <small>Live</small>
+                </div>
+                <iframe sandbox="allow-scripts allow-same-origin"></iframe>
+            `;
+            list.querySelector('.spectator-placeholder')?.remove();
+            list.appendChild(item);
+        }
+
+        item.querySelector('span').textContent = username;
+        item.querySelector('iframe').srcdoc = compiledHtml;
+    });
+}
+
+function updateSpectatorCamera(username, frameData) {
+    const list = document.getElementById('spectator-camera-list');
+    if (!list || !username || !frameData) return;
+
+    const safeId = `spectator-camera-${String(username).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
     let item = document.getElementById(safeId);
     if (!item) {
         item = document.createElement('div');
-        item.className = 'spectator-preview-item';
+        item.className = 'spectator-camera-tile';
         item.id = safeId;
-        item.innerHTML = `
-            <div class="spectator-preview-title">
-                <span></span>
-                <small>Live</small>
-            </div>
-            <iframe sandbox="allow-scripts allow-same-origin"></iframe>
-        `;
-        const placeholder = list.querySelector('.spectator-placeholder');
-        if (placeholder) placeholder.remove();
+        item.innerHTML = '<img alt=""><span></span>';
+        list.querySelector('.spectator-placeholder')?.remove();
         list.appendChild(item);
     }
-
+    item.querySelector('img').src = frameData;
     item.querySelector('span').textContent = username;
-    item.querySelector('iframe').srcdoc = compiledHtml;
 }
+
+window.updateAdminPlayerCode = window.updateAdminPlayerCode || function () {};
 
 // Send chat message
 function sendChatMessage() {

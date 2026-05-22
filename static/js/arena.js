@@ -10,8 +10,9 @@ let diffInProgress = false;
 let diffPending = false;
 let matchIsRunning = false;
 let lastLiveSaveAt = 0;
+let previewBroadcastTimer = null;
 
-const LIVE_DIFF_DELAY = 350;
+const LIVE_DIFF_DELAY = 180;
 const LIVE_SAVE_INTERVAL = 1000;
 
 // Get DOM elements safely
@@ -34,6 +35,9 @@ const TARGET_HTML_RAW = getElement('target-html-data')?.value || arenaConfig.tar
 const TARGET_CSS_RAW = getElement('target-css-data')?.value || arenaConfig.targetCss || '';
 const STARTER_HTML_RAW = getElement('starter-html-data')?.value || arenaConfig.starterHtml || '';
 const STARTER_CSS_RAW = getElement('starter-css-data')?.value || arenaConfig.starterCss || '';
+const PLAYER_ROLES = ['player1', 'player2'];
+const IS_PLAYER_ROLE = PLAYER_ROLES.includes(USER_ROLE);
+const IS_OBSERVER_ROLE = USER_ROLE === 'admin' || USER_ROLE === 'spectator';
 
 // Parse target HTML/CSS (handle JSON escaping)
 let TARGET_HTML = TARGET_HTML_RAW;
@@ -248,20 +252,23 @@ function initEditors() {
     htmlEditor.on('change', debounce(() => {
         updatePreview();
         saveArenaToLocal();
-        scheduleLiveDiffCheck();
-    }, 300));
+        scheduleLiveDiffCheck(80);
+        scheduleCodePreviewBroadcast();
+    }, 120));
     
     cssEditor.on('change', debounce(() => {
         updatePreview();
         saveArenaToLocal();
-        scheduleLiveDiffCheck();
-    }, 300));
+        scheduleLiveDiffCheck(80);
+        scheduleCodePreviewBroadcast();
+    }, 120));
     
     jsEditor.on('change', debounce(() => {
         updatePreview();
         saveArenaToLocal();
-        scheduleLiveDiffCheck();
-    }, 300));
+        scheduleLiveDiffCheck(80);
+        scheduleCodePreviewBroadcast();
+    }, 120));
     
     // Cursor position display
     htmlEditor.on('cursorActivity', updateCursorPosition);
@@ -277,7 +284,7 @@ function initEditors() {
     const isWaiting = roomStatus === 'WAITING';
     const isEnded = roomStatus === 'ENDED';
     
-    if (isSpectator || isWaiting || isEnded) {
+    if (isSpectator || USER_ROLE === 'admin' || isWaiting || isEnded) {
         htmlEditor.setOption('readOnly', true);
         cssEditor.setOption('readOnly', true);
         jsEditor.setOption('readOnly', true);
@@ -347,6 +354,7 @@ function updatePreview() {
     const outputFrame = getElement('output-frame');
     if (outputFrame) {
         outputFrame.srcdoc = doc;
+        outputFrame.addEventListener('load', () => scheduleLiveDiffCheck(90), { once: true });
     }
 }
 
@@ -364,7 +372,7 @@ function hasPlayerAttempted() {
 
 function setArenaMatchRunning(isRunning) {
     matchIsRunning = isRunning;
-    if (isRunning) {
+    if (isRunning && IS_PLAYER_ROLE) {
         scheduleLiveDiffCheck(120);
     } else if (liveDiffTimer) {
         clearTimeout(liveDiffTimer);
@@ -373,7 +381,7 @@ function setArenaMatchRunning(isRunning) {
 }
 
 function canRunLiveDiff() {
-    return matchIsRunning && USER_ROLE !== 'spectator' && Boolean(htmlEditor && cssEditor && jsEditor);
+    return matchIsRunning && IS_PLAYER_ROLE && Boolean(htmlEditor && cssEditor && jsEditor);
 }
 
 function scheduleLiveDiffCheck(delay = LIVE_DIFF_DELAY) {
@@ -419,6 +427,63 @@ function waitForImageLoad(img) {
         img.addEventListener('error', reject, { once: true });
         setTimeout(resolve, 1000);
     });
+}
+
+function getComparisonSize() {
+    const outputSurface = document.querySelector('[data-zoom-surface="output"]');
+    const targetSurface = document.querySelector('[data-zoom-surface="target"]');
+    const outputRect = outputSurface?.getBoundingClientRect();
+    const targetRect = targetSurface?.getBoundingClientRect();
+    const width = Math.max(320, Math.round(Math.min(outputRect?.width || 640, targetRect?.width || outputRect?.width || 640)));
+    const height = Math.max(240, Math.round(Math.min(outputRect?.height || 480, targetRect?.height || outputRect?.height || 480)));
+    return {
+        width: Math.min(width, 1200),
+        height: Math.min(height, 900)
+    };
+}
+
+function drawImageContain(ctx, image, width, height) {
+    const sourceWidth = image.naturalWidth || image.videoWidth || image.width || width;
+    const sourceHeight = image.naturalHeight || image.videoHeight || image.height || height;
+    const scale = Math.min(width / Math.max(1, sourceWidth), height / Math.max(1, sourceHeight));
+    const drawWidth = sourceWidth * scale;
+    const drawHeight = sourceHeight * scale;
+    ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+}
+
+function fitCanvasIntoCanvas(sourceCanvas, width, height) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    drawImageContain(ctx, sourceCanvas, width, height);
+    return canvas;
+}
+
+async function captureFrameFullSurface(frame, width, height) {
+    await waitForFramePaint(frame);
+    const doc = frame.contentDocument || frame.contentWindow.document;
+    const body = doc.body;
+    const root = doc.documentElement;
+    const fullWidth = Math.max(width, body?.scrollWidth || 0, root?.scrollWidth || 0, body?.offsetWidth || 0, root?.clientWidth || 0);
+    const fullHeight = Math.max(height, body?.scrollHeight || 0, root?.scrollHeight || 0, body?.offsetHeight || 0, root?.clientHeight || 0);
+    const renderWidth = Math.min(Math.max(width, fullWidth), 1800);
+    const renderHeight = Math.min(Math.max(height, fullHeight), 1400);
+    const rawCanvas = await html2canvas(body, {
+        width: renderWidth,
+        height: renderHeight,
+        windowWidth: renderWidth,
+        windowHeight: renderHeight,
+        scrollX: 0,
+        scrollY: 0,
+        scale: 1,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false
+    });
+    return fitCanvasIntoCanvas(rawCanvas, width, height);
 }
 
 function saveArenaToLocal() {
@@ -536,6 +601,7 @@ function compareMeaningfulPixels(outPixels, targetPixels, diffPixels, width, hei
 }
 
 async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
+    if (!IS_PLAYER_ROLE) return;
     if (!matchIsRunning && live) return;
 
     const now = Date.now();
@@ -579,7 +645,7 @@ async function runDiffCheck(options = {}) {
         disableButton = true
     } = options;
 
-    if (!htmlEditor || !cssEditor || !jsEditor) return 0;
+    if (!htmlEditor || !cssEditor || !jsEditor || !IS_PLAYER_ROLE) return 0;
 
     if (diffInProgress) {
         diffPending = true;
@@ -607,25 +673,13 @@ async function runDiffCheck(options = {}) {
             return 0;
         }
 
-        const W = 400, H = 300;
+        const { width: W, height: H } = getComparisonSize();
         
         // Screenshot player's output
         const outputFrame = getElement('output-frame');
         if (!outputFrame) throw new Error('Output frame not found');
 
-        await waitForFramePaint(outputFrame);
-        
-        const outputFrameDoc = outputFrame.contentDocument || outputFrame.contentWindow.document;
-        const outputCanvas = await html2canvas(outputFrameDoc.body, {
-            width: W,
-            height: H,
-            windowWidth: W,
-            windowHeight: H,
-            scale: 1,
-            backgroundColor: '#ffffff',
-            useCORS: true,
-            logging: false
-        });
+        const outputCanvas = await captureFrameFullSurface(outputFrame, W, H);
         
         // Get target canvas
         const targetCanvas = document.createElement('canvas');
@@ -639,23 +693,12 @@ async function runDiffCheck(options = {}) {
             const targetImg = getElement('target-image');
             await waitForImageLoad(targetImg);
             if (targetImg && targetImg.complete && targetImg.naturalWidth > 0) {
-                tCtx.drawImage(targetImg, 0, 0, W, H);
+                drawImageContain(tCtx, targetImg, W, H);
             }
         } else {
             const targetFrame = getElement('target-frame');
             if (targetFrame) {
-                await waitForFramePaint(targetFrame);
-                const targetFrameDoc = targetFrame.contentDocument || targetFrame.contentWindow.document;
-                const tFrameCanvas = await html2canvas(targetFrameDoc.body, {
-                    width: W,
-                    height: H,
-                    windowWidth: W,
-                    windowHeight: H,
-                    scale: 1,
-                    backgroundColor: '#ffffff',
-                    useCORS: true,
-                    logging: false
-                });
+                const tFrameCanvas = await captureFrameFullSurface(targetFrame, W, H);
                 tCtx.drawImage(tFrameCanvas, 0, 0, W, H);
             }
         }
@@ -668,6 +711,7 @@ async function runDiffCheck(options = {}) {
         if (diffCanvas) {
             diffCanvas.width = W;
             diffCanvas.height = H;
+            diffCanvas.style.aspectRatio = `${W} / ${H}`;
             const dCtx = diffCanvas.getContext('2d');
             const diffImgData = dCtx.createImageData(W, H);
             
@@ -720,6 +764,7 @@ async function runDiffCheck(options = {}) {
 }
 
 function updateMyProgressBar(accuracy) {
+    if (!IS_PLAYER_ROLE) return;
     const isP1 = USER_ROLE === 'player1';
     const barId = isP1 ? 'p1-progress-fill' : 'p2-progress-fill';
     const lblId = isP1 ? 'p1-accuracy-label' : 'p2-accuracy-label';
@@ -882,7 +927,7 @@ function initDiffToggle() {
 
 // Camera setup
 async function setupCamera() {
-    if (USER_ROLE === 'spectator') return;
+    if (!IS_PLAYER_ROLE) return;
     const camFeed = getElement('cam-feed');
     const camPlaceholder = getElement('cam-placeholder');
     const recBadge = getElement('rec-badge');
@@ -991,25 +1036,87 @@ async function forfeit() {
     window.location.href = '/dashboard';
 }
 
-// Code preview for admin (every 5 seconds)
-function startCodePreview() {
-    if (USER_ROLE !== 'spectator' && USER_ROLE !== 'admin') {
-        setInterval(() => {
-            const html = htmlEditor.getValue();
-            const css = cssEditor.getValue();
-            const js = jsEditor.getValue();
-            const compiled = `<!DOCTYPE html><html><head><style>${css}</style></head><body>${html}<script>${js}<\/script></body></html>`;
-            
-            if (window.socket) {
-                window.socket.emit('code_preview', {
-                    room_id: ROOM_ID,
-                    username: CURRENT_USERNAME,
-                    compiled_html: compiled
-                });
-            }
-        }, 5000);
-    }
+function buildCompiledPreviewHtml() {
+    if (!htmlEditor || !cssEditor || !jsEditor) return '';
+    const html = htmlEditor.getValue();
+    const css = cssEditor.getValue();
+    const js = jsEditor.getValue();
+    return `<!DOCTYPE html><html><head><style>${css}</style></head><body>${html}<script>${js}<\/script></body></html>`;
 }
+
+function broadcastCodePreview() {
+    if (!IS_PLAYER_ROLE || !window.socket) return;
+    window.socket.emit('code_preview', {
+        room_id: ROOM_ID,
+        username: CURRENT_USERNAME,
+        compiled_html: buildCompiledPreviewHtml(),
+        html_code: htmlEditor.getValue(),
+        css_code: cssEditor.getValue(),
+        js_code: jsEditor.getValue()
+    });
+}
+
+function scheduleCodePreviewBroadcast(delay = 450) {
+    if (!IS_PLAYER_ROLE) return;
+    if (previewBroadcastTimer) clearTimeout(previewBroadcastTimer);
+    previewBroadcastTimer = setTimeout(() => {
+        previewBroadcastTimer = null;
+        broadcastCodePreview();
+    }, delay);
+}
+
+// Code preview for observers
+function startCodePreview() {
+    if (!IS_PLAYER_ROLE) return;
+    broadcastCodePreview();
+    setInterval(broadcastCodePreview, 5000);
+}
+
+function initAdminObserverWorkspace() {
+    if (USER_ROLE !== 'admin') return;
+    const editorPanel = getElement('editor-panel');
+    const editorContainer = editorPanel?.querySelector('.editor-container');
+    if (!editorPanel || !editorContainer || editorPanel.querySelector('.admin-observer-workspace')) return;
+
+    editorPanel.querySelector('.editor-header-left span:first-of-type').textContent = 'LIVE PLAYER EDITORS';
+    editorPanel.querySelector('.editor-tabs')?.remove();
+    editorContainer.style.display = 'none';
+
+    const workspace = document.createElement('div');
+    workspace.className = 'admin-observer-workspace';
+    workspace.innerHTML = ['player1', 'player2'].map((role) => {
+        const label = role === 'player1'
+            ? (arenaConfig.player1Username || 'Player 1')
+            : (arenaConfig.player2Username || 'Player 2');
+        return `
+            <section class="admin-player-code" data-admin-player="${role}">
+                <header><strong>${escapeHtml(label)}</strong><span>read-only live code</span></header>
+                <div class="admin-code-columns">
+                    <pre data-code-kind="html"><b>HTML</b><code></code></pre>
+                    <pre data-code-kind="css"><b>CSS</b><code></code></pre>
+                    <pre data-code-kind="js"><b>JS</b><code></code></pre>
+                </div>
+            </section>
+        `;
+    }).join('');
+    editorContainer.insertAdjacentElement('afterend', workspace);
+}
+
+function updateAdminPlayerCode(username, code = {}) {
+    if (USER_ROLE !== 'admin' || !username) return;
+    const p1Name = arenaConfig.player1Username || getElement('p1-username-data')?.value;
+    const p2Name = arenaConfig.player2Username || getElement('p2-username-data')?.value;
+    const role = username === p1Name ? 'player1' : username === p2Name ? 'player2' : null;
+    const section = role ? document.querySelector(`[data-admin-player="${role}"]`) : null;
+    if (!section) return;
+    section.querySelector('header strong').textContent = username;
+    ['html', 'css', 'js'].forEach((kind) => {
+        const codeEl = section.querySelector(`[data-code-kind="${kind}"] code`);
+        if (codeEl) codeEl.textContent = code[`${kind}_code`] || '';
+    });
+}
+
+window.updateAdminPlayerCode = updateAdminPlayerCode;
 
 // Collapse editor
 function initCollapseEditor() {
@@ -1583,8 +1690,8 @@ function initPanelSizing() {
 function initSpectatorMode() {
     if (USER_ROLE !== 'spectator') return;
     document.querySelector('.arena-root')?.classList.add('spectator-mode', 'chat-open');
-    document.querySelector('.arena-main')?.classList.add('editor-collapsed');
-    getElement('editor-panel')?.classList.add('collapsed');
+    document.querySelector('.arena-main')?.classList.remove('editor-collapsed');
+    getElement('editor-panel')?.classList.remove('collapsed');
     ['toggle-chat-btn', 'toggle-chat-btn-nav'].forEach((id) => {
         const el = getElement(id);
         if (el) {
@@ -1596,6 +1703,23 @@ function initSpectatorMode() {
         const el = getElement(id);
         if (el) el.style.display = 'none';
     });
+}
+
+function initLiveScoringObservers() {
+    if (!IS_PLAYER_ROLE) return;
+    const outputFrame = getElement('output-frame');
+    const targetFrame = getElement('target-frame');
+    [outputFrame, targetFrame].forEach((frame) => {
+        if (!frame) return;
+        frame.addEventListener('load', () => scheduleLiveDiffCheck(120));
+    });
+    if (window.ResizeObserver) {
+        const observer = new ResizeObserver(() => scheduleLiveDiffCheck(180));
+        ['output', 'target', 'diff'].forEach((name) => {
+            const node = document.querySelector(`[data-zoom-surface="${name}"]`) || document.querySelector(`.${name}-panel`);
+            if (node) observer.observe(node);
+        });
+    }
 }
 
 // Admin controls
@@ -1646,7 +1770,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initSidebarTabs();
     initPanelSizing();
     initSurfaceZoom();
+    initLiveScoringObservers();
     initSpectatorMode();
+    initAdminObserverWorkspace();
     initAdminControls();
     startCodePreview();
     
@@ -1726,9 +1852,10 @@ function startStatusPolling() {
                     statusPill.style.color = 'var(--success)';
                 }
                 
-                // Enable editors
+                // Enable editors only for active players.
                 const userRole = document.getElementById('user-role')?.value || window.ARENA_CONFIG?.userRole;
-                if (userRole !== 'spectator') {
+                const isPlayer = userRole === 'player1' || userRole === 'player2';
+                if (isPlayer) {
                     if (window.cssEditor) window.cssEditor.setOption('readOnly', false);
                     if (window.jsEditor) window.jsEditor.setOption('readOnly', false);
                     
@@ -1741,7 +1868,7 @@ function startStatusPolling() {
                 
                 // Enable submit button
                 const submitBtn = document.getElementById('submit-btn');
-                if (submitBtn) submitBtn.disabled = false;
+                if (submitBtn) submitBtn.disabled = !isPlayer;
                 
                 showToast(`Challenge started! ${data.time_limit}s on the clock!`, 'success');
                 
