@@ -170,7 +170,44 @@ def admin_login_uses_email(user, identifier):
         return True
     admin_email = (user.email or configured_admin_email() or '').lower()
     supplied = (identifier or '').strip().lower()
+    if not admin_email:
+        return bool(valid_email(supplied))
     return bool(admin_email and supplied == admin_email)
+
+
+def find_login_user(identifier):
+    supplied = (identifier or '').strip()
+    normalized_email = valid_email(supplied)
+    user = User.query.filter(
+        (User.username == supplied) | (User.email == supplied.lower())
+    ).first()
+    if user or not normalized_email:
+        return user
+    configured_email = configured_admin_email()
+    if configured_email and normalized_email != configured_email:
+        return None
+    admin = User.query.filter_by(role='admin').first()
+    if admin and (not admin.email or admin.email == configured_email):
+        return admin
+    return None
+
+
+def bind_admin_login_email(user, identifier):
+    supplied_email = valid_email(identifier)
+    if not user or user.role != 'admin' or not supplied_email:
+        return False
+    if user.email == supplied_email:
+        return False
+    if user.email and user.email != configured_admin_email():
+        return False
+    user.email = supplied_email
+    profiles, profile = get_profile_record(user.id)
+    profile['email_verified'] = False
+    profile.pop('email_verification_hash', None)
+    profile.pop('email_verification_expires_at', None)
+    db.session.commit()
+    save_profile_store(profiles)
+    return True
 
 def password_is_strong(password):
     password = password or ''
@@ -1524,7 +1561,8 @@ def login_page():
         'login.html',
         challenge_count=Challenge.query.filter_by(is_active=True).count(),
         google_oauth_enabled=google_oauth_configured(),
-        pending_two_factor=bool(session.get('pending_2fa_user_id'))
+        pending_two_factor=bool(session.get('pending_2fa_user_id') or session.get('pending_email_otp_user_id')),
+        pending_email_otp=bool(session.get('pending_email_otp_user_id'))
     )
 
 @app.route('/auth/login', methods=['POST'])
@@ -1536,22 +1574,21 @@ def login():
     if rate_limited('login', username or client_rate_identity(), limit=8, window_seconds=15 * 60):
         return rate_limit_response()
 
-    user = User.query.filter(
-        (User.username == username) | (User.email == username.lower())
-    ).first()
+    user = find_login_user(username)
     if user and user.check_password(password):
         if not admin_login_uses_email(user, username):
             return jsonify({'success': False, 'error': 'Admin login requires the admin email address'}), 401
         if user.role == 'admin':
+            bind_admin_login_email(user, username)
             if user.two_factor_enabled:
                 csrf_token = session.get('csrf_token')
                 session.clear()
                 session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
                 session['pending_2fa_user_id'] = user.id
                 return jsonify({'success': False, 'requires_2fa': True, 'message': 'Enter your admin authenticator or recovery code.'})
-            if not (valid_email(user.email) or configured_admin_email()) and smtp_configured():
-                return jsonify({'success': False, 'error': 'Admin email is not configured'}), 403
             if not smtp_configured():
+                return jsonify(start_admin_totp_setup(user))
+            if not (valid_email(user.email) or configured_admin_email()):
                 return jsonify(start_admin_totp_setup(user))
             if rate_limited('admin-email-otp-send', str(user.id), limit=5, window_seconds=15 * 60):
                 return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
@@ -1562,8 +1599,14 @@ def login():
             if not send_admin_login_otp(user, code):
                 session.clear()
                 session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
-                return jsonify({'success': False, 'error': 'Could not send admin login code. Check email settings.'}), 500
-            return jsonify({'success': False, 'requires_2fa': True, 'message': 'Admin login code sent to the admin email.'})
+                return jsonify(start_admin_totp_setup(user))
+            return jsonify({
+                'success': False,
+                'requires_2fa': True,
+                'email_otp': True,
+                'can_use_qr_setup': True,
+                'message': 'Admin login code sent to the admin email. You can also use QR authenticator setup instead.'
+            })
         if user.two_factor_enabled:
             csrf_token = session.get('csrf_token')
             session.clear()
@@ -1601,6 +1644,36 @@ def verify_login_2fa():
     if used_recovery_code:
         response['message'] = 'Recovery code accepted. Generate a new set from Account security soon.'
     return jsonify(response)
+
+
+@app.route('/auth/2fa/resend-login-code', methods=['POST'])
+def resend_login_2fa_code():
+    user_id = session.get('pending_email_otp_user_id')
+    user = db.session.get(User, user_id) if user_id else None
+    if not user:
+        return jsonify({'success': False, 'error': 'Login session expired. Sign in again.'}), 401
+    if rate_limited('admin-email-otp-send', str(user.id), limit=5, window_seconds=15 * 60):
+        return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
+    code = create_admin_email_otp(user)
+    try:
+        sent = send_admin_login_otp(user, code)
+    except Exception:
+        app.logger.exception('Admin login code resend failed for user %s', user.id)
+        sent = False
+    if not sent:
+        return jsonify({'success': False, 'error': 'Could not send admin login code. Check email settings.'}), 500
+    return jsonify({'success': True, 'message': 'New admin login code sent. Check your inbox and spam folder.'})
+
+
+@app.route('/auth/admin/2fa/start-login-setup', methods=['POST'])
+def start_admin_2fa_setup_during_login():
+    user_id = session.get('pending_email_otp_user_id') or session.get('pending_admin_2fa_setup_user_id')
+    if rate_limited('admin-2fa-setup-start', str(user_id or client_rate_identity()), limit=6, window_seconds=10 * 60):
+        return rate_limit_response('Too many setup attempts. Wait a few minutes and try again.')
+    user = db.session.get(User, user_id) if user_id else None
+    if not user or user.role != 'admin':
+        return jsonify({'success': False, 'error': 'Admin setup session expired. Sign in again.'}), 401
+    return jsonify(start_admin_totp_setup(user))
 
 
 @app.route('/auth/admin/2fa/enable-login', methods=['POST'])
@@ -3591,6 +3664,9 @@ def account_send_email_verification():
         return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
 
     email_changed = requested_email != (user.email or '')
+    if user.role == 'admin' and email_changed:
+        if not user.check_password(data.get('current_password') or ''):
+            return jsonify({'success': False, 'error': 'Current password is required to change the admin email'}), 400
     if email_changed:
         user.email = requested_email
         profiles, profile = get_profile_record(user.id)

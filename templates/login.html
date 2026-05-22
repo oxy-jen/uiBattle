@@ -43,7 +43,7 @@
                 </div>
                 <div class="input-group">
                     <i class="fas fa-user"></i>
-                    <input type="text" id="login-username" placeholder="Username or email" required>
+                    <input type="text" id="login-username" placeholder="Username or email" maxlength="255" autocomplete="username" required>
                 </div>
                 <div class="input-group">
                     <i class="fas fa-lock"></i>
@@ -68,13 +68,15 @@
             <form id="two-factor-login-form" class="auth-form {% if pending_two_factor %}active{% endif %}">
                 <div class="auth-help-panel">
                     <strong>Secure verification</strong>
-                    <span>Admins use an authenticator or recovery code. Email login codes are only used when SMTP is configured.</span>
+                    <span>Admins can use an email code when mail is configured, or an authenticator QR code that works without email.</span>
                 </div>
                 <div class="input-group">
                     <i class="fas fa-shield-halved"></i>
-                    <input type="text" id="login-2fa-code" placeholder="Email, verification, or recovery code" inputmode="text" maxlength="14" autocomplete="one-time-code" required>
+                    <input type="text" id="login-2fa-code" placeholder="Email login code, authenticator code, or recovery code" inputmode="text" maxlength="64" autocomplete="one-time-code" required>
                 </div>
                 <button type="submit" class="btn-primary">VERIFY LOGIN <i class="fas fa-check"></i></button>
+                <button type="button" class="btn-secondary" id="resend-login-code-btn" hidden>Resend email code</button>
+                <button type="button" class="btn-secondary" id="use-authenticator-setup-btn" hidden>Use QR authenticator instead</button>
                 <button type="button" class="btn-secondary" id="back-to-login-btn">Back to login</button>
             </form>
 
@@ -117,11 +119,11 @@
                 </div>
                 <div class="input-group">
                     <i class="fas fa-user"></i>
-                    <input type="text" id="reg-username" placeholder="Real name for certificate" required>
+                    <input type="text" id="reg-username" placeholder="Real name for certificate" maxlength="80" autocomplete="name" required>
                 </div>
                 <div class="input-group">
                     <i class="fas fa-envelope"></i>
-                    <input type="email" id="reg-email" placeholder="Email for verification and updates" required>
+                    <input type="email" id="reg-email" placeholder="Email for verification and updates" maxlength="255" autocomplete="email" required>
                 </div>
                 <div class="input-group">
                     <i class="fas fa-lock"></i>
@@ -137,7 +139,7 @@
                 </div>
                 <div class="input-group">
                     <i class="fas fa-user"></i>
-                    <input type="text" id="reset-identifier" placeholder="Username or recovery email" required>
+                    <input type="text" id="reset-identifier" placeholder="Username or recovery email" maxlength="255" autocomplete="username" required>
                 </div>
                 <button type="button" class="btn-secondary" id="send-reset-code-btn">Send email reset code</button>
                 <div class="input-group">
@@ -146,7 +148,7 @@
                 </div>
                 <div class="input-group">
                     <i class="fas fa-shield-halved"></i>
-                    <input type="text" id="reset-recovery-code" placeholder="Or saved 2FA recovery code" maxlength="14">
+                    <input type="text" id="reset-recovery-code" placeholder="Or saved 2FA recovery code" maxlength="64">
                 </div>
                 <div class="input-group">
                     <i class="fas fa-key"></i>
@@ -199,6 +201,13 @@ function showAuthForm(formId) {
     document.querySelector(`[data-form="${tabName}"]`)?.classList.add('active');
 }
 
+function setLoginCodeMode(isEmailCode) {
+    const resendButton = document.getElementById('resend-login-code-btn');
+    const qrSetupButton = document.getElementById('use-authenticator-setup-btn');
+    if (resendButton) resendButton.hidden = !isEmailCode;
+    if (qrSetupButton) qrSetupButton.hidden = !isEmailCode;
+}
+
 function showAdmin2faSetup(data) {
     showAuthForm('admin-2fa-setup-form');
     document.getElementById('admin-2fa-secret').value = data.secret || '';
@@ -223,6 +232,7 @@ function showAdmin2faSetup(data) {
 
 {% if pending_two_factor %}
 showAuthForm('two-factor-login-form');
+setLoginCodeMode({{ 'true' if pending_email_otp else 'false' }});
 {% endif %}
 
 document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -240,6 +250,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
     } else if (data.requires_2fa) {
         showAuthForm('two-factor-login-form');
+        setLoginCodeMode(Boolean(data.email_otp && data.can_use_qr_setup));
         document.getElementById('login-2fa-code').focus();
         showToast(data.message || 'Enter your verification code', 'info');
     } else if (data.requires_2fa_setup) {
@@ -265,7 +276,34 @@ document.getElementById('two-factor-login-form').addEventListener('submit', asyn
     }
 });
 
+document.getElementById('resend-login-code-btn').addEventListener('click', async () => {
+    const response = await fetch('/auth/2fa/resend-login-code', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    });
+    const data = await response.json();
+    showToast(data.message || data.error || 'Could not resend login code', response.ok && data.success ? 'success' : 'error');
+    if (response.ok && data.success) {
+        document.getElementById('login-2fa-code').focus();
+    }
+});
+
+document.getElementById('use-authenticator-setup-btn').addEventListener('click', async () => {
+    const response = await fetch('/auth/admin/2fa/start-login-setup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    });
+    const data = await response.json();
+    if (response.ok && data.requires_2fa_setup) {
+        showAdmin2faSetup(data);
+        showToast(data.message || 'Scan the QR code with your authenticator app', 'info');
+    } else {
+        showToast(data.error || 'Could not start authenticator setup', 'error');
+    }
+});
+
 document.getElementById('back-to-login-btn').addEventListener('click', () => {
+    setLoginCodeMode(false);
     showAuthForm('login-form');
 });
 

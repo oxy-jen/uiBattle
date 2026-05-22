@@ -451,7 +451,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/account/email/send-verification', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({email})
+                body: JSON.stringify({
+                    email,
+                    current_password: document.getElementById('profile-settings-current-password')?.value || ''
+                })
             });
             const data = await response.json();
             if (!response.ok || !data.success) throw new Error(data.error || 'Could not send verification code');

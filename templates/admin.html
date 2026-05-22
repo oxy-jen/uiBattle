@@ -17,6 +17,9 @@
             <a href="#" data-section="moderation"><i class="fas fa-comments"></i> Chat Moderation</a>
             <a href="#" data-section="broadcast"><i class="fas fa-broadcast-tower"></i> Broadcast</a>
             <a href="#" data-section="maintenance"><i class="fas fa-sliders"></i> Maintenance</a>
+            <button class="sidebar-profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">
+                <i class="fas fa-user-shield"></i> Admin Profile
+            </button>
         </nav>
     </div>
     
@@ -28,7 +31,16 @@
                     <i class="fas fa-moon"></i>
                     <span>Dark</span>
                 </button>
-                <i class="fas fa-user-shield"></i> {{ user.username }}
+                <button class="admin-profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">
+                    <span class="admin-profile-avatar" data-profile-avatar>
+                        {% if current_profile is defined and current_profile.avatar_url %}
+                        <img src="{{ current_profile.avatar_url }}" alt="{{ user.username }} avatar">
+                        {% else %}
+                        {{ user.username[0].upper() }}
+                        {% endif %}
+                    </span>
+                    <span data-profile-name>{{ user.username }}</span>
+                </button>
             </div>
         </div>
         
