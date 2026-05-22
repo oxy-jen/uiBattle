@@ -57,6 +57,9 @@ app.config['SMTP_PASSWORD'] = os.environ.get('SMTP_PASSWORD', '').strip()
 app.config['SMTP_FROM'] = os.environ.get('SMTP_FROM', app.config['SMTP_USERNAME']).strip()
 app.config['SMTP_FROM_NAME'] = os.environ.get('SMTP_FROM_NAME', 'UI Battle Arena').strip()
 app.config['SMTP_USE_TLS'] = os.environ.get('SMTP_USE_TLS', '1').strip() != '0'
+app.config['MAILJET_API_KEY'] = os.environ.get('MAILJET_API_KEY', app.config['SMTP_USERNAME']).strip()
+app.config['MAILJET_SECRET_KEY'] = os.environ.get('MAILJET_SECRET_KEY', app.config['SMTP_PASSWORD']).strip()
+app.config['MAILJET_API_URL'] = os.environ.get('MAILJET_API_URL', 'https://api.mailjet.com/v3.1/send').strip()
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
@@ -308,23 +311,86 @@ def smtp_configured():
     return bool(app.config['SMTP_HOST'] and app.config['SMTP_FROM'])
 
 
+def mailjet_api_configured():
+    return bool(
+        app.config.get('MAILJET_API_KEY')
+        and app.config.get('MAILJET_SECRET_KEY')
+        and valid_email(app.config.get('SMTP_FROM'))
+    )
+
+
+def email_configured():
+    return mailjet_api_configured() or smtp_configured()
+
+
 def smtp_configuration_error():
     missing = []
-    if not app.config['SMTP_HOST']:
-        missing.append('SMTP_HOST')
-    if not app.config['SMTP_FROM']:
+    if not valid_email(app.config['SMTP_FROM']):
         missing.append('SMTP_FROM')
-    if app.config['SMTP_USERNAME'] and not app.config['SMTP_PASSWORD']:
+    if mailjet_api_configured():
+        return ''
+    if not app.config.get('MAILJET_API_KEY') and not app.config['SMTP_HOST']:
+        missing.append('MAILJET_API_KEY or SMTP_HOST')
+    if app.config.get('MAILJET_API_KEY') and not app.config.get('MAILJET_SECRET_KEY'):
+        missing.append('MAILJET_SECRET_KEY')
+    if app.config['SMTP_HOST'] and app.config['SMTP_USERNAME'] and not app.config['SMTP_PASSWORD']:
         missing.append('SMTP_PASSWORD')
+    if not missing and not app.config['SMTP_HOST']:
+        missing.append('SMTP_HOST')
     if missing:
         return 'Email sending is not configured. Missing: ' + ', '.join(missing)
     return ''
 
+
+def send_email_via_mailjet_api(to_email, subject, body):
+    api_key = app.config.get('MAILJET_API_KEY') or app.config.get('SMTP_USERNAME')
+    secret_key = app.config.get('MAILJET_SECRET_KEY') or app.config.get('SMTP_PASSWORD')
+    from_email = valid_email(app.config['SMTP_FROM'])
+    if not api_key or not secret_key or not to_email or not from_email:
+        return False
+    payload = {
+        'Messages': [{
+            'From': {
+                'Email': from_email,
+                'Name': app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena'
+            },
+            'To': [{'Email': to_email}],
+            'Subject': subject[:160],
+            'TextPart': body.strip()
+        }]
+    }
+    data = json.dumps(payload).encode('utf-8')
+    request_obj = urllib.request.Request(
+        app.config.get('MAILJET_API_URL') or 'https://api.mailjet.com/v3.1/send',
+        data=data,
+        headers={'Content-Type': 'application/json'},
+        method='POST'
+    )
+    auth_token = base64.b64encode(f'{api_key}:{secret_key}'.encode('utf-8')).decode('ascii')
+    request_obj.add_header('Authorization', f'Basic {auth_token}')
+    try:
+        with urllib.request.urlopen(request_obj, timeout=10) as response:
+            response_body = response.read().decode('utf-8', errors='replace')
+            success = 200 <= response.status < 300
+            if not success:
+                app.logger.error('Mailjet API send failed with status %s: %s', response.status, response_body[:500])
+            return success
+    except urllib.error.HTTPError as error:
+        response_body = error.read().decode('utf-8', errors='replace')
+        app.logger.error('Mailjet API send failed with status %s: %s', error.code, response_body[:500])
+        return False
+    except Exception:
+        app.logger.exception('Mailjet API send failed')
+        return False
+
+
 def send_email(to_email, subject, body):
     to_email = valid_email(to_email)
     from_email = valid_email(app.config['SMTP_FROM'])
-    if not to_email or not from_email or not smtp_configured():
+    if not to_email or not from_email or not email_configured():
         return False
+    if mailjet_api_configured():
+        return send_email_via_mailjet_api(to_email, subject, body)
     message = EmailMessage()
     message['Subject'] = subject[:160]
     message['From'] = formataddr((app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena', from_email))
@@ -536,7 +602,7 @@ def send_admin_login_otp(user, code):
 
 
 def begin_admin_email_otp_login(user, csrf_token=None):
-    if not user or user.role != 'admin' or not smtp_configured():
+    if not user or user.role != 'admin' or not email_configured():
         return None
     target_email = valid_email(user.email) or configured_admin_email()
     if not target_email:
