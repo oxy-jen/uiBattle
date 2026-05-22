@@ -492,6 +492,7 @@ def start_admin_totp_setup(user, reset_secret=False):
     session.clear()
     session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
     session['pending_admin_2fa_setup_user_id'] = user.id
+    session['pending_2fa_user_id'] = user.id
     otpauth_uri = totp_otpauth_uri(user, user.two_factor_secret)
     return {
         'success': False,
@@ -532,6 +533,36 @@ def send_admin_login_otp(user, code):
             'UI Battle Arena'
         )
     )
+
+
+def begin_admin_email_otp_login(user, csrf_token=None):
+    if not user or user.role != 'admin' or not smtp_configured():
+        return None
+    target_email = valid_email(user.email) or configured_admin_email()
+    if not target_email:
+        return None
+    if rate_limited('admin-email-otp-send', str(user.id), limit=5, window_seconds=15 * 60):
+        return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
+    csrf_token = csrf_token or session.get('csrf_token')
+    session.clear()
+    session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
+    code = create_admin_email_otp(user)
+    try:
+        sent = send_admin_login_otp(user, code)
+    except Exception:
+        app.logger.exception('Admin login code send failed for user %s', user.id)
+        sent = False
+    if not sent:
+        session.clear()
+        session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
+        return None
+    return jsonify({
+        'success': False,
+        'requires_2fa': True,
+        'email_otp': True,
+        'can_use_qr_setup': True,
+        'message': 'Admin login code sent to the admin email. You can also use authenticator QR setup as a backup option.'
+    })
 
 
 def room_invite_url(room):
@@ -1587,33 +1618,16 @@ def login():
             return jsonify({'success': False, 'error': 'Admin login requires the admin email address'}), 401
         if user.role == 'admin':
             bind_admin_login_email(user, username)
+            email_otp_response = begin_admin_email_otp_login(user)
+            if email_otp_response:
+                return email_otp_response
             if user.two_factor_enabled:
                 csrf_token = session.get('csrf_token')
                 session.clear()
                 session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
                 session['pending_2fa_user_id'] = user.id
                 return jsonify({'success': False, 'requires_2fa': True, 'message': 'Enter your admin authenticator or recovery code.'})
-            if not smtp_configured():
-                return jsonify(start_admin_totp_setup(user))
-            if not (valid_email(user.email) or configured_admin_email()):
-                return jsonify(start_admin_totp_setup(user))
-            if rate_limited('admin-email-otp-send', str(user.id), limit=5, window_seconds=15 * 60):
-                return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
-            csrf_token = session.get('csrf_token')
-            session.clear()
-            session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
-            code = create_admin_email_otp(user)
-            if not send_admin_login_otp(user, code):
-                session.clear()
-                session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
-                return jsonify(start_admin_totp_setup(user))
-            return jsonify({
-                'success': False,
-                'requires_2fa': True,
-                'email_otp': True,
-                'can_use_qr_setup': True,
-                'message': 'Admin login code sent to the admin email. You can also use QR authenticator setup instead.'
-            })
+            return jsonify(start_admin_totp_setup(user))
         if user.two_factor_enabled:
             csrf_token = session.get('csrf_token')
             session.clear()
@@ -1635,15 +1649,15 @@ def verify_login_2fa():
     if not user:
         return jsonify({'success': False, 'error': 'Login session expired. Sign in again.'}), 401
     code = data.get('code')
-    if email_otp_user_id:
-        if not verify_pending_email_otp(user, code):
-            return jsonify({'success': False, 'error': 'Invalid or expired admin login code'}), 401
+    if email_otp_user_id and verify_pending_email_otp(user, code):
         complete_login(user)
         return jsonify({'success': True, 'role': user.role})
     used_recovery_code = False
     if not verify_totp(user.two_factor_secret, code):
         used_recovery_code = verify_and_consume_recovery_code(user, code)
         if not used_recovery_code:
+            if email_otp_user_id:
+                return jsonify({'success': False, 'error': 'Invalid email, authenticator, or recovery code'}), 401
             return jsonify({'success': False, 'error': 'Invalid verification or recovery code'}), 401
         db.session.commit()
     complete_login(user)
