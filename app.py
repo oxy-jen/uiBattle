@@ -541,7 +541,7 @@ def begin_admin_email_otp_login(user, csrf_token=None):
     target_email = valid_email(user.email) or configured_admin_email()
     if not target_email:
         return None
-    if rate_limited('admin-email-otp-send', str(user.id), limit=5, window_seconds=15 * 60):
+    if rate_limited('admin-email-otp-send', str(user.id), limit=10, window_seconds=15 * 60):
         return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
     csrf_token = csrf_token or session.get('csrf_token')
     session.clear()
@@ -1609,11 +1609,12 @@ def login():
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
     
-    if rate_limited('login', username or client_rate_identity(), limit=8, window_seconds=15 * 60):
+    user = find_login_user(username)
+    password_ok = bool(user and user.check_password(password))
+    if not password_ok and rate_limited('login', username or client_rate_identity(), limit=8, window_seconds=15 * 60):
         return rate_limit_response()
 
-    user = find_login_user(username)
-    if user and user.check_password(password):
+    if password_ok:
         if not admin_login_uses_email(user, username):
             return jsonify({'success': False, 'error': 'Admin login requires the admin email address'}), 401
         if user.role == 'admin':
@@ -1673,7 +1674,7 @@ def resend_login_2fa_code():
     user = db.session.get(User, user_id) if user_id else None
     if not user:
         return jsonify({'success': False, 'error': 'Login session expired. Sign in again.'}), 401
-    if rate_limited('admin-email-otp-send', str(user.id), limit=5, window_seconds=15 * 60):
+    if rate_limited('admin-email-otp-send', str(user.id), limit=10, window_seconds=15 * 60):
         return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
     code = create_admin_email_otp(user)
     try:
