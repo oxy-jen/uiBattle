@@ -3,7 +3,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text
 from sqlalchemy.exc import SQLAlchemyError
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import uuid
 import secrets
@@ -15,9 +15,12 @@ import base64
 import hashlib
 import hmac
 import struct
+import smtplib
 import urllib.parse
 import urllib.request
 from functools import wraps
+from email.message import EmailMessage
+from email.utils import formataddr, formatdate, make_msgid
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -35,6 +38,10 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', '0').strip() == '1'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=int(os.environ.get('SESSION_LIFETIME_HOURS', '8') or 8))
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
@@ -42,6 +49,13 @@ app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '').
 app.config['GOOGLE_DISCOVERY_AUTH_URL'] = 'https://accounts.google.com/o/oauth2/v2/auth'
 app.config['GOOGLE_TOKEN_URL'] = 'https://oauth2.googleapis.com/token'
 app.config['GOOGLE_USERINFO_URL'] = 'https://openidconnect.googleapis.com/v1/userinfo'
+app.config['SMTP_HOST'] = os.environ.get('SMTP_HOST', '').strip()
+app.config['SMTP_PORT'] = int(os.environ.get('SMTP_PORT', '587') or 587)
+app.config['SMTP_USERNAME'] = os.environ.get('SMTP_USERNAME', '').strip()
+app.config['SMTP_PASSWORD'] = os.environ.get('SMTP_PASSWORD', '').strip()
+app.config['SMTP_FROM'] = os.environ.get('SMTP_FROM', app.config['SMTP_USERNAME']).strip()
+app.config['SMTP_FROM_NAME'] = os.environ.get('SMTP_FROM_NAME', 'UI Battle Arena').strip()
+app.config['SMTP_USE_TLS'] = os.environ.get('SMTP_USE_TLS', '1').strip() != '0'
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
@@ -55,14 +69,24 @@ from auth import login_required, admin_required, get_current_user
 
 db.init_app(app)
 
+configured_socket_origins = [
+    origin.strip()
+    for origin in os.environ.get('SOCKETIO_ALLOWED_ORIGINS', '').split(',')
+    if origin.strip()
+]
 # The browser client uses long-polling, so threading avoids Eventlet warnings on Windows/Python 3.14.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=configured_socket_origins or None,
+    async_mode='threading'
+)
 
 room_timers = {}
 room_preview_data = {}
 connected_users = {}
 room_spectators = {}
 room_typing_users = {}
+RATE_LIMITS = {}
 PROFILE_STORE = os.path.join(app.root_path, 'profile_store.json')
 LEADERBOARD_STREAK_TARGET = 5
 schema_upgrades_ready = False
@@ -125,6 +149,184 @@ def clean_hex_color(value, fallback='#22d3ee'):
     value = (value or '').strip()
     return value if re.fullmatch(r'#[0-9a-fA-F]{6}', value) else fallback
 
+def valid_email(value):
+    value = (value or '').strip().lower()
+    if not value:
+        return ''
+    return value if re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', value) else None
+
+
+def configured_admin_email():
+    return (
+        valid_email(os.environ.get('ADMIN_EMAIL'))
+        or valid_email(app.config.get('SMTP_FROM'))
+        or valid_email(app.config.get('SMTP_USERNAME'))
+        or ''
+    )
+
+
+def admin_login_uses_email(user, identifier):
+    if not user or user.role != 'admin':
+        return True
+    admin_email = (user.email or configured_admin_email() or '').lower()
+    supplied = (identifier or '').strip().lower()
+    return bool(admin_email and supplied == admin_email)
+
+def password_is_strong(password):
+    password = password or ''
+    return (
+        len(password) >= 12
+        and re.search(r'[A-Z]', password)
+        and re.search(r'[a-z]', password)
+        and re.search(r'\d', password)
+    )
+
+
+def get_csrf_token():
+    token = session.get('csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['csrf_token'] = token
+    return token
+
+
+def csrf_failed_response():
+    if request.is_json or request.accept_mimetypes.best == 'application/json' or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': False, 'error': 'Security token expired. Refresh the page and try again.'}), 400
+    return redirect(url_for('login_page'))
+
+
+def verify_csrf_request():
+    if request.method not in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+        return None
+    expected = session.get('csrf_token')
+    supplied = (
+        request.headers.get('X-CSRFToken')
+        or request.headers.get('X-CSRF-Token')
+        or (request.form.get('csrf_token') if request.form else '')
+    )
+    if not expected or not supplied or not secrets.compare_digest(str(expected), str(supplied)):
+        return csrf_failed_response()
+    return None
+
+
+def client_rate_identity():
+    return request.headers.get('X-Forwarded-For', request.remote_addr or 'local').split(',')[0].strip()
+
+
+def rate_limited(scope, identifier=None, limit=5, window_seconds=300):
+    now = time.time()
+    key = (scope, identifier or client_rate_identity())
+    cutoff = now - window_seconds
+    RATE_LIMITS[key] = [stamp for stamp in RATE_LIMITS.get(key, []) if stamp >= cutoff]
+    if len(RATE_LIMITS[key]) >= limit:
+        return True
+    RATE_LIMITS[key].append(now)
+    if len(RATE_LIMITS) > 2000:
+        for old_key, stamps in list(RATE_LIMITS.items()):
+            RATE_LIMITS[old_key] = [stamp for stamp in stamps if stamp >= cutoff]
+            if not RATE_LIMITS[old_key]:
+                RATE_LIMITS.pop(old_key, None)
+    return False
+
+
+def rate_limit_response(message='Too many attempts. Wait a few minutes and try again.'):
+    return jsonify({'success': False, 'error': message}), 429
+
+
+def socket_current_user():
+    user_id = session.get('user_id')
+    return db.session.get(User, user_id) if user_id else None
+
+
+def role_for_user_in_room(user, room):
+    if not user or not room:
+        return None
+    if user.role == 'admin':
+        return 'admin'
+    if room.player1_id == user.id:
+        return 'player1'
+    if room.player2_id == user.id:
+        return 'player2'
+    return 'spectator'
+
+
+def socket_room_context(data):
+    try:
+        room_id = int((data or {}).get('room_id'))
+    except (TypeError, ValueError):
+        return None, None, None
+    user = socket_current_user()
+    room = db.session.get(Room, room_id)
+    if not user or not room:
+        return None, None, None
+    return user, room, role_for_user_in_room(user, room)
+
+
+def is_room_player(user, room):
+    return bool(user and room and user.id in {room.player1_id, room.player2_id})
+
+def smtp_configured():
+    return bool(app.config['SMTP_HOST'] and app.config['SMTP_FROM'])
+
+
+def smtp_configuration_error():
+    missing = []
+    if not app.config['SMTP_HOST']:
+        missing.append('SMTP_HOST')
+    if not app.config['SMTP_FROM']:
+        missing.append('SMTP_FROM')
+    if app.config['SMTP_USERNAME'] and not app.config['SMTP_PASSWORD']:
+        missing.append('SMTP_PASSWORD')
+    if missing:
+        return 'Email sending is not configured. Missing: ' + ', '.join(missing)
+    return ''
+
+def send_email(to_email, subject, body):
+    to_email = valid_email(to_email)
+    from_email = valid_email(app.config['SMTP_FROM'])
+    if not to_email or not from_email or not smtp_configured():
+        return False
+    message = EmailMessage()
+    message['Subject'] = subject[:160]
+    message['From'] = formataddr((app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena', from_email))
+    message['To'] = to_email
+    message['Reply-To'] = from_email
+    message['Date'] = formatdate(localtime=True)
+    message['Message-ID'] = make_msgid(domain=from_email.split('@')[-1])
+    message['X-Mailer'] = 'UI Battle Arena'
+    message.set_content(body.strip() + '\n')
+    with smtplib.SMTP(app.config['SMTP_HOST'], app.config['SMTP_PORT'], timeout=10) as smtp:
+        if app.config['SMTP_USE_TLS']:
+            smtp.starttls()
+        if app.config['SMTP_USERNAME'] and app.config['SMTP_PASSWORD']:
+            smtp.login(app.config['SMTP_USERNAME'], app.config['SMTP_PASSWORD'])
+        smtp.send_message(message)
+    return True
+
+def default_certificate_template():
+    return {
+        'organization': 'Ministry of Education',
+        'department': 'State Department of Technical Training',
+        'association': 'Kenya Association of Technical Training Institutions',
+        'certificate_title': 'Certificate of Merit',
+        'award_line': 'This certificate is awarded to',
+        'recipient_name': 'Outstanding Player',
+        'competition_name': 'UI Battle Arena Competition',
+        'category': 'Web Design Challenge',
+        'held_at': 'UI Battle Arena',
+        'award_date': datetime.now().strftime('%d %b %Y'),
+        'regards_text': 'In recognition of excellent participation, performance, discipline, and official contribution.',
+        'sponsor_name': 'Official Sponsors',
+        'accent_color': '#b91c1c',
+        'seal_text': 'Award',
+        'sponsor_logos': [],
+        'officials': [
+            {'name': 'Chairperson', 'title': 'Competition Chairperson', 'signature': ''},
+            {'name': 'Secretary', 'title': 'Competition Secretary', 'signature': ''}
+        ]
+    }
+
 def get_card_template(template_id):
     return next((item for item in CARD_TEMPLATES if item['id'] == template_id), CARD_TEMPLATES[0])
 
@@ -135,6 +337,12 @@ def serialize_award_card(card):
     template = get_card_template(card.card_template)
     avatar = get_avatar_template(card.avatar_template)
     color = card.student_color or card.primary_color or template['primary']
+    certificate_payload = None
+    if getattr(card, 'certificate_payload', None):
+        try:
+            certificate_payload = json.loads(card.certificate_payload)
+        except (TypeError, json.JSONDecodeError):
+            certificate_payload = None
     return {
         'id': card.id,
         'username': card.user.username if card.user else 'Student',
@@ -155,6 +363,7 @@ def serialize_award_card(card):
         'template_name': template['name'],
         'avatar_name': avatar['name'],
         'avatar_icon': avatar['icon'],
+        'certificate_payload': certificate_payload,
         'created_at': card.created_at
     }
 
@@ -224,9 +433,112 @@ def google_oauth_configured():
 
 def complete_login(user):
     session.pop('pending_2fa_user_id', None)
+    session.pop('pending_email_otp_user_id', None)
+    session.pop('pending_email_otp_hash', None)
+    session.pop('pending_email_otp_expires_at', None)
+    session.pop('pending_admin_2fa_setup_user_id', None)
+    session.permanent = True
     session['user_id'] = user.id
     session['username'] = user.username
     session['role'] = user.role
+    session['csrf_token'] = secrets.token_urlsafe(32)
+
+
+def start_admin_totp_setup(user):
+    if not user.two_factor_secret:
+        user.two_factor_secret = generate_totp_secret()
+        db.session.commit()
+    csrf_token = session.get('csrf_token')
+    session.clear()
+    session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
+    session['pending_admin_2fa_setup_user_id'] = user.id
+    otpauth_uri = totp_otpauth_uri(user, user.two_factor_secret)
+    return {
+        'success': False,
+        'requires_2fa_setup': True,
+        'message': 'Admin authenticator setup is required before entering the admin panel.',
+        'secret': user.two_factor_secret,
+        'otpauth_uri': otpauth_uri,
+        'qr_data_uri': qr_data_uri(otpauth_uri)
+    }
+
+def create_admin_email_otp(user):
+    code = f'{secrets.randbelow(1000000):06d}'
+    session['pending_email_otp_user_id'] = user.id
+    session['pending_email_otp_hash'] = generate_password_hash(code)
+    session['pending_email_otp_expires_at'] = int(time.time()) + 10 * 60
+    return code
+
+
+def verify_pending_email_otp(user, code):
+    if not user or session.get('pending_email_otp_user_id') != user.id:
+        return False
+    if int(session.get('pending_email_otp_expires_at') or 0) < int(time.time()):
+        return False
+    return check_password_hash(session.get('pending_email_otp_hash') or '', re.sub(r'\s+', '', str(code or '')))
+
+
+def send_admin_login_otp(user, code):
+    target_email = valid_email(user.email if user else '') or configured_admin_email()
+    if not user or not target_email:
+        return False
+    return send_email(
+        target_email,
+        'Your UI Battle Arena admin login code',
+        (
+            f'Hello {user.username},\n\n'
+            f'Your admin login code is {code}.\n\n'
+            'It expires in 10 minutes. If you did not try to sign in, change your admin password immediately.\n\n'
+            'UI Battle Arena'
+        )
+    )
+
+
+def room_invite_url(room):
+    return url_for('room_invite', room_code=(room.room_code or '').lstrip('#'), _external=True)
+
+
+def room_invite_payload(room, message=''):
+    challenge_title = room.challenge.title if room and room.challenge else 'UI Battle Arena match'
+    return {
+        'room_id': room.id,
+        'room_code': room.room_code,
+        'challenge_title': challenge_title,
+        'invite_url': room_invite_url(room),
+        'message': message or f'You are invited to join {challenge_title}.'
+    }
+
+
+def send_room_invites(room, message=''):
+    if not room:
+        return {'sent': 0, 'failed': 0, 'skipped': 0, 'total': 0}
+    recipients = User.query.filter_by(role='player').filter(User.email.isnot(None), User.email != '').order_by(User.username.asc()).all()
+    sent = failed = skipped = 0
+    invite_url = room_invite_url(room)
+    challenge_title = room.challenge.title if room.challenge else 'UI Battle Arena match'
+    custom_message = (message or '').strip()[:1000]
+    for target in recipients:
+        body = (
+            f'Hello {target.username},\n\n'
+            f'You are invited to join this UI Battle Arena match: {challenge_title}.\n\n'
+            f'Match room ID: {room.room_code}\n'
+            f'Join link: {invite_url}\n\n'
+            'The first two eligible players who join will enter as competitors. After the match is full, the same link opens spectator mode.\n'
+        )
+        if custom_message:
+            body += f'\nAdmin message:\n{custom_message}\n'
+        body += '\nUI Battle Arena'
+        try:
+            if send_email(target.email, f'UI Battle Arena match invite: {challenge_title}', body):
+                sent += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+            app.logger.exception('Room invite email failed for user %s', target.id)
+    socketio.emit('room_invite', room_invite_payload(room, custom_message))
+    return {'sent': sent, 'failed': failed, 'skipped': skipped, 'total': len(recipients)}
+
 
 def generate_totp_secret():
     return base64.b32encode(secrets.token_bytes(20)).decode('ascii').rstrip('=')
@@ -362,6 +674,22 @@ def ensure_schema_upgrades():
     }
     for column, ddl in room_additions.items():
         if column not in room_columns:
+            db.session.execute(text(ddl))
+
+    tournament_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(tournaments)")).fetchall()}
+    tournament_additions = {
+        'certificate_settings': 'ALTER TABLE tournaments ADD COLUMN certificate_settings TEXT'
+    }
+    for column, ddl in tournament_additions.items():
+        if column not in tournament_columns:
+            db.session.execute(text(ddl))
+
+    award_card_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(award_cards)")).fetchall()}
+    award_card_additions = {
+        'certificate_payload': 'ALTER TABLE award_cards ADD COLUMN certificate_payload TEXT'
+    }
+    for column, ddl in award_card_additions.items():
+        if column not in award_card_columns:
             db.session.execute(text(ddl))
     db.session.commit()
     schema_upgrades_ready = True
@@ -729,6 +1057,11 @@ def serialize_tournament(tournament):
         'reason': participant.reason,
         'admin_note': participant.admin_note
     } for participant in participants]
+    try:
+        certificate_settings = json.loads(tournament.certificate_settings or '{}')
+    except (TypeError, json.JSONDecodeError):
+        certificate_settings = {}
+
     return {
         'id': tournament.id,
         'name': tournament.name,
@@ -740,6 +1073,7 @@ def serialize_tournament(tournament):
         'created_at_label': tournament.created_at.strftime('%Y-%m-%d') if tournament.created_at else '',
         'ended_at': tournament.ended_at.isoformat() if tournament.ended_at else None,
         'ended_at_label': tournament.ended_at.strftime('%Y-%m-%d') if tournament.ended_at else '',
+        'certificate_settings': certificate_settings,
         'rounds': rounds,
         'participants': participant_rows
     }
@@ -869,6 +1203,8 @@ def profile_payload(user):
     profiles = load_profile_store()
     profile = profiles.get(str(user.id), {})
     data = user.to_dict()
+    data['email'] = user.email or ''
+    data['email_verified'] = bool(profile.get('email_verified'))
     data['bio'] = profile.get('bio', '')
     data['avatar_url'] = url_for('static', filename='uploads/' + profile['avatar_filename']) if profile.get('avatar_filename') else None
     return data
@@ -885,6 +1221,111 @@ def load_profile_store():
 def save_profile_store(profiles):
     with open(PROFILE_STORE, 'w', encoding='utf-8') as handle:
         json.dump(profiles, handle, indent=2)
+
+def get_certificate_template_settings():
+    profiles = load_profile_store()
+    settings = default_certificate_template()
+    saved = profiles.get('__certificate_template__', {})
+    if isinstance(saved, dict):
+        settings.update(saved)
+    if not isinstance(settings.get('officials'), list) or not settings['officials']:
+        settings['officials'] = default_certificate_template()['officials']
+    if not isinstance(settings.get('sponsor_logos'), list):
+        settings['sponsor_logos'] = []
+    return settings
+
+def save_certificate_template_settings(settings):
+    profiles = load_profile_store()
+    profiles['__certificate_template__'] = settings
+    save_profile_store(profiles)
+
+def load_password_reset_store():
+    return load_profile_store().get('__password_resets__', {})
+
+def save_password_reset_store(reset_store):
+    profiles = load_profile_store()
+    profiles['__password_resets__'] = reset_store
+    save_profile_store(profiles)
+
+def create_password_reset_code(user):
+    code = f'{secrets.randbelow(1000000):06d}'
+    reset_store = load_password_reset_store()
+    reset_store[str(user.id)] = {
+        'code_hash': generate_password_hash(code),
+        'expires_at': int(time.time()) + 15 * 60,
+        'created_at': int(time.time())
+    }
+    save_password_reset_store(reset_store)
+    return code
+
+def verify_password_reset_code(user, code):
+    reset_store = load_password_reset_store()
+    item = reset_store.get(str(user.id))
+    if not item or int(item.get('expires_at') or 0) < int(time.time()):
+        return False
+    if not check_password_hash(item.get('code_hash') or '', re.sub(r'\s+', '', str(code or ''))):
+        return False
+    reset_store.pop(str(user.id), None)
+    save_password_reset_store(reset_store)
+    return True
+
+def send_password_reset_email(user, code):
+    return send_email(
+        user.email,
+        'UI Battle Arena password reset code',
+        f'Your UI Battle Arena password reset code is {code}.\n\n'
+        'It expires in 15 minutes. If you did not request this, ignore this email.'
+    )
+
+def is_email_verified(user):
+    if not user or not user.email:
+        return False
+    return bool(load_profile_store().get(str(user.id), {}).get('email_verified'))
+
+def create_email_verification_code(user):
+    code = f'{secrets.randbelow(1000000):06d}'
+    profiles, profile = get_profile_record(user.id)
+    profile['email_verification_hash'] = generate_password_hash(code)
+    profile['email_verification_expires_at'] = int(time.time()) + 15 * 60
+    profile['email_verified'] = False
+    save_profile_store(profiles)
+    return code
+
+def verify_email_code(user, code):
+    profiles, profile = get_profile_record(user.id)
+    if int(profile.get('email_verification_expires_at') or 0) < int(time.time()):
+        return False
+    if not check_password_hash(profile.get('email_verification_hash') or '', re.sub(r'\s+', '', str(code or ''))):
+        return False
+    profile['email_verified'] = True
+    profile.pop('email_verification_hash', None)
+    profile.pop('email_verification_expires_at', None)
+    save_profile_store(profiles)
+    return True
+
+def send_email_verification(user):
+    if not user or not user.email:
+        return False
+    code = create_email_verification_code(user)
+    return send_email(
+        user.email,
+        'Verify your UI Battle Arena email',
+        f'Your UI Battle Arena email verification code is {code}.\n\nIt expires in 15 minutes.'
+    )
+
+def notify_users_by_email(users, subject, body, only_verified=True):
+    sent = 0
+    for target in users:
+        if not target or not target.email:
+            continue
+        if only_verified and not is_email_verified(target):
+            continue
+        try:
+            if send_email(target.email, subject, body):
+                sent += 1
+        except Exception:
+            app.logger.exception('Email notification failed for user %s', target.id)
+    return sent
 
 def get_profile_record(user_id):
     profiles = load_profile_store()
@@ -998,21 +1439,25 @@ def delete_room_data(room):
 
 @app.context_processor
 def inject_current_profile():
+    context = {'csrf_token': get_csrf_token()}
     user_id = session.get('user_id')
     if not user_id:
-        return {}
+        return context
     profile = load_profile_store().get(str(user_id), {})
     avatar_filename = profile.get('avatar_filename')
-    return {
-        'current_profile': {
-            'bio': profile.get('bio', ''),
-            'avatar_url': url_for('static', filename='uploads/' + avatar_filename) if avatar_filename else None
-        }
+    context['current_profile'] = {
+        'bio': profile.get('bio', ''),
+        'email_verified': bool(profile.get('email_verified')),
+        'avatar_url': url_for('static', filename='uploads/' + avatar_filename) if avatar_filename else None
     }
+    return context
 
 @app.before_request
 def ensure_runtime_schema():
     ensure_schema_upgrades()
+    csrf_response = verify_csrf_request()
+    if csrf_response:
+        return csrf_response
 
 def run_room_timer(room_id):
     with app.app_context():
@@ -1060,7 +1505,7 @@ def broadcast_leaderboard(room_id):
     submissions = Submission.query.filter_by(room_id=room_id, is_final=False).all()
     submission_dict = {}
     for sub in submissions:
-        if sub.user:
+        if sub.user and sub.user.role == 'player':
             username = sub.user.username
             if username not in submission_dict or sub.accuracy > submission_dict[username]['accuracy']:
                 submission_dict[username] = {'accuracy': sub.accuracy, 'username': username}
@@ -1088,10 +1533,41 @@ def login():
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
     
-    user = User.query.filter_by(username=username).first()
+    if rate_limited('login', username or client_rate_identity(), limit=8, window_seconds=15 * 60):
+        return rate_limit_response()
+
+    user = User.query.filter(
+        (User.username == username) | (User.email == username.lower())
+    ).first()
     if user and user.check_password(password):
-        if user.two_factor_enabled:
+        if not admin_login_uses_email(user, username):
+            return jsonify({'success': False, 'error': 'Admin login requires the admin email address'}), 401
+        if user.role == 'admin':
+            if user.two_factor_enabled:
+                csrf_token = session.get('csrf_token')
+                session.clear()
+                session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
+                session['pending_2fa_user_id'] = user.id
+                return jsonify({'success': False, 'requires_2fa': True, 'message': 'Enter your admin authenticator or recovery code.'})
+            if not (valid_email(user.email) or configured_admin_email()) and smtp_configured():
+                return jsonify({'success': False, 'error': 'Admin email is not configured'}), 403
+            if not smtp_configured():
+                return jsonify(start_admin_totp_setup(user))
+            if rate_limited('admin-email-otp-send', str(user.id), limit=5, window_seconds=15 * 60):
+                return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
+            csrf_token = session.get('csrf_token')
             session.clear()
+            session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
+            code = create_admin_email_otp(user)
+            if not send_admin_login_otp(user, code):
+                session.clear()
+                session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
+                return jsonify({'success': False, 'error': 'Could not send admin login code. Check email settings.'}), 500
+            return jsonify({'success': False, 'requires_2fa': True, 'message': 'Admin login code sent to the admin email.'})
+        if user.two_factor_enabled:
+            csrf_token = session.get('csrf_token')
+            session.clear()
+            session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
             session['pending_2fa_user_id'] = user.id
             return jsonify({'success': False, 'requires_2fa': True, 'message': 'Enter your two-step verification code.'})
         complete_login(user)
@@ -1101,11 +1577,19 @@ def login():
 @app.route('/auth/2fa/verify-login', methods=['POST'])
 def verify_login_2fa():
     data = request.get_json() or {}
-    user_id = session.get('pending_2fa_user_id')
+    email_otp_user_id = session.get('pending_email_otp_user_id')
+    user_id = session.get('pending_2fa_user_id') or email_otp_user_id
+    if rate_limited('2fa-login', str(user_id or client_rate_identity()), limit=6, window_seconds=10 * 60):
+        return rate_limit_response('Too many verification attempts. Wait a few minutes and try again.')
     user = db.session.get(User, user_id) if user_id else None
     if not user:
         return jsonify({'success': False, 'error': 'Login session expired. Sign in again.'}), 401
     code = data.get('code')
+    if email_otp_user_id:
+        if not verify_pending_email_otp(user, code):
+            return jsonify({'success': False, 'error': 'Invalid or expired admin login code'}), 401
+        complete_login(user)
+        return jsonify({'success': True, 'role': user.role})
     used_recovery_code = False
     if not verify_totp(user.two_factor_secret, code):
         used_recovery_code = verify_and_consume_recovery_code(user, code)
@@ -1118,27 +1602,137 @@ def verify_login_2fa():
         response['message'] = 'Recovery code accepted. Generate a new set from Account security soon.'
     return jsonify(response)
 
+
+@app.route('/auth/admin/2fa/enable-login', methods=['POST'])
+def enable_admin_2fa_during_login():
+    user_id = session.get('pending_admin_2fa_setup_user_id')
+    if rate_limited('admin-2fa-setup-login', str(user_id or client_rate_identity()), limit=6, window_seconds=10 * 60):
+        return rate_limit_response('Too many setup attempts. Wait a few minutes and try again.')
+    user = db.session.get(User, user_id) if user_id else None
+    if not user or user.role != 'admin':
+        return jsonify({'success': False, 'error': 'Admin setup session expired. Sign in again.'}), 401
+    data = request.get_json(silent=True) or {}
+    if not verify_totp(user.two_factor_secret, data.get('code')):
+        return jsonify({'success': False, 'error': 'Invalid authenticator code'}), 400
+    recovery_codes, recovery_hashes = generate_recovery_codes()
+    user.two_factor_enabled = True
+    user.two_factor_recovery_hashes = json.dumps(recovery_hashes)
+    db.session.commit()
+    complete_login(user)
+    return jsonify({
+        'success': True,
+        'role': user.role,
+        'message': 'Admin authenticator security is enabled. Save your recovery codes.',
+        'recovery_codes': recovery_codes
+    })
+
+@app.route('/auth/password-reset/request', methods=['POST'])
+def request_password_reset():
+    data = request.get_json(silent=True) or {}
+    identifier = (data.get('identifier') or '').strip()
+    normalized_identifier = identifier.lower()
+    if rate_limited('password-reset-request', normalized_identifier or client_rate_identity(), limit=5, window_seconds=15 * 60):
+        return rate_limit_response()
+    if not smtp_configured():
+        return jsonify({'success': False, 'email_sent': False, 'error': smtp_configuration_error()}), 400
+    user = User.query.filter(
+        (User.username == identifier) | (User.email == normalized_identifier)
+    ).first() if identifier else None
+
+    if user and user.email:
+        try:
+            code = create_password_reset_code(user)
+            if send_password_reset_email(user, code):
+                return jsonify({
+                    'success': True,
+                    'email_sent': True,
+                    'message': 'Reset code sent. Check your inbox and spam folder.'
+                })
+        except Exception:
+            app.logger.exception('Password reset email failed for user %s', user.id)
+            return jsonify({'success': False, 'email_sent': False, 'error': 'Could not send the reset email. Check SMTP settings and try again.'}), 500
+
+    return jsonify({
+        'success': True,
+        'email_sent': False,
+        'message': 'If that account exists and has a recovery email, a reset code has been sent.'
+    })
+
+@app.route('/auth/password-reset/complete', methods=['POST'])
+def complete_password_reset():
+    data = request.get_json(silent=True) or {}
+    identifier = (data.get('identifier') or '').strip()
+    reset_code = data.get('reset_code') or ''
+    recovery_code = data.get('recovery_code') or ''
+    new_password = data.get('new_password') or ''
+    confirm_password = data.get('confirm_password') or ''
+
+    if rate_limited('password-reset-complete', identifier or client_rate_identity(), limit=8, window_seconds=15 * 60):
+        return rate_limit_response()
+
+    user = User.query.filter(
+        (User.username == identifier) | (User.email == identifier.lower())
+    ).first() if identifier else None
+    if not user:
+        return jsonify({'success': False, 'error': 'Invalid reset details'}), 400
+    if new_password != confirm_password:
+        return jsonify({'success': False, 'error': 'New passwords do not match'}), 400
+    if not password_is_strong(new_password):
+        return jsonify({'success': False, 'error': 'Use at least 12 characters with uppercase, lowercase, and a number'}), 400
+
+    reset_ok = verify_password_reset_code(user, reset_code) if reset_code else False
+    recovery_ok = verify_and_consume_recovery_code(user, recovery_code) if recovery_code else False
+    if not reset_ok and not recovery_ok:
+        return jsonify({'success': False, 'error': 'Enter a valid email reset code or saved 2FA recovery code'}), 400
+
+    user.set_password(new_password)
+    db.session.commit()
+    session.clear()
+    return jsonify({'success': True, 'message': 'Password reset. Sign in with the new password.'})
+
 @app.route('/auth/register', methods=['POST'])
 def register():
     data = request.get_json()
     username = (data.get('username') or '').strip()
+    email = valid_email(data.get('email'))
     password = data.get('password')
 
-    if not username or not password:
-        return jsonify({'success': False, 'error': 'Username and password are required'}), 400
-    if len(password) < 8:
-        return jsonify({'success': False, 'error': 'Password must be at least 8 characters'}), 400
+    if rate_limited('register', client_rate_identity(), limit=10, window_seconds=60 * 60):
+        return rate_limit_response()
+    if not username or not email or not password:
+        return jsonify({'success': False, 'error': 'Name, email, and password are required'}), 400
+    if email is None:
+        return jsonify({'success': False, 'error': 'Enter a valid email address'}), 400
+    if not password_is_strong(password):
+        return jsonify({'success': False, 'error': 'Use at least 12 characters with uppercase, lowercase, and a number'}), 400
     
     if User.query.filter_by(username=username).first():
         return jsonify({'success': False, 'error': 'Username already exists'}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({'success': False, 'error': 'Email already exists'}), 400
     
-    user = User(username=username, role='player')
+    user = User(username=username, email=email, role='player')
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
+    email_sent = False
+    email_error = ''
+    if smtp_configured():
+        try:
+            email_sent = send_email_verification(user)
+        except Exception:
+            app.logger.exception('Could not send verification email')
+            email_error = 'Account created, but the verification email could not be sent. Check SMTP settings.'
+    else:
+        email_error = smtp_configuration_error()
     
     complete_login(user)
-    return jsonify({'success': True, 'role': user.role})
+    return jsonify({
+        'success': True,
+        'role': user.role,
+        'email_verification_sent': email_sent,
+        'email_verification_error': email_error
+    })
 
 @app.route('/auth/google')
 def google_login():
@@ -1222,6 +1816,11 @@ def logout():
     session.clear()
     return redirect(url_for('login_page'))
 
+@app.route('/maintenance')
+def maintenance_page():
+    session.clear()
+    return render_template('maintenance.html')
+
 # ========== DASHBOARD ==========
 @app.route('/dashboard')
 @login_required
@@ -1274,6 +1873,7 @@ def admin_panel():
     leaderboard_rows = build_leaderboard_rows()
     players = User.query.order_by(User.username.asc()).all()
     tournaments = Tournament.query.order_by(Tournament.created_at.desc()).all()
+    completed_tournaments = [t for t in tournaments if t.status == 'completed']
 
     total_matches = Submission.query.count()
     avg_accuracy = db.session.query(func.avg(Submission.accuracy)).scalar() or 0
@@ -1324,7 +1924,52 @@ def admin_panel():
                          moderation_flagged_count=moderation_flagged_count,
                          moderation_mentions_count=moderation_mentions_count,
                          tournaments=tournaments,
+                         completed_tournaments=completed_tournaments,
+                         certificate_template=get_certificate_template_settings(),
                          tournament_sizes=sorted(TOURNAMENT_SIZES))
+
+@app.route('/admin/certificate-template', methods=['GET', 'POST'])
+@admin_required
+def admin_certificate_template():
+    if request.method == 'GET':
+        return jsonify({'success': True, 'certificate_template': get_certificate_template_settings()})
+
+    data = request.get_json(silent=True) or {}
+    officials = []
+    for item in (data.get('officials') if isinstance(data.get('officials'), list) else [])[:6]:
+        if not isinstance(item, dict):
+            continue
+        officials.append({
+            'name': str(item.get('name') or '')[:120],
+            'title': str(item.get('title') or '')[:120],
+            'signature': str(item.get('signature') or '')[:500000]
+        })
+    if not officials:
+        officials = default_certificate_template()['officials']
+
+    settings = {
+        'organization': str(data.get('organization') or '')[:160],
+        'department': str(data.get('department') or '')[:160],
+        'association': str(data.get('association') or '')[:180],
+        'certificate_title': str(data.get('certificate_title') or 'Certificate of Merit')[:140],
+        'award_line': str(data.get('award_line') or 'This certificate is awarded to')[:180],
+        'recipient_name': str(data.get('recipient_name') or 'Outstanding Player')[:140],
+        'competition_name': str(data.get('competition_name') or '')[:180],
+        'category': str(data.get('category') or '')[:160],
+        'held_at': str(data.get('held_at') or '')[:160],
+        'award_date': str(data.get('award_date') or '')[:80],
+        'regards_text': str(data.get('regards_text') or '')[:320],
+        'sponsor_name': str(data.get('sponsor_name') or '')[:160],
+        'accent_color': clean_hex_color(data.get('accent_color'), '#b91c1c'),
+        'seal_text': str(data.get('seal_text') or 'Award')[:40],
+        'sponsor_logos': [
+            str(item)[:500000]
+            for item in (data.get('sponsor_logos') if isinstance(data.get('sponsor_logos'), list) else [])
+        ][:8],
+        'officials': officials
+    }
+    save_certificate_template_settings(settings)
+    return jsonify({'success': True, 'certificate_template': settings})
 
 @app.route('/admin/spectators')
 @admin_required
@@ -1352,6 +1997,60 @@ def admin_broadcast():
         for room in Room.query.all():
             socketio.emit('system_announcement', {'message': message}, room=str(room.id))
     return jsonify({'success': True})
+
+@app.route('/admin/broadcast-email', methods=['POST'])
+@admin_required
+def admin_broadcast_email():
+    if not smtp_configured():
+        return jsonify({'success': False, 'error': 'Email sending is not configured'}), 400
+    if rate_limited('admin-broadcast-email', str(session.get('user_id')), limit=5, window_seconds=60 * 60):
+        return rate_limit_response('Too many bulk email broadcasts. Wait a while before sending another.')
+
+    data = request.get_json(silent=True) or {}
+    subject = (data.get('subject') or 'UI Battle Arena notification').strip()[:160]
+    message = (data.get('message') or '').strip()[:3000]
+    only_players = bool(data.get('only_players', False))
+    only_verified = bool(data.get('only_verified', False))
+    also_web = data.get('also_web', True) is not False
+
+    if not message:
+        return jsonify({'success': False, 'error': 'Email message is required'}), 400
+
+    query = User.query.filter(User.email.isnot(None), User.email != '')
+    if only_players:
+        query = query.filter_by(role='player')
+    recipients = query.order_by(User.username.asc()).all()
+
+    sent = 0
+    skipped = 0
+    failed = 0
+    for target in recipients:
+        if only_verified and not is_email_verified(target):
+            skipped += 1
+            continue
+        body = f'Hello {target.username},\n\n{message}\n\nUI Battle Arena'
+        try:
+            if send_email(target.email, subject, body):
+                sent += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+            app.logger.exception('Bulk email notification failed for user %s', target.id)
+
+    if also_web:
+        announcement = message[:500]
+        for room in Room.query.filter(Room.status != 'ended').all():
+            socketio.emit('system_announcement', {'message': announcement}, room=str(room.id))
+
+    return jsonify({
+        'success': True,
+        'sent': sent,
+        'failed': failed,
+        'skipped': skipped,
+        'total_recipients': len(recipients),
+        'message': f'Email broadcast sent to {sent} user(s).'
+    })
 
 @app.route('/admin/chat/<int:message_id>/flag', methods=['POST'])
 @admin_required
@@ -1564,6 +2263,93 @@ def admin_save_award_card(user_id):
     db.session.commit()
     return jsonify({'success': True, 'card': serialize_award_card(card)})
 
+
+@app.route('/admin/user/<int:user_id>/certificate-card', methods=['POST'])
+@admin_required
+def admin_send_certificate_card(user_id):
+    target_user = db.session.get(User, user_id)
+    admin = get_current_user()
+    if not target_user:
+        return jsonify({'success': False, 'error': 'Student not found'}), 404
+    if target_user.role == 'admin':
+        return jsonify({'success': False, 'error': 'Certificates can only be sent to students'}), 400
+
+    data = request.get_json(silent=True) or {}
+    cert = get_certificate_template_settings()
+    posted_template = data.get('certificate_template')
+    if isinstance(posted_template, dict):
+        cert.update(posted_template)
+    title = (data.get('title') or cert.get('certificate_title') or 'Certificate of Merit').strip()[:140]
+    reason = (data.get('reason') or cert.get('award_line') or 'Official certificate recognition').strip()[:200]
+    message = (data.get('message') or cert.get('regards_text') or 'Recognized by an administrator for official arena achievement.').strip()[:800]
+    color = clean_hex_color(data.get('color'), cert.get('accent_color') or '#b91c1c')
+    competition = (cert.get('competition_name') or '').strip()
+    category = (cert.get('category') or '').strip()
+    held_at = (cert.get('held_at') or '').strip()
+    award_date = (cert.get('award_date') or datetime.now().strftime('%d %b %Y')).strip()
+    details = message
+    meta_bits = [item for item in [competition, category, held_at, award_date] if item]
+    if meta_bits:
+        details = f"{message}\n\n" + " | ".join(meta_bits)
+    certificate_payload = {
+        **cert,
+        'recipient_name': target_user.username,
+        'certificate_title': title,
+        'award_line': reason,
+        'regards_text': message,
+        'accent_color': color,
+        'award_date': award_date
+    }
+
+    card = AwardCard(
+        user_id=target_user.id,
+        awarded_by=admin.id,
+        title=title,
+        reason=reason,
+        message=details[:800],
+        card_template='leadership',
+        avatar_template='shield',
+        accent_icon='fa-certificate',
+        avatar_label=target_user.username,
+        primary_color=color,
+        secondary_color='#111827',
+        shape='ticket',
+        avatar_shape='shield',
+        layout='classic',
+        certificate_payload=json.dumps(certificate_payload)
+    )
+    target_user.leaderboard_awarded = True
+    target_user.leaderboard_awarded_at = datetime.now(timezone.utc)
+    target_user.leaderboard_awarded_by = admin.id if admin else None
+    target_user.leaderboard_award_reason = title[:200]
+    target_user.leaderboard_award_details = details
+    target_user.leaderboard_award_color = color
+    db.session.add(card)
+    db.session.commit()
+    return jsonify({'success': True, 'card': serialize_award_card(card)})
+
+@app.route('/admin/user/<int:user_id>/email', methods=['POST'])
+@admin_required
+def admin_email_user(user_id):
+    target_user = db.session.get(User, user_id)
+    if not target_user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    if not target_user.email:
+        return jsonify({'success': False, 'error': 'This user does not have an email address'}), 400
+    if not smtp_configured():
+        return jsonify({'success': False, 'error': 'Email sending is not configured'}), 400
+    data = request.get_json(silent=True) or {}
+    subject = (data.get('subject') or 'UI Battle Arena update').strip()[:160]
+    message = (data.get('message') or '').strip()[:2000]
+    if not message:
+        return jsonify({'success': False, 'error': 'Email message is required'}), 400
+    sent = send_email(
+        target_user.email,
+        subject,
+        f'Hello {target_user.username},\n\n{message}\n\nUI Battle Arena'
+    )
+    return jsonify({'success': bool(sent)})
+
 @app.route('/admin/export-data')
 @admin_required
 def export_data():
@@ -1619,7 +2405,11 @@ def admin_clear_created_data():
         if data.get('confirm') != 'CLEAR':
             return jsonify({'success': False, 'error': 'Type CLEAR to confirm the reset'}), 400
 
+        socketio.emit('maintenance_reset', {
+            'message': 'The arena was reset by an admin. Please sign in again.'
+        })
         counts = clear_created_platform_data()
+        session['role'] = 'admin'
         return jsonify({'success': True, 'counts': counts})
     except Exception as exc:
         db.session.rollback()
@@ -1635,6 +2425,7 @@ def create_challenge():
     challenge_type = request.form.get('challenge_type', 'image')
     room_visibility = request.form.get('room_visibility', 'private')
     room_is_public = room_visibility == 'public'
+    share_with_email = request.form.get('share_with_email') == 'true'
     title = (request.form.get('title') or '').strip()
     difficulty = request.form.get('difficulty') or 'Medium'
     try:
@@ -1647,6 +2438,8 @@ def create_challenge():
         return jsonify({'success': False, 'error': 'Invalid challenge type'}), 400
     if not title:
         return jsonify({'success': False, 'error': 'Challenge name is required'}), 400
+    if share_with_email and not smtp_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
     
     new_challenge = Challenge(
         title=title,
@@ -1706,13 +2499,18 @@ def create_challenge():
     )
     db.session.add(new_room)
     db.session.commit()
+    invite_stats = {'sent': 0, 'failed': 0, 'skipped': 0, 'total': 0}
+    if share_with_email:
+        invite_stats = send_room_invites(new_room, request.form.get('invite_message') or '')
     
     return jsonify({
         'success': True,
         'room_code': room_code,
         'room_id': new_room.id,
         'is_public': bool(new_room.is_public),
-        'challenge_type': challenge_type
+        'challenge_type': challenge_type,
+        'invite_url': room_invite_url(new_room),
+        'invite_stats': invite_stats
     })
 
 @app.route('/admin/room/<int:room_id>/action', methods=['POST'])
@@ -1898,6 +2696,16 @@ def admin_create_tournament():
     )
     db.session.commit()
     socketio.emit('tournament_bracket_update', {'tournament': serialize_tournament(tournament)}, room=f"tournament_{tournament.id}")
+    notify_users_by_email(
+        ordered_users,
+        f'You were added to tournament: {name}',
+        (
+            f'You have been added to the {name} tournament in UI Battle Arena.\n\n'
+            f'Challenge: {challenge.title}\n'
+            f'Players: {size}\n\n'
+            'Sign in to view your match room and bracket.'
+        )
+    )
     return jsonify({'success': True, 'tournament_id': tournament.id, 'redirect': url_for('tournament_detail', tournament_id=tournament.id)})
 
 @app.route('/admin/tournament/<int:tournament_id>/match/<int:match_id>/advance', methods=['POST'])
@@ -2112,6 +2920,31 @@ def toggle_user_role(user_id):
     db.session.commit()
     return jsonify({'success': True, 'new_role': user.role})
 
+@app.route('/admin/user/<int:user_id>/rename', methods=['POST'])
+@admin_required
+def rename_user(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()[:80]
+    if not username:
+        return jsonify({'success': False, 'error': 'Real name is required'}), 400
+
+    existing = User.query.filter(User.username == username, User.id != user.id).first()
+    if existing:
+        return jsonify({'success': False, 'error': 'Another user already has that name'}), 400
+
+    old_username = user.username
+    user.username = username
+    db.session.commit()
+
+    if user.id == session.get('user_id'):
+        session['username'] = user.username
+
+    return jsonify({'success': True, 'username': user.username, 'old_username': old_username})
+
 @app.route('/admin/user/<int:user_id>/reset-stats', methods=['POST'])
 @admin_required
 def reset_player_stats(user_id):
@@ -2193,7 +3026,10 @@ def results(room_id):
         final_subs = Submission.query.filter_by(room_id=room_id).all()
     
     best_submissions = {}
+    player_ids = {room.player1_id, room.player2_id}
     for sub in final_subs:
+        if sub.user_id not in player_ids:
+            continue
         current = best_submissions.get(sub.user_id)
         if not current or sub.accuracy > current.accuracy or (sub.is_final and not current.is_final):
             best_submissions[sub.user_id] = sub
@@ -2265,6 +3101,65 @@ def tournament_api(tournament_id):
         return jsonify({'success': False, 'error': 'Tournament not found'}), 404
     return jsonify({'success': True, 'tournament': serialize_tournament(tournament_obj)})
 
+@app.route('/admin/tournament/<int:tournament_id>/certificate-settings', methods=['POST'])
+@admin_required
+def update_tournament_certificate_settings(tournament_id):
+    ensure_schema_upgrades()
+    tournament_obj = db.session.get(Tournament, tournament_id)
+    if not tournament_obj:
+        return jsonify({'success': False, 'error': 'Tournament not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    raw_officials = data.get('officials') if isinstance(data.get('officials'), list) else []
+    officials = []
+    for item in raw_officials[:6]:
+        if not isinstance(item, dict):
+            continue
+        officials.append({
+            'name': str(item.get('name') or '')[:120],
+            'title': str(item.get('title') or '')[:120],
+            'signature': str(item.get('signature') or '')[:300000]
+        })
+
+    if not officials:
+        officials = [
+            {
+                'name': str(data.get('official_1_name') or '')[:120],
+                'title': str(data.get('official_1_title') or '')[:120],
+                'signature': str(data.get('official_1_signature') or '')[:300000]
+            },
+            {
+                'name': str(data.get('official_2_name') or '')[:120],
+                'title': str(data.get('official_2_title') or '')[:120],
+                'signature': str(data.get('official_2_signature') or '')[:300000]
+            }
+        ]
+
+    allowed = {
+        'competition_name': str(data.get('competition_name') or tournament_obj.name or '')[:160],
+        'regards_text': str(data.get('regards_text') or 'has successfully completed and earned the official standing of')[:220],
+        'sponsor_name': str(data.get('sponsor_name') or '')[:120],
+        'officials': officials,
+        'official_1_name': officials[0]['name'] if len(officials) > 0 else '',
+        'official_1_title': officials[0]['title'] if len(officials) > 0 else '',
+        'official_1_signature': officials[0]['signature'] if len(officials) > 0 else '',
+        'official_2_name': officials[1]['name'] if len(officials) > 1 else '',
+        'official_2_title': officials[1]['title'] if len(officials) > 1 else '',
+        'official_2_signature': officials[1]['signature'] if len(officials) > 1 else '',
+        'sponsor_logos': [
+            str(item)[:300000]
+            for item in (data.get('sponsor_logos') if isinstance(data.get('sponsor_logos'), list) else [])
+        ][:4],
+        'player_names': {
+            str(key): str(value)[:120]
+            for key, value in (data.get('player_names') if isinstance(data.get('player_names'), dict) else {}).items()
+        }
+    }
+    tournament_obj.certificate_settings = json.dumps(allowed)
+    db.session.commit()
+    socketio.emit('tournament_bracket_update', {'tournament': serialize_tournament(tournament_obj)}, room=f"tournament_{tournament_id}")
+    return jsonify({'success': True, 'certificate_settings': allowed})
+
 @app.route('/certificate/verify/<certificate_id>')
 def verify_certificate(certificate_id):
     participant = TournamentParticipant.query.filter_by(certificate_id=certificate_id).first()
@@ -2290,6 +3185,8 @@ def save_submission():
 
     if not room:
         return jsonify({'success': False, 'error': 'Room not found'}), 404
+    if user.role == 'admin' or user.id not in {room.player1_id, room.player2_id}:
+        return jsonify({'success': False, 'error': 'Only active players can submit scores'}), 403
     if room.status == 'ended':
         return jsonify({'success': False, 'error': 'Match has ended'}), 403
     
@@ -2327,6 +3224,56 @@ def save_submission():
         }, room=f"tournament_{tournament_match.tournament_id}")
     
     return jsonify({'success': True})
+
+
+@app.route('/room/invite/<room_code>')
+@login_required
+def room_invite(room_code):
+    user = get_current_user()
+    normalized_code = ('#' + str(room_code or '').lstrip('#')).upper()
+    room = Room.query.filter(func.upper(Room.room_code) == normalized_code).first()
+    if not room or room.status == 'ended':
+        flash('That match invite is no longer available.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    role = 'spectator'
+    if user.role == 'admin':
+        role = 'admin'
+    elif room.player1_id == user.id:
+        role = 'player1'
+    elif room.player2_id == user.id:
+        role = 'player2'
+    elif room.status == 'waiting' and not room.player1_id:
+        room.player1_id = user.id
+        db.session.commit()
+        role = 'player1'
+    elif room.status == 'waiting' and not room.player2_id and room.player1_id != user.id:
+        room.player2_id = user.id
+        db.session.commit()
+        role = 'player2'
+
+    socketio.emit('player_joined', {
+        'player1': room.player1.username if room.player1 else None,
+        'player2': room.player2.username if room.player2 else None,
+        'username': user.username
+    }, room=str(room.id))
+    return redirect(url_for('arena', room_id=room.id, role=role))
+
+@app.route('/admin/room/<int:room_id>/share-email', methods=['POST'])
+@admin_required
+def admin_share_room_email(room_id):
+    if not smtp_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+    if rate_limited('room-share-email', f"{session.get('user_id')}:{room_id}", limit=5, window_seconds=60 * 60):
+        return rate_limit_response('Too many invite emails for this room. Wait a while before sending again.')
+    room = db.session.get(Room, room_id)
+    if not room:
+        return jsonify({'success': False, 'error': 'Room not found'}), 404
+    if room.status == 'ended':
+        return jsonify({'success': False, 'error': 'This room has ended'}), 400
+    data = request.get_json(silent=True) or {}
+    stats = send_room_invites(room, data.get('message') or '')
+    return jsonify({'success': True, 'invite_url': room_invite_url(room), 'invite_stats': stats})
 
 @app.route('/room/join', methods=['POST'])
 @login_required
@@ -2561,19 +3508,34 @@ def profile_me_api():
         return jsonify({'success': True, 'user': profile_payload(user)})
 
     username = (request.form.get('username') or '').strip()
+    email = valid_email(request.form.get('email'))
     bio = (request.form.get('bio') or '').strip()
 
     if not username:
         return jsonify({'success': False, 'error': 'Username is required'}), 400
+    if email is None:
+        return jsonify({'success': False, 'error': 'Enter a valid recovery email or leave it blank'}), 400
 
     existing = User.query.filter(User.username == username, User.id != user.id).first()
     if existing:
         return jsonify({'success': False, 'error': 'Username already exists'}), 400
+    if email and User.query.filter(User.email == email, User.id != user.id).first():
+        return jsonify({'success': False, 'error': 'Recovery email is already used by another account'}), 400
 
     username_changed = username != user.username
+    email_changed = (email or None) != (user.email or None)
+    if user.role == 'admin' and email_changed:
+        current_password = request.form.get('current_password') or ''
+        if not user.check_password(current_password):
+            return jsonify({'success': False, 'error': 'Current password is required to change the admin email'}), 400
     user.username = username[:80]
+    user.email = email or None
     profiles, profile = get_profile_record(user.id)
     profile['bio'] = bio[:500]
+    if email_changed:
+        profile['email_verified'] = False
+        profile.pop('email_verification_hash', None)
+        profile.pop('email_verification_expires_at', None)
 
     avatar = request.files.get('avatar')
     if avatar and avatar.filename:
@@ -2604,14 +3566,57 @@ def account_change_password():
 
     if not user.check_password(current_password):
         return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
-    if len(new_password) < 8:
-        return jsonify({'success': False, 'error': 'New password must be at least 8 characters'}), 400
+    if not password_is_strong(new_password):
+        return jsonify({'success': False, 'error': 'Use at least 12 characters with uppercase, lowercase, and a number'}), 400
     if new_password != confirm_password:
         return jsonify({'success': False, 'error': 'New passwords do not match'}), 400
 
     user.set_password(new_password)
     db.session.commit()
     return jsonify({'success': True})
+
+@app.route('/api/account/email/send-verification', methods=['POST'])
+@login_required
+def account_send_email_verification():
+    user = get_current_user()
+    data = request.get_json(silent=True) or {}
+    requested_email = valid_email(data.get('email')) if data.get('email') is not None else (user.email or '')
+    if requested_email is None:
+        return jsonify({'success': False, 'error': 'Enter a valid recovery email'}), 400
+    if not requested_email:
+        return jsonify({'success': False, 'error': 'Add a recovery email first'}), 400
+    if User.query.filter(User.email == requested_email, User.id != user.id).first():
+        return jsonify({'success': False, 'error': 'Recovery email is already used by another account'}), 400
+    if not smtp_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+
+    email_changed = requested_email != (user.email or '')
+    if email_changed:
+        user.email = requested_email
+        profiles, profile = get_profile_record(user.id)
+        profile['email_verified'] = False
+        profile.pop('email_verification_hash', None)
+        profile.pop('email_verification_expires_at', None)
+        db.session.commit()
+        save_profile_store(profiles)
+
+    try:
+        sent = send_email_verification(user)
+    except Exception:
+        app.logger.exception('Email verification send failed')
+        sent = False
+    if not sent:
+        return jsonify({'success': False, 'error': 'Could not send verification email. Check SMTP settings and try again.'}), 500
+    return jsonify({'success': True, 'message': 'Verification code sent', 'email': user.email})
+
+@app.route('/api/account/email/verify', methods=['POST'])
+@login_required
+def account_verify_email():
+    user = get_current_user()
+    data = request.get_json(silent=True) or {}
+    if verify_email_code(user, data.get('code')):
+        return jsonify({'success': True, 'email_verified': True})
+    return jsonify({'success': False, 'error': 'Invalid or expired verification code'}), 400
 
 @app.route('/api/account/2fa/setup', methods=['POST'])
 @login_required
@@ -2710,6 +3715,15 @@ def get_match_details(match_id):
     submission = db.session.get(Submission, match_id)
     if not submission:
         return jsonify({'success': False, 'error': 'Match not found'}), 404
+    current_user = get_current_user()
+    room = submission.room
+    can_view = (
+        current_user.role == 'admin'
+        or submission.user_id == current_user.id
+        or (room and current_user.id in {room.player1_id, room.player2_id})
+    )
+    if not can_view:
+        return jsonify({'success': False, 'error': 'You can only view your own match code'}), 403
     
     return jsonify({
         'success': True,
@@ -2801,60 +3815,65 @@ def emit_presence(room_id):
     }, room=str(room_id))
 
 
+
 @socketio.on('join_room')
 def handle_join_room(data):
-    room_id = data.get('room_id')
-    username = data.get('username')
-    user_role = data.get('user_role', 'spectator')
-    
-    print(f"Ã°Å¸â€Âµ SOCKET join_room: {username} joining room {room_id} as {user_role}")
-    
-    if username:
-        connected_users[request.sid] = {'username': username, 'room_id': room_id, 'role': user_role}
-    
+    user, room, user_role = socket_room_context(data)
+    if not user or not room:
+        emit('auth_required', {'message': 'Sign in again before joining this room.'}, room=request.sid)
+        return
+    if room.status == 'ended' and user_role != 'admin':
+        emit('room_join_denied', {'message': 'This match has ended.'}, room=request.sid)
+        return
+
+    room_id = room.id
+    username = user.username
+    connected_users[request.sid] = {'username': username, 'room_id': room_id, 'role': user_role, 'user_id': user.id}
+
     if user_role == 'spectator':
         room_spectators.setdefault(room_id, set()).add(username)
         emit_spectator_list(room_id)
-    
+
     join_room(str(room_id))
-    
-    room = db.session.get(Room, room_id)
-    if room:
-        recent_messages = ChatMessage.query.filter_by(room_id=room_id).order_by(ChatMessage.sent_at.desc()).limit(50).all()
-        emit('chat_history', {
-            'messages': [serialize_chat_message(msg) for msg in reversed(recent_messages)]
+    join_room(f"user_{username}")
+
+    recent_messages = ChatMessage.query.filter_by(room_id=room_id).order_by(ChatMessage.sent_at.desc()).limit(50).all()
+    emit('chat_history', {
+        'messages': [serialize_chat_message(msg) for msg in reversed(recent_messages)]
+    }, room=request.sid)
+
+    if room.status == 'running':
+        challenge = room.challenge
+        emit('challenge_started', {
+            'time_limit': challenge.time_limit,
+            'challenge_title': challenge.title,
+            'room_id': room.id
         }, room=request.sid)
-    
-    # CRITICAL: Send current status to the joining player
-    if room:
-        if room.status == 'running':
-            challenge = room.challenge
-            emit('challenge_started', {
-                'time_limit': challenge.time_limit,
-                'challenge_title': challenge.title,
-                'room_id': room.id
-            }, room=request.sid)
-            print(f"Ã°Å¸Å¸Â¢ Sent challenge_started to newly joined player {username}")
-        elif room.status == 'paused':
-            emit('challenge_paused', {
-                'room_id': room.id,
-                'remaining': room_timers.get(room.id, 0),
-                'message': 'Match is currently paused by admin'
-            }, room=request.sid)
-    
-    if room and user_role == 'spectator':
+    elif room.status == 'paused':
+        emit('challenge_paused', {
+            'room_id': room.id,
+            'remaining': room_timers.get(room.id, 0),
+            'message': 'Match is currently paused by admin'
+        }, room=request.sid)
+
+    if user_role in {'spectator', 'admin'}:
         emit('spectator_preview_state', {
             'previews': [
-                {'username': preview_username, 'compiled_html': compiled_html}
-                for preview_username, compiled_html in room_preview_data.get(room_id, {}).items()
+                {
+                    'username': preview_username,
+                    'compiled_html': preview_data.get('compiled_html', '') if isinstance(preview_data, dict) else preview_data,
+                    'html_code': preview_data.get('html_code', '') if isinstance(preview_data, dict) else '',
+                    'css_code': preview_data.get('css_code', '') if isinstance(preview_data, dict) else '',
+                    'js_code': preview_data.get('js_code', '') if isinstance(preview_data, dict) else ''
+                }
+                for preview_username, preview_data in room_preview_data.get(room_id, {}).items()
             ]
         }, room=request.sid)
 
-    join_room(f"user_{username}")
     emit_presence(room_id)
     socketio.emit('chat_message', {
         'username': 'SYSTEM',
-        'message': f'{username} joined the arena as {user_role.replace("player1", "Player 1").replace("player2", "Player 2").replace("spectator", "Spectator")}!',
+        'message': f'{username} joined the arena as {user_role.replace("player1", "Player 1").replace("player2", "Player 2").replace("spectator", "Spectator").replace("admin", "Admin")}!',
         'is_system': True,
         'timestamp': datetime.now(timezone.utc).isoformat()
     }, room=str(room_id))
@@ -2870,64 +3889,67 @@ def handle_join_tournament(data):
     emit('tournament_notification', {'message': 'Connected to live tournament updates.'}, room=request.sid)
 
 
+
 @socketio.on('leave_room')
 def handle_leave_room(data):
-    room_id = data.get('room_id')
-    username = data.get('username')
-    
+    info = connected_users.pop(request.sid, {})
+    try:
+        room_id = int((data or {}).get('room_id') or info.get('room_id'))
+    except (TypeError, ValueError):
+        return
+    username = info.get('username') or (socket_current_user().username if socket_current_user() else None)
+
     leave_room(str(room_id))
-    
-    # Remove spectator when leaving
+
     if room_id in room_spectators and username in room_spectators[room_id]:
         room_spectators[room_id].discard(username)
         if not room_spectators[room_id]:
             del room_spectators[room_id]
         emit_spectator_list(room_id)
-    if room_id in room_typing_users:
+    if room_id in room_typing_users and username:
         room_typing_users[room_id].discard(username)
     emit_presence(room_id)
-    
-    socketio.emit('chat_message', {
-        'username': 'SYSTEM',
-        'message': f'{username} left the arena.',
-        'is_system': True,
-        'timestamp': datetime.now(timezone.utc).isoformat()
-    }, room=str(room_id))
+
+    if username:
+        socketio.emit('chat_message', {
+            'username': 'SYSTEM',
+            'message': f'{username} left the arena.',
+            'is_system': True,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }, room=str(room_id))
+
 
 @socketio.on('progress_update')
 def handle_progress_update(data):
-    room_id = data.get('room_id')
-    username = data.get('username')
-    accuracy = data.get('accuracy')
-    
+    user, room, _role = socket_room_context(data)
+    if not is_room_player(user, room):
+        return
+    accuracy = (data or {}).get('accuracy')
+
     socketio.emit('progress_update', {
-        'username': username,
+        'room_id': room.id,
+        'username': user.username,
         'accuracy': accuracy
-    }, room=str(room_id), include_self=False)
-    
-    broadcast_leaderboard(room_id)
+    }, room=str(room.id), include_self=False)
+
+    broadcast_leaderboard(room.id)
+
 
 @socketio.on('chat_message')
 def handle_chat_message(data):
-    try:
-        room_id = int(data.get('room_id'))
-    except (TypeError, ValueError):
-        return
-    socket_user = connected_users.get(request.sid, {})
-    session_user = db.session.get(User, session.get('user_id')) if session.get('user_id') else None
-    username = session_user.username if session_user else socket_user.get('username') or data.get('username')
-    message = (data.get('message') or '').strip()
-    if not message:
-        return
-    message = message[:500]
-    
-    room = db.session.get(Room, room_id)
-    user = session_user or User.query.filter_by(username=username).first()
-    if not room or not user:
+    user, room, _role = socket_room_context(data)
+    if not user or not room:
         emit('chat_warning', {
             'message': 'Join the room before sending chat messages.'
         }, room=request.sid)
         return
+
+    room_id = room.id
+    username = user.username
+    message = ((data or {}).get('message') or '').strip()
+    if not message:
+        return
+    message = message[:500]
 
     if contains_bad_language(message):
         if room_id in room_typing_users:
@@ -2968,7 +3990,6 @@ def handle_chat_message(data):
         'users': sorted(room_typing_users.get(room_id, set()))
     }, room=str(room_id))
 
-
 @socketio.on('flag_chat_message')
 def handle_flag_chat_message(data):
     session_user = db.session.get(User, session.get('user_id')) if session.get('user_id') else None
@@ -3007,107 +4028,152 @@ def handle_flag_chat_message(data):
     }, room=str(chat_msg.room_id))
 
 
+
 @socketio.on('typing')
 def handle_typing(data):
-    room_id = data.get('room_id')
-    username = data.get('username')
-    is_typing = bool(data.get('is_typing'))
-    if not room_id or not username:
+    user, room, _role = socket_room_context(data)
+    if not user or not room:
         return
+    is_typing = bool((data or {}).get('is_typing'))
     if is_typing:
-        room_typing_users.setdefault(room_id, set()).add(username)
-    elif room_id in room_typing_users:
-        room_typing_users[room_id].discard(username)
+        room_typing_users.setdefault(room.id, set()).add(user.username)
+    elif room.id in room_typing_users:
+        room_typing_users[room.id].discard(user.username)
     socketio.emit('typing_update', {
-        'users': sorted(room_typing_users.get(room_id, set()))
-    }, room=str(room_id))
+        'users': sorted(room_typing_users.get(room.id, set()))
+    }, room=str(room.id))
+
 
 @socketio.on('cam_frame')
 def handle_cam_frame(data):
-    room_id = data.get('room_id')
-    username = data.get('username')
-    frame_data = data.get('frame_data')
-    
+    user, room, _role = socket_room_context(data)
+    if not is_room_player(user, room):
+        return
+    frame_data = (data or {}).get('frame_data')
+
     socketio.emit('cam_frame', {
-        'username': username,
+        'room_id': room.id,
+        'username': user.username,
         'frame_data': frame_data
-    }, room=str(room_id), include_self=False)
+    }, room=str(room.id), include_self=False)
+
 
 @socketio.on('code_preview')
 def handle_code_preview(data):
-    room_id = data.get('room_id')
-    username = data.get('username')
-    compiled_html = data.get('compiled_html')
-    
-    if room_id not in room_preview_data:
-        room_preview_data[room_id] = {}
-    room_preview_data[room_id][username] = compiled_html
-    
+    user, room, _role = socket_room_context(data)
+    if not is_room_player(user, room):
+        return
+    compiled_html = (data or {}).get('compiled_html')
+
+    room_preview_data.setdefault(room.id, {})[user.username] = {
+        'compiled_html': compiled_html,
+        'html_code': str((data or {}).get('html_code') or '')[:50000],
+        'css_code': str((data or {}).get('css_code') or '')[:50000],
+        'js_code': str((data or {}).get('js_code') or '')[:50000]
+    }
+
     socketio.emit('admin_preview', {
-        'username': username,
-        'compiled_html': compiled_html
-    }, room=str(room_id))
+        'room_id': room.id,
+        'username': user.username,
+        'compiled_html': compiled_html,
+        'html_code': str((data or {}).get('html_code') or '')[:50000],
+        'css_code': str((data or {}).get('css_code') or '')[:50000],
+        'js_code': str((data or {}).get('js_code') or '')[:50000]
+    }, room=str(room.id))
+
+@socketio.on('admin_watch_room')
+def handle_admin_watch_room(data):
+    session_user = db.session.get(User, session.get('user_id')) if session.get('user_id') else None
+    if not session_user or session_user.role != 'admin':
+        return
+    try:
+        room_id = int(data.get('room_id'))
+    except (TypeError, ValueError):
+        return
+    room = db.session.get(Room, room_id)
+    if not room:
+        return
+    join_room(str(room_id))
+    connected_users[request.sid] = {'username': session_user.username, 'room_id': room_id, 'role': 'admin'}
+    emit('admin_watch_ready', {
+        'room_id': room_id,
+        'player1': room.player1.username if room.player1 else '',
+        'player2': room.player2.username if room.player2 else '',
+        'status': room.status,
+        'previews': [
+            {
+                'username': preview_username,
+                'compiled_html': preview_data.get('compiled_html', '') if isinstance(preview_data, dict) else preview_data,
+                'html_code': preview_data.get('html_code', '') if isinstance(preview_data, dict) else '',
+                'css_code': preview_data.get('css_code', '') if isinstance(preview_data, dict) else '',
+                'js_code': preview_data.get('js_code', '') if isinstance(preview_data, dict) else ''
+            }
+            for preview_username, preview_data in room_preview_data.get(room_id, {}).items()
+        ]
+    }, room=request.sid)
+
 
 @socketio.on('forfeit')
 def handle_forfeit(data):
-    room_id = data.get('room_id')
-    username = data.get('username')
-    user = User.query.filter_by(username=username).first()
-    
-    if user:
-        submission = Submission(
-            user_id=user.id,
-            room_id=room_id,
-            is_forfeit=True,
-            accuracy=0
-        )
-        db.session.add(submission)
-        db.session.commit()
-    
-    socketio.emit('player_forfeit', {'username': username}, room=str(room_id))
+    user, room, _role = socket_room_context(data)
+    if not is_room_player(user, room):
+        return
+
+    submission = Submission(
+        user_id=user.id,
+        room_id=room.id,
+        challenge_id=room.challenge_id,
+        is_forfeit=True,
+        accuracy=0
+    )
+    db.session.add(submission)
+    db.session.commit()
+
+    socketio.emit('player_forfeit', {'username': user.username}, room=str(room.id))
+
 
 @socketio.on('start_challenge')
 def on_start(data):
-    print(f"Ã°Å¸Å¡â‚¬ START_CHALLENGE called with data: {data}")
-    
-    if session.get('role') != 'admin':
-        print("Ã¢ÂÅ’ Not admin")
+    admin = socket_current_user()
+    if not admin or admin.role != 'admin':
         return
-    
-    room = db.session.get(Room, data['room_id'])
-    if not room:
-        print(f"Ã¢ÂÅ’ Room {data['room_id']} not found")
+
+    try:
+        room_id = int((data or {}).get('room_id'))
+    except (TypeError, ValueError):
         return
-    
-    if room.status not in ['waiting', 'paused']:
-        print(f"Ã¢ÂÅ’ Room status is {room.status}")
+    room = db.session.get(Room, room_id)
+    if not room or room.status not in ['waiting', 'paused']:
         return
-    
+
     challenge = room.challenge
     room.status = 'running'
-    room.started_by = session['user_id']
+    room.started_by = admin.id
     db.session.commit()
-    
+
     if room.id not in room_timers or room_timers.get(room.id, 0) <= 0:
         room_timers[room.id] = challenge.time_limit
-    
+
     socketio.emit('challenge_started', {
         'time_limit': challenge.time_limit,
         'challenge_title': challenge.title,
         'room_id': room.id
     }, room=str(room.id))
-    
+
     thread = threading.Thread(target=run_room_timer, args=(room.id,))
     thread.daemon = True
     thread.start()
-    
-    print(f"Ã¢Å“â€¦ Challenge started for room {room.id}")
 
 @socketio.on('pause_challenge')
 def on_pause(data):
-    if session.get('role') != 'admin':
+    admin = socket_current_user()
+    if not admin or admin.role != 'admin':
         return
-    room = db.session.get(Room, data['room_id'])
+    try:
+        room_id = int((data or {}).get('room_id'))
+    except (TypeError, ValueError):
+        return
+    room = db.session.get(Room, room_id)
     if room and room.status == 'running':
         room.status = 'paused'
         db.session.commit()
@@ -3115,9 +4181,14 @@ def on_pause(data):
 
 @socketio.on('resume_challenge')
 def on_resume(data):
-    if session.get('role') != 'admin':
+    admin = socket_current_user()
+    if not admin or admin.role != 'admin':
         return
-    room = db.session.get(Room, data['room_id'])
+    try:
+        room_id = int((data or {}).get('room_id'))
+    except (TypeError, ValueError):
+        return
+    room = db.session.get(Room, room_id)
     if room and room.status == 'paused':
         room.status = 'running'
         db.session.commit()
@@ -3125,17 +4196,26 @@ def on_resume(data):
 
 @socketio.on('add_time')
 def on_add_time(data):
-    if session.get('role') != 'admin':
+    admin = socket_current_user()
+    if not admin or admin.role != 'admin':
         return
-    rid = data['room_id']
-    room_timers[rid] = room_timers.get(rid, 0) + int(data.get('seconds', 30))
+    try:
+        rid = int((data or {}).get('room_id'))
+        seconds = max(1, min(600, int((data or {}).get('seconds', 30))))
+    except (TypeError, ValueError):
+        return
+    room_timers[rid] = room_timers.get(rid, 0) + seconds
     socketio.emit('timer_tick', {'remaining': room_timers[rid]}, room=str(rid))
 
 @socketio.on('end_challenge')
 def on_end(data):
-    if session.get('role') != 'admin':
+    admin = socket_current_user()
+    if not admin or admin.role != 'admin':
         return
-    rid = data['room_id']
+    try:
+        rid = int((data or {}).get('room_id'))
+    except (TypeError, ValueError):
+        return
     room_timers[rid] = 0
     room = db.session.get(Room, rid)
     if room:
@@ -3147,10 +4227,13 @@ def on_end(data):
 
 @socketio.on('broadcast_message')
 def on_broadcast(data):
-    if session.get('role') != 'admin':
+    admin = socket_current_user()
+    if not admin or admin.role != 'admin':
         return
-    message = data.get('message')
-    room_id = data.get('room_id')
+    message = str((data or {}).get('message') or '').strip()[:500]
+    if not message:
+        return
+    room_id = (data or {}).get('room_id')
     if room_id:
         socketio.emit('system_announcement', {'message': message}, room=str(room_id))
     else:
@@ -3159,25 +4242,25 @@ def on_broadcast(data):
 
 @socketio.on('kick_player')
 def on_kick(data):
-    if session.get('role') != 'admin':
+    admin = socket_current_user()
+    if not admin or admin.role != 'admin':
         return
-    target = data.get('username')
-    socketio.emit('kicked', {'message': 'You were removed by the admin.'}, room=f"user_{target}")
-
-
+    target = str((data or {}).get('username') or '').strip()[:80]
+    if target:
+        socketio.emit('kicked', {'message': 'You were removed by the admin.'}, room=f"user_{target}")
 
 @socketio.on('check_challenge_status')
 def handle_check_status(data):
-    print(f"Ã°Å¸â€œÂ¡ Status check request from {request.sid}")
-    room = db.session.get(Room, data['room_id'])
-    if room and room.status == 'running':
+    user, room, _role = socket_room_context(data)
+    if not user or not room:
+        return
+    if room.status == 'running':
         challenge = room.challenge
         emit('challenge_started', {
             'time_limit': challenge.time_limit,
             'challenge_title': challenge.title,
             'room_id': room.id
         })
-        print(f"Ã°Å¸â€œÂ¡ Sent challenge_started to {request.sid}")
 
 
 # ========== DEBUG ROUTES ==========
@@ -3218,22 +4301,29 @@ def initialize_runtime_database(create_dev_admin=False):
         ensure_schema_upgrades()
 
         admin = User.query.filter_by(role='admin').first()
+        admin_email = configured_admin_email()
         admin_password = os.environ.get('ADMIN_PASSWORD')
-        if not admin and (admin_password or create_dev_admin):
-            admin = User(username='admin', role='admin')
-            admin.set_password(admin_password or 'admin123')
+
+        if admin and admin_email and admin.email != admin_email:
+            admin.email = admin_email
+            db.session.commit()
+            print(f"Admin email set to {admin_email}")
+
+        if not admin and admin_email and admin_password:
+            admin = User(username='admin', email=admin_email, role='admin')
+            admin.set_password(admin_password)
             db.session.add(admin)
             db.session.commit()
             print("=" * 50)
             print("Admin created successfully!")
-            print("Username: admin")
-            if create_dev_admin and not admin_password:
-                print("Password: admin123")
-            else:
-                print("Password: from ADMIN_PASSWORD")
+            print(f"Email: {admin_email}")
+            print("Password: from ADMIN_PASSWORD")
             print("=" * 50)
         elif create_dev_admin:
-            print("Admin user already exists")
+            if admin:
+                print(f"Admin user already exists. Login email: {admin.email or 'not set'}")
+            else:
+                print("No admin user exists. Set ADMIN_EMAIL and ADMIN_PASSWORD before starting the app to create one.")
 
 initialize_runtime_database(create_dev_admin=False)
 

@@ -33,18 +33,24 @@
             <div class="form-tabs">
                 <button class="form-tab active" data-form="login">LOGIN</button>
                 <button class="form-tab" data-form="register">REGISTER</button>
+                <button class="form-tab" data-form="reset">RESET</button>
             </div>
             
             <form id="login-form" class="auth-form active">
+                <div class="auth-help-panel">
+                    <strong>Certificate name reminder</strong>
+                    <span>Sign in with the account that uses your real name, because certificates use your player name.</span>
+                </div>
                 <div class="input-group">
                     <i class="fas fa-user"></i>
-                    <input type="text" id="login-username" placeholder="Username" required>
+                    <input type="text" id="login-username" placeholder="Username or email" required>
                 </div>
                 <div class="input-group">
                     <i class="fas fa-lock"></i>
                     <input type="password" id="login-password" placeholder="Password" required>
                 </div>
                 <button type="submit" class="btn-primary">ENTER THE ARENA <i class="fas fa-arrow-right"></i></button>
+                <button type="button" class="btn-secondary" id="forgot-password-btn">Forgot password?</button>
                 <div class="social-login-block">
                     <div class="auth-divider"><span>or</span></div>
                     {% if google_oauth_enabled %}
@@ -61,27 +67,97 @@
 
             <form id="two-factor-login-form" class="auth-form {% if pending_two_factor %}active{% endif %}">
                 <div class="auth-help-panel">
-                    <strong>Two-step verification</strong>
-                    <span>Open your authenticator and paste the current 6-digit code here. If your phone is unavailable, enter one saved recovery code.</span>
+                    <strong>Secure verification</strong>
+                    <span>Admins use an authenticator or recovery code. Email login codes are only used when SMTP is configured.</span>
                 </div>
                 <div class="input-group">
                     <i class="fas fa-shield-halved"></i>
-                    <input type="text" id="login-2fa-code" placeholder="Verification or recovery code" inputmode="text" maxlength="14" autocomplete="one-time-code" required>
+                    <input type="text" id="login-2fa-code" placeholder="Email, verification, or recovery code" inputmode="text" maxlength="14" autocomplete="one-time-code" required>
                 </div>
                 <button type="submit" class="btn-primary">VERIFY LOGIN <i class="fas fa-check"></i></button>
                 <button type="button" class="btn-secondary" id="back-to-login-btn">Back to login</button>
             </form>
+
+            <form id="admin-2fa-setup-form" class="auth-form">
+                <div class="auth-help-panel">
+                    <strong>Protect admin access</strong>
+                    <span>Scan this once with Google Authenticator, Microsoft Authenticator, Authy, or another TOTP app.</span>
+                </div>
+                <div class="two-factor-login-setup" id="admin-2fa-setup-panel">
+                    <div class="two-factor-login-qr" id="admin-2fa-qr-wrap" hidden>
+                        <img id="admin-2fa-qr" alt="Admin authenticator setup QR code">
+                    </div>
+                    <label class="setup-key-label">
+                        Setup key
+                        <input id="admin-2fa-secret" type="text" readonly>
+                    </label>
+                    <div class="two-factor-login-actions">
+                        <button class="btn-secondary" id="admin-2fa-copy-secret-btn" type="button">Copy setup key</button>
+                        <a class="btn-secondary" id="admin-2fa-open-app-link" href="#" hidden>Try app link</a>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-shield-halved"></i>
+                    <input type="text" id="admin-2fa-setup-code" placeholder="6-digit authenticator code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+                </div>
+                <div class="auth-help-panel" id="admin-2fa-recovery-panel" hidden>
+                    <strong>Save these recovery codes</strong>
+                    <span>Each code works once if your authenticator is unavailable.</span>
+                    <div class="login-recovery-grid" id="admin-2fa-recovery-grid"></div>
+                </div>
+                <button type="submit" class="btn-primary" id="admin-2fa-enable-btn">ENABLE AND ENTER <i class="fas fa-check"></i></button>
+                <button type="button" class="btn-primary" id="admin-2fa-continue-btn" hidden>CONTINUE TO ADMIN <i class="fas fa-arrow-right"></i></button>
+                <button type="button" class="btn-secondary" id="back-to-login-from-admin-2fa">Back to login</button>
+            </form>
             
             <form id="register-form" class="auth-form">
+                <div class="auth-help-panel">
+                    <strong>Use your real name</strong>
+                    <span>This name will appear on official tournament certificates. An admin can correct it later if needed.</span>
+                </div>
                 <div class="input-group">
                     <i class="fas fa-user"></i>
-                    <input type="text" id="reg-username" placeholder="Username" required>
+                    <input type="text" id="reg-username" placeholder="Real name for certificate" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" id="reg-email" placeholder="Email for verification and updates" required>
                 </div>
                 <div class="input-group">
                     <i class="fas fa-lock"></i>
-                    <input type="password" id="reg-password" placeholder="Password" required>
+                    <input type="password" id="reg-password" placeholder="Password" minlength="12" required>
                 </div>
                 <button type="submit" class="btn-primary">CREATE ACCOUNT <i class="fas fa-user-plus"></i></button>
+            </form>
+
+            <form id="reset-form" class="auth-form">
+                <div class="auth-help-panel">
+                    <strong>Secure password reset</strong>
+                    <span>Request an email code if SMTP is configured, or use one saved two-step recovery code.</span>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="reset-identifier" placeholder="Username or recovery email" required>
+                </div>
+                <button type="button" class="btn-secondary" id="send-reset-code-btn">Send email reset code</button>
+                <div class="input-group">
+                    <i class="fas fa-envelope"></i>
+                    <input type="text" id="reset-code" placeholder="Email reset code" inputmode="numeric" maxlength="6">
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-shield-halved"></i>
+                    <input type="text" id="reset-recovery-code" placeholder="Or saved 2FA recovery code" maxlength="14">
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-key"></i>
+                    <input type="password" id="reset-new-password" placeholder="New strong password" minlength="12" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-key"></i>
+                    <input type="password" id="reset-confirm-password" placeholder="Confirm new password" minlength="12" required>
+                </div>
+                <button type="submit" class="btn-primary">RESET PASSWORD <i class="fas fa-check"></i></button>
+                <button type="button" class="btn-secondary" id="back-to-login-from-reset">Back to login</button>
             </form>
         </div>
     </div>
@@ -119,8 +195,30 @@ function showAuthForm(formId) {
     document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
     document.getElementById(formId)?.classList.add('active');
     document.querySelectorAll('.form-tab').forEach(t => t.classList.remove('active'));
-    const tabName = formId === 'register-form' ? 'register' : 'login';
+    const tabName = formId === 'register-form' ? 'register' : formId === 'reset-form' ? 'reset' : 'login';
     document.querySelector(`[data-form="${tabName}"]`)?.classList.add('active');
+}
+
+function showAdmin2faSetup(data) {
+    showAuthForm('admin-2fa-setup-form');
+    document.getElementById('admin-2fa-secret').value = data.secret || '';
+    const qr = document.getElementById('admin-2fa-qr');
+    const qrWrap = document.getElementById('admin-2fa-qr-wrap');
+    if (qr && qrWrap && data.qr_data_uri) {
+        qr.src = data.qr_data_uri;
+        qrWrap.hidden = false;
+    } else if (qrWrap) {
+        qrWrap.hidden = true;
+    }
+    const openLink = document.getElementById('admin-2fa-open-app-link');
+    if (openLink && data.otpauth_uri) {
+        openLink.href = data.otpauth_uri;
+        openLink.hidden = false;
+    }
+    document.getElementById('admin-2fa-recovery-panel').hidden = true;
+    document.getElementById('admin-2fa-enable-btn').hidden = false;
+    document.getElementById('admin-2fa-continue-btn').hidden = true;
+    document.getElementById('admin-2fa-setup-code').focus();
 }
 
 {% if pending_two_factor %}
@@ -144,6 +242,9 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         showAuthForm('two-factor-login-form');
         document.getElementById('login-2fa-code').focus();
         showToast(data.message || 'Enter your verification code', 'info');
+    } else if (data.requires_2fa_setup) {
+        showAdmin2faSetup(data);
+        showToast(data.message || 'Set up admin authenticator security', 'info');
     } else {
         showToast(data.error || 'Invalid credentials', 'error');
     }
@@ -168,6 +269,100 @@ document.getElementById('back-to-login-btn').addEventListener('click', () => {
     showAuthForm('login-form');
 });
 
+document.getElementById('admin-2fa-copy-secret-btn').addEventListener('click', async () => {
+    const input = document.getElementById('admin-2fa-secret');
+    const secret = input?.value || '';
+    if (!secret) return;
+    try {
+        await navigator.clipboard.writeText(secret);
+        showToast('Setup key copied. Paste it into your authenticator app.', 'success');
+    } catch (error) {
+        input.select();
+        showToast('Select and copy the setup key, then add it manually in your authenticator app.', 'info');
+    }
+});
+
+document.getElementById('admin-2fa-open-app-link').addEventListener('click', () => {
+    showToast('If no app opens, scan the QR code or use Copy setup key. Desktop browsers often block authenticator app links.', 'info');
+});
+
+document.getElementById('admin-2fa-setup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const response = await fetch('/auth/admin/2fa/enable-login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({code: document.getElementById('admin-2fa-setup-code').value})
+    });
+    const data = await response.json();
+    if (data.success) {
+        const codes = Array.isArray(data.recovery_codes) ? data.recovery_codes : [];
+        document.getElementById('admin-2fa-recovery-grid').innerHTML = codes.map(code => `<code>${code}</code>`).join('');
+        document.getElementById('admin-2fa-recovery-panel').hidden = codes.length === 0;
+        document.getElementById('admin-2fa-enable-btn').hidden = true;
+        document.getElementById('admin-2fa-continue-btn').hidden = false;
+        showToast(data.message || 'Admin security enabled', 'success');
+    } else {
+        showToast(data.error || 'Could not enable admin authenticator security', 'error');
+    }
+});
+
+document.getElementById('admin-2fa-continue-btn').addEventListener('click', () => {
+    window.location.href = '/admin';
+});
+
+document.getElementById('back-to-login-from-admin-2fa').addEventListener('click', () => {
+    showAuthForm('login-form');
+});
+
+document.getElementById('forgot-password-btn').addEventListener('click', () => {
+    document.getElementById('reset-identifier').value = document.getElementById('login-username').value;
+    showAuthForm('reset-form');
+});
+
+document.getElementById('back-to-login-from-reset').addEventListener('click', () => {
+    showAuthForm('login-form');
+});
+
+document.getElementById('send-reset-code-btn').addEventListener('click', async () => {
+    const identifier = document.getElementById('reset-identifier').value.trim();
+    if (!identifier) {
+        showToast('Enter your username or recovery email first', 'warning');
+        document.getElementById('reset-identifier').focus();
+        return;
+    }
+    const response = await fetch('/auth/password-reset/request', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({identifier})
+    });
+    const data = await response.json();
+    showToast(data.message || data.error || 'If possible, a reset code was sent', response.ok ? 'info' : 'error');
+});
+
+document.getElementById('reset-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const response = await fetch('/auth/password-reset/complete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            identifier: document.getElementById('reset-identifier').value,
+            reset_code: document.getElementById('reset-code').value,
+            recovery_code: document.getElementById('reset-recovery-code').value,
+            new_password: document.getElementById('reset-new-password').value,
+            confirm_password: document.getElementById('reset-confirm-password').value
+        })
+    });
+    const data = await response.json();
+    if (response.ok && data.success) {
+        showToast(data.message || 'Password reset', 'success');
+        showAuthForm('login-form');
+        document.getElementById('login-username').value = document.getElementById('reset-identifier').value;
+        document.getElementById('reset-form').reset();
+    } else {
+        showToast(data.error || 'Could not reset password', 'error');
+    }
+});
+
 document.getElementById('register-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const response = await fetch('/auth/register', {
@@ -175,12 +370,20 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             username: document.getElementById('reg-username').value,
+            email: document.getElementById('reg-email').value,
             password: document.getElementById('reg-password').value
         })
     });
     const data = await response.json();
     if (data.success) {
-        window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
+        if (data.email_verification_sent) {
+            showToast('Verification code sent to your email', 'success');
+        } else if (data.email_verification_error) {
+            showToast(data.email_verification_error, 'warning');
+        }
+        setTimeout(() => {
+            window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
+        }, data.email_verification_sent || data.email_verification_error ? 900 : 0);
     } else {
         showToast(data.error || 'Registration failed', 'error');
     }

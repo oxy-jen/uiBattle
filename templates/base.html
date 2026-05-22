@@ -4,6 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>UI BATTLE ARENA</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <script>
+        window.UIBA_CSRF_TOKEN = "{{ csrf_token }}";
+        (function () {
+            const nativeFetch = window.fetch;
+            if (!nativeFetch) return;
+            window.fetch = function (input, init) {
+                const options = init ? Object.assign({}, init) : {};
+                const method = (options.method || (input && input.method) || 'GET').toUpperCase();
+                const url = typeof input === 'string' ? input : (input && input.url) || '';
+                const sameOrigin = !/^https?:\/\//i.test(url) || url.startsWith(window.location.origin);
+                if (sameOrigin && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+                    const headers = new Headers(options.headers || (input && input.headers) || {});
+                    if (!headers.has('X-CSRFToken')) headers.set('X-CSRFToken', window.UIBA_CSRF_TOKEN || '');
+                    options.headers = headers;
+                }
+                return nativeFetch(input, options);
+            };
+        })();
+    </script>
     <script>
         (function () {
             try {
@@ -39,7 +59,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=arena17">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=arena18">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='site-icon.svg') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='site-icon.svg') }}">
     <meta name="theme-color" content="#0f172a">
@@ -94,6 +114,31 @@
                 <input id="profile-settings-username" name="username" maxlength="80" value="{{ user.username }}" required>
             </label>
             <label>
+                {% if user.role == 'admin' %}Admin login email{% else %}Recovery email{% endif %}
+                <input id="profile-settings-email" name="email" type="email" maxlength="255" value="{{ user.email or '' }}" placeholder="admin@example.com">
+            </label>
+            {% if user.role == 'admin' %}
+            <label>
+                Current password for admin email changes
+                <input id="profile-settings-current-password" name="current_password" type="password" autocomplete="current-password" placeholder="Required only when changing admin email">
+            </label>
+            {% endif %}
+            <div class="email-verification-box" id="email-verification-box" data-verified="{{ 'true' if current_profile is defined and current_profile.email_verified else 'false' }}">
+                <div>
+                    <strong>Email verification</strong>
+                    <span id="email-verification-status">{{ 'Verified' if current_profile is defined and current_profile.email_verified else 'Not verified' }}</span>
+                </div>
+                <p>Verified email lets you receive reset codes, admin messages, and automatic match updates.</p>
+                <label>
+                    Verification code
+                    <input id="email-verification-code" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code">
+                </label>
+                <div class="profile-menu-actions">
+                    <button class="profile-menu-link" id="email-verification-send-btn" type="button"><i class="fas fa-envelope"></i> Send code</button>
+                    <button class="profile-menu-save" id="email-verification-confirm-btn" type="button"><i class="fas fa-check"></i> Verify email</button>
+                </div>
+            </div>
+            <label>
                 Bio
                 <textarea id="profile-settings-bio" name="bio" maxlength="500" placeholder="Add a short bio for admins, players, and spectators.">{{ current_profile.bio if current_profile is defined else '' }}</textarea>
             </label>
@@ -120,11 +165,11 @@
                 </label>
                 <label>
                     New password
-                    <input id="new-password" type="password" autocomplete="new-password" minlength="8" required>
+                    <input id="new-password" type="password" autocomplete="new-password" minlength="12" required>
                 </label>
                 <label>
                     Confirm new password
-                    <input id="confirm-password" type="password" autocomplete="new-password" minlength="8" required>
+                    <input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required>
                 </label>
                 <button class="profile-menu-save" type="submit"><i class="fas fa-key"></i> Change password</button>
             </form>
@@ -134,24 +179,25 @@
                     <strong>Two-step verification</strong>
                     <span id="two-factor-status">{{ 'Enabled' if user.two_factor_enabled else 'Off' }}</span>
                 </div>
-                <p>Use any authenticator that creates 6-digit TOTP codes. On a computer, copy the setup key into a desktop password manager or authenticator, then paste the generated code below.</p>
+                <p>Use any authenticator that creates 6-digit TOTP codes. Scan the QR code with Google Authenticator, Microsoft Authenticator, Authy, or another authenticator app.</p>
                 <label>
                     Current password
                     <input id="two-factor-current-password" type="password" autocomplete="current-password">
                 </label>
                 <div class="two-factor-setup" id="two-factor-setup" hidden>
+                    <strong class="two-factor-setup-title"><i class="fas fa-qrcode"></i> Scan this QR code</strong>
                     <div class="two-factor-qr-wrap" id="two-factor-qr-wrap" hidden>
                         <img id="two-factor-qr" alt="Two-step setup QR code">
                     </div>
                     <label>
-                        Setup key
+                        Setup key fallback
                         <input id="two-factor-secret" type="text" readonly>
                     </label>
                     <div class="two-factor-inline-actions">
                         <button class="profile-menu-link" id="two-factor-copy-secret-btn" type="button"><i class="fas fa-copy"></i> Copy setup key</button>
-                        <a class="profile-menu-link" id="two-factor-open-app-link" href="#" hidden><i class="fas fa-up-right-from-square"></i> Open authenticator</a>
+                        <a class="profile-menu-link" id="two-factor-open-app-link" href="#" hidden><i class="fas fa-up-right-from-square"></i> Try app link</a>
                     </div>
-                    <small>In your authenticator, choose add account, setup key/manual entry, paste this key, then enter the 6-digit code it generates.</small>
+                    <small>If you cannot scan the QR code, choose add account, setup key/manual entry, paste this key, then enter the 6-digit code it generates.</small>
                     <label>
                         Verification or recovery code
                         <input id="two-factor-code" type="text" inputmode="numeric" maxlength="14" autocomplete="one-time-code">

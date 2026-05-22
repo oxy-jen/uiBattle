@@ -8,9 +8,11 @@
             <a href="#" data-section="overview" class="active"><i class="fas fa-chart-line"></i> Overview</a>
             <a href="#" data-section="create"><i class="fas fa-plus-circle"></i> Create Challenge</a>
             <a href="#" data-section="rooms"><i class="fas fa-door-open"></i> Manage Rooms</a>
+            <a href="#" data-section="live-arena"><i class="fas fa-tv"></i> Live Arena</a>
             <a href="#" data-section="spectators"><i class="fas fa-eye"></i> Spectators</a>
             <a href="#" data-section="players"><i class="fas fa-users"></i> Manage Players</a>
             <a href="#" data-section="challenges"><i class="fas fa-code-branch"></i> Manage Challenges</a>
+            <a href="#" data-section="certificates"><i class="fas fa-certificate"></i> Certificates</a>
             <a href="#" data-section="competitions"><i class="fas fa-trophy"></i> Competitions</a>
             <a href="#" data-section="moderation"><i class="fas fa-comments"></i> Chat Moderation</a>
             <a href="#" data-section="broadcast"><i class="fas fa-broadcast-tower"></i> Broadcast</a>
@@ -65,6 +67,14 @@
                 </div>
             </div>
             
+            <div class="recent-activity admin-certificate-shortcut">
+                <h3><i class="fas fa-certificate"></i> Certificate Editor</h3>
+                <p class="section-subtitle">Modify certificate player names, officials, sponsors, logos, regards, competition name, and online signatures.</p>
+                <a href="{% if completed_tournaments|default([]) %}{{ url_for('tournament_detail', tournament_id=(completed_tournaments|first).id) }}#certificate-studio{% else %}/tournament{% endif %}" class="btn-primary">
+                    <i class="fas fa-pen-nib"></i> Edit Certificates
+                </a>
+            </div>
+
             <!-- Recent Activity -->
             <div class="recent-activity">
                 <h3><i class="fas fa-clock"></i> Recent Activity</h3>
@@ -79,8 +89,121 @@
                     {% endfor %}
                 </div>
             </div>
+
+            <div class="recent-activity admin-live-shortcut">
+                <h3><i class="fas fa-tv"></i> Live Arena Monitor</h3>
+                <p class="section-subtitle">Watch Player 1 and Player 2 screens, code, camera frames, progress, and room controls from this admin tab.</p>
+                <button class="btn-primary" type="button" onclick="showAdminSection('live-arena')"><i class="fas fa-eye"></i> Open Live Arena</button>
+            </div>
         </div>
         
+        <!-- Certificate Designer Section -->
+        <div id="section-certificates" class="admin-section">
+            <div class="section-header">
+                <div>
+                    <h3><i class="fas fa-certificate"></i> Certificate Designer</h3>
+                    <p class="section-subtitle">Edit every certificate text area, upload sponsor logos, add officials, and draw or upload signatures.</p>
+                </div>
+                <div class="section-actions">
+                    <button type="button" class="btn-secondary" onclick="window.print()"><i class="fas fa-print"></i> Print Preview</button>
+                    <button type="button" class="btn-primary" onclick="saveAdminCertificateTemplate()"><i class="fas fa-save"></i> Save Certificate Template</button>
+                </div>
+            </div>
+
+            <div class="certificate-designer-shell">
+                <form class="certificate-template-form" id="certificate-template-form">
+                    <label>Top Organization
+                        <input id="cert-template-organization" maxlength="160" value="{{ certificate_template.organization }}">
+                    </label>
+                    <label>Department
+                        <input id="cert-template-department" maxlength="160" value="{{ certificate_template.department }}">
+                    </label>
+                    <label>Association / School
+                        <input id="cert-template-association" maxlength="180" value="{{ certificate_template.association }}">
+                    </label>
+                    <label>Certificate Title
+                        <input id="cert-template-title" maxlength="140" value="{{ certificate_template.certificate_title }}">
+                    </label>
+                    <label>Award Line
+                        <input id="cert-template-award-line" maxlength="180" value="{{ certificate_template.award_line }}">
+                    </label>
+                    <label>Player / Recipient Name
+                        <input id="cert-template-recipient" maxlength="140" value="{{ certificate_template.recipient_name }}">
+                    </label>
+                    <label>Competition Name
+                        <input id="cert-template-competition" maxlength="180" value="{{ certificate_template.competition_name }}">
+                    </label>
+                    <label>Project Category
+                        <input id="cert-template-category" maxlength="160" value="{{ certificate_template.category }}">
+                    </label>
+                    <label>Held At / Venue
+                        <input id="cert-template-held-at" maxlength="160" value="{{ certificate_template.held_at }}">
+                    </label>
+                    <label>Award Date
+                        <input id="cert-template-date" maxlength="80" value="{{ certificate_template.award_date }}">
+                    </label>
+                    <label>Sponsor Name
+                        <input id="cert-template-sponsor" maxlength="160" value="{{ certificate_template.sponsor_name }}">
+                    </label>
+                    <label>Seal Text
+                        <input id="cert-template-seal" maxlength="40" value="{{ certificate_template.seal_text }}">
+                    </label>
+                    <label class="wide-field">Regards / Recognition Text
+                        <textarea id="cert-template-regards" maxlength="320">{{ certificate_template.regards_text }}</textarea>
+                    </label>
+                    <label>Certificate Accent Color
+                        <input id="cert-template-color" type="color" value="{{ certificate_template.accent_color }}">
+                    </label>
+                    <label>Sponsor Logos (PNG, JPG, JPEG, SVG, GIF)
+                        <input id="cert-template-logos" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/gif,.svg" multiple>
+                    </label>
+                </form>
+
+                <div class="certificate-official-editor">
+                    <div class="certificate-official-editor-head">
+                        <strong>Officials and Signatures</strong>
+                        <button type="button" class="btn-secondary" id="certificate-template-add-official"><i class="fas fa-user-plus"></i> Add Official</button>
+                    </div>
+                    <div id="certificate-template-officials"></div>
+                </div>
+
+                <div class="admin-certificate-preview-wrap">
+                    <article class="admin-certificate-preview" id="admin-certificate-preview">
+                        <div class="real-certificate-border">
+                            <div class="real-certificate-top">
+                                <div class="real-logo-slot" data-logo-slot="left"></div>
+                                <div class="real-certificate-heading">
+                                    <strong data-cert-preview="organization">{{ certificate_template.organization }}</strong>
+                                    <span data-cert-preview="department">{{ certificate_template.department }}</span>
+                                    <span data-cert-preview="association">{{ certificate_template.association }}</span>
+                                </div>
+                                <div class="real-logo-slot" data-logo-slot="right"></div>
+                            </div>
+                            <p class="real-cert-small">In recognition of official competition performance</p>
+                            <h2 data-cert-preview="certificate_title">{{ certificate_template.certificate_title }}</h2>
+                            <p class="real-cert-award-line" data-cert-preview="award_line">{{ certificate_template.award_line }}</p>
+                            <h3 data-cert-preview="recipient_name">{{ certificate_template.recipient_name }}</h3>
+                            <dl class="real-certificate-details">
+                                <div><dt>Competition</dt><dd data-cert-preview="competition_name">{{ certificate_template.competition_name }}</dd></div>
+                                <div><dt>Project Category</dt><dd data-cert-preview="category">{{ certificate_template.category }}</dd></div>
+                                <div><dt>Held At</dt><dd data-cert-preview="held_at">{{ certificate_template.held_at }}</dd></div>
+                                <div><dt>Date</dt><dd data-cert-preview="award_date">{{ certificate_template.award_date }}</dd></div>
+                            </dl>
+                            <p class="real-certificate-regards" data-cert-preview="regards_text">{{ certificate_template.regards_text }}</p>
+                            <div class="real-sponsor-row">
+                                <span data-cert-preview="sponsor_name">{{ certificate_template.sponsor_name }}</span>
+                                <div class="real-sponsor-logos" id="certificate-preview-logos"></div>
+                            </div>
+                            <div class="real-certificate-bottom">
+                                <div class="real-signatures" id="certificate-preview-signatures"></div>
+                                <div class="real-certificate-seal" data-cert-preview="seal_text">{{ certificate_template.seal_text }}</div>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </div>
+
         <!-- Create Challenge Section -->
         <div id="section-create" class="admin-section">
             <div class="form-card">
@@ -124,6 +247,18 @@
                             <option value="public">Public - show the ID on player screens</option>
                         </select>
                         <small class="help-text">Private keeps the join ID hidden until you make the room public.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="share-with-email" name="share_with_email">
+                            Share invite by email after creating room
+                        </label>
+                        <small class="help-text">Players receive a join link. First two join as players; later users open as spectators.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Invite Message</label>
+                        <textarea id="invite-message" name="invite_message" rows="2" placeholder="Optional short note for the email invite"></textarea>
                     </div>
                     
                     <div id="image-fields" class="type-fields">
@@ -223,6 +358,9 @@
                                 <button onclick="roomAction(this, {{ room.id }}, 'resume')" class="action-btn resume" title="Resume"><i class="fas fa-play"></i></button>
                                 <button onclick="roomAction(this, {{ room.id }}, 'end')" class="action-btn end" title="End"><i class="fas fa-stop"></i></button>
                                 <button onclick="roomAction(this, {{ room.id }}, 'add_time')" class="action-btn time" title="+30s"><i class="fas fa-clock"></i> 30s</button>
+                                <button onclick="shareRoomByEmail(this, {{ room.id }})" class="action-btn email-user" title="Share Invite by Email"><i class="fas fa-envelope-open-text"></i></button>
+                                <button onclick="openAdminLiveRoom({{ room.id }})" class="action-btn view" title="Watch Players"><i class="fas fa-tv"></i></button>
+                                <a href="/arena/{{ room.id }}" class="action-btn view" title="Open Full Monitor"><i class="fas fa-up-right-from-square"></i></a>
                                 <button onclick="kickPlayer(this, {{ room.id }}, '{{ room.player1.username if room.player1 else '' }}')" class="action-btn kick" title="Kick P1"><i class="fas fa-user-slash"></i></button>
                                 <button onclick="kickPlayer(this, {{ room.id }}, '{{ room.player2.username if room.player2 else '' }}')" class="action-btn kick" title="Kick P2"><i class="fas fa-user-slash"></i></button>
                                 <button onclick="deleteRoom(this, {{ room.id }})" class="action-btn delete" title="Delete Room"><i class="fas fa-trash-alt"></i></button>
@@ -231,6 +369,67 @@
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Live Arena Section -->
+        <div id="section-live-arena" class="admin-section">
+            <div class="section-header">
+                <div>
+                    <h3><i class="fas fa-tv"></i> Live Arena Monitor</h3>
+                    <p class="section-subtitle">Admin sees both player interfaces and live edits without joining the result count or editing player work.</p>
+                </div>
+                <div class="section-actions">
+                    <button type="button" class="btn-secondary" onclick="joinAllAdminLiveRooms()"><i class="fas fa-satellite-dish"></i> Connect Live Feeds</button>
+                    <button type="button" class="btn-secondary" onclick="location.reload()"><i class="fas fa-sync-alt"></i> Refresh</button>
+                </div>
+            </div>
+
+            <div class="admin-live-grid">
+                {% for room in rooms %}
+                <article
+                    class="admin-live-room-card"
+                    id="admin-live-room-{{ room.id }}"
+                    data-room-id="{{ room.id }}"
+                    data-p1-name="{{ room.player1.username if room.player1 else '' }}"
+                    data-p2-name="{{ room.player2.username if room.player2 else '' }}"
+                >
+                    <header class="admin-live-room-head">
+                        <div>
+                            <strong>{{ room.room_code }}</strong>
+                            <span>{{ room.challenge.title if room.challenge else 'No challenge' }} · {{ room.status|upper }}</span>
+                        </div>
+                        <div class="admin-live-room-actions">
+                            <a href="/arena/{{ room.id }}" class="btn-secondary"><i class="fas fa-up-right-from-square"></i> Full Monitor</a>
+                            <button type="button" class="btn-secondary" onclick="watchAdminRoom({{ room.id }})"><i class="fas fa-plug"></i> Watch</button>
+                            <button type="button" class="btn-secondary" onclick="roomAction(this, {{ room.id }}, 'start')"><i class="fas fa-play"></i></button>
+                            <button type="button" class="btn-secondary" onclick="roomAction(this, {{ room.id }}, 'pause')"><i class="fas fa-pause"></i></button>
+                            <button type="button" class="btn-secondary" onclick="roomAction(this, {{ room.id }}, 'resume')"><i class="fas fa-forward"></i></button>
+                        </div>
+                    </header>
+                    <div class="admin-live-players">
+                        {% for slot, player in [('p1', room.player1), ('p2', room.player2)] %}
+                        <section class="admin-live-player" data-room-id="{{ room.id }}" data-slot="{{ slot }}" data-player-name="{{ player.username if player else '' }}">
+                            <div class="admin-live-player-head">
+                                <strong>{{ 'Player 1' if slot == 'p1' else 'Player 2' }}</strong>
+                                <span>{{ player.username if player else 'Waiting...' }}</span>
+                            </div>
+                            <div class="admin-live-output-wrap">
+                                <iframe id="admin-live-preview-{{ slot }}-{{ room.id }}" class="admin-live-preview" sandbox="allow-scripts allow-same-origin" srcdoc="<html><body style='font-family:sans-serif;display:grid;place-items:center;height:100vh;margin:0;color:#64748b;'>Waiting for player output...</body></html>"></iframe>
+                                <img id="admin-live-cam-{{ slot }}-{{ room.id }}" class="admin-live-cam" alt="{{ player.username if player else 'Player' }} camera" hidden>
+                            </div>
+                            <div class="admin-live-code-tabs">
+                                <pre><b>HTML</b><code data-code-kind="html"></code></pre>
+                                <pre><b>CSS</b><code data-code-kind="css"></code></pre>
+                                <pre><b>JS</b><code data-code-kind="js"></code></pre>
+                            </div>
+                        </section>
+                        {% endfor %}
+                    </div>
+                </article>
+                {% else %}
+                <div class="empty-state">No rooms yet. Create a challenge to launch a room.</div>
+                {% endfor %}
             </div>
         </div>
         
@@ -333,6 +532,8 @@
                             <td>{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '—' }}</td>
                             <td class="player-actions">
                                 <button onclick="viewPlayerProfile({{ p.id }})" class="action-btn view" title="View Profile"><i class="fas fa-user"></i></button>
+                                <button onclick='renamePlayer({{ p.id }}, {{ p.username|tojson }})' class="action-btn edit" title="Edit Real Name"><i class="fas fa-pen"></i></button>
+                                <button onclick='emailPlayer({{ p.id }}, {{ p.username|tojson }})' class="action-btn email-user" title="Email Player"><i class="fas fa-envelope"></i></button>
                                 <button onclick='viewPlayerMatches({{ p.id }}, {{ p.username|tojson }})' class="action-btn matches" title="View Matches"><i class="fas fa-chart-bar"></i></button>
                                 {% if p.role != 'admin' or p.id != user.id %}
                                 <button onclick='deleteUser({{ p.id }}, {{ p.username|tojson }})' class="action-btn delete-user" title="Delete User"><i class="fas fa-trash-alt"></i></button>
@@ -343,7 +544,7 @@
                                 <button onclick='toggleAdminRole({{ p.id }}, {{ p.username|tojson }})' class="action-btn demote" title="Remove Admin"><i class="fas fa-user-minus"></i></button>
                                 {% endif %}
                                 <button onclick='resetPlayerStats({{ p.id }}, {{ p.username|tojson }})' class="action-btn reset-stats" title="Reset Stats"><i class="fas fa-rotate-right"></i></button>
-                                <button onclick='openCertificateAwardModal({{ p.id }}, {{ p.username|tojson }}, {{ 'true' if p.leaderboard_awarded else 'false' }})' class="action-btn leaderboard-award" title="{% if p.leaderboard_awarded %}Update Certificate Award{% else %}Award Certificate{% endif %}">
+                                <button onclick='openCertificateAwardModal({{ p.id }}, {{ p.username|tojson }}, {{ 'true' if p.leaderboard_awarded else 'false' }})' class="action-btn leaderboard-award" title="Send Saved Certificate Design">
                                     <i class="fas fa-certificate"></i>
                                 </button>
                                 {% if p.role != 'admin' %}
@@ -407,22 +608,47 @@
                             <input id="certificate-award-color" type="color" value="#d97706">
                         </label>
                         <div class="certificate-award-preview" aria-label="Certificate preview">
+                            <div class="certificate-award-preview-head">
+                                <p class="certificate-award-source"><i class="fas fa-check-circle"></i> Saved Certificate Designer template</p>
+                                <button type="button" class="certificate-ratio-toggle" id="certificate-ratio-toggle">
+                                    <i class="fas fa-expand"></i> Fit view
+                                </button>
+                            </div>
                             <div class="certificate-preview-border">
                                 <div class="certificate-preview-top">
-                                    <span>UI Battle Arena</span>
-                                    <span>Official Admin Certificate</span>
+                                    <div class="certificate-preview-logo" data-award-logo-slot="left"></div>
+                                    <div>
+                                        <strong data-award-preview="organization">UI Battle Arena</strong>
+                                        <span data-award-preview="department">Official Admin Certificate</span>
+                                        <span data-award-preview="association"></span>
+                                    </div>
+                                    <div class="certificate-preview-logo" data-award-logo-slot="right"></div>
                                 </div>
                                 <div class="certificate-preview-seal"><i class="fas fa-certificate"></i></div>
-                                <p>Certificate of Achievement</p>
+                                <p data-award-preview="certificate_title">Certificate of Achievement</p>
+                                <small data-award-preview="award_line">This certificate is awarded to</small>
                                 <h4 id="certificate-preview-name">Player</h4>
+                                <dl class="certificate-preview-details">
+                                    <div><dt>Competition</dt><dd data-award-preview="competition_name"></dd></div>
+                                    <div><dt>Category</dt><dd data-award-preview="category"></dd></div>
+                                    <div><dt>Held At</dt><dd data-award-preview="held_at"></dd></div>
+                                    <div><dt>Date</dt><dd data-award-preview="award_date"></dd></div>
+                                </dl>
                                 <span id="certificate-preview-copy">Recognized by an administrator for official arena achievement.</span>
+                                <div class="certificate-preview-sponsors">
+                                    <span data-award-preview="sponsor_name"></span>
+                                    <div id="certificate-award-preview-logos"></div>
+                                </div>
                                 <div class="certificate-preview-signatures">
-                                    <div><b></b><small>Authorized Signature</small></div>
-                                    <div><b></b><small>Official Seal / Signature</small></div>
+                                    <div><b></b><strong>Official Name</strong><small>Authorized Signature</small></div>
+                                    <div><b></b><strong>Official Name</strong><small>Official Seal / Signature</small></div>
                                 </div>
                             </div>
                         </div>
                         <div class="modal-actions">
+                            <button type="button" class="btn-primary" onclick="closeCertificateAwardModal(); showAdminSection('certificates');">
+                                <i class="fas fa-pen-nib"></i> Open Full Certificate Designer
+                            </button>
                             <button type="button" class="btn-secondary" id="certificate-award-remove">Remove Award</button>
                             <button type="button" class="btn-secondary" onclick="closeCertificateAwardModal()">Cancel</button>
                             <button type="submit" class="btn-primary"><i class="fas fa-certificate"></i> Save Certificate</button>
@@ -512,6 +738,7 @@
                 <h3><i class="fas fa-trophy"></i> Competition Statistics</h3>
                 <div class="competition-actions">
                     <a href="/tournament" class="btn-secondary"><i class="fas fa-sitemap"></i> 32 Player Bracket</a>
+                    <a href="{% if completed_tournaments|default([]) %}{{ url_for('tournament_detail', tournament_id=(completed_tournaments|first).id) }}#certificate-studio{% else %}/tournament{% endif %}" class="btn-primary"><i class="fas fa-certificate"></i> Edit Certificates</a>
                     <button onclick="exportData()" class="btn-secondary"><i class="fas fa-download"></i> Export Data</button>
                 </div>
             </div>
@@ -595,10 +822,26 @@
                 </form>
                 <div class="tournament-list">
                     {% for t in tournaments|default([]) %}
-                    <a href="{{ url_for('tournament_detail', tournament_id=t.id) }}">
-                        <strong>{{ t.name }}</strong>
-                        <span>{{ t.size }} players · {{ t.status|upper }}</span>
-                    </a>
+                    <div class="tournament-list-row">
+                        <a href="{{ url_for('tournament_detail', tournament_id=t.id) }}">
+                            <strong>{{ t.name }}</strong>
+                            <span>{{ t.size }} players · {{ t.status|upper }}</span>
+                            {% if t.status == 'completed' %}
+                            <em><i class="fas fa-certificate"></i> Certificates ready</em>
+                            {% else %}
+                            <em><i class="fas fa-pen-nib"></i> Certificates unlock when completed</em>
+                            {% endif %}
+                        </a>
+                        {% if t.status == 'completed' %}
+                        <a href="{{ url_for('tournament_detail', tournament_id=t.id) }}#certificate-studio" class="btn-secondary certificate-edit-link">
+                            <i class="fas fa-pen-nib"></i> Edit Certificate
+                        </a>
+                        {% else %}
+                        <a href="{{ url_for('tournament_detail', tournament_id=t.id) }}" class="btn-secondary certificate-edit-link">
+                            <i class="fas fa-sitemap"></i> Open Tournament
+                        </a>
+                        {% endif %}
+                    </div>
                     {% else %}
                     <p class="section-subtitle">No tournaments created yet.</p>
                     {% endfor %}
@@ -724,9 +967,23 @@
                     <label>Announcement Message</label>
                     <textarea id="broadcast-message" placeholder="Enter your announcement here..." rows="4"></textarea>
                 </div>
+                <div class="form-group">
+                    <label>Email Subject</label>
+                    <input type="text" id="broadcast-email-subject" value="UI Battle Arena notification" maxlength="160">
+                    <small>Used only for email notification broadcasts</small>
+                </div>
+                <label class="check-row">
+                    <input type="checkbox" id="broadcast-email-players-only" checked>
+                    <span>Email players only</span>
+                </label>
+                <label class="check-row">
+                    <input type="checkbox" id="broadcast-email-verified-only">
+                    <span>Email verified addresses only</span>
+                </label>
                 <div class="broadcast-actions">
                     <button onclick="broadcastMessage()" class="btn-primary"><i class="fas fa-paper-plane"></i> Send Broadcast</button>
                     <button onclick="broadcastToAll()" class="btn-secondary"><i class="fas fa-globe"></i> Broadcast to All</button>
+                    <button onclick="emailBroadcastToAll()" class="btn-secondary"><i class="fas fa-envelope-open-text"></i> Email Everyone</button>
                 </div>
             </div>
         </div>
@@ -824,6 +1081,7 @@
 .action-btn.promote { background: var(--neon-gold); color: var(--bg-primary); }
 .action-btn.demote { background: var(--warning); color: var(--bg-primary); }
 .action-btn.reset-stats { background: var(--text-muted); color: white; }
+.action-btn.email-user { background: var(--neon-cyan); color: var(--bg-primary); }
 .action-btn.delete { background: var(--danger); color: white; }
 
 .maintenance-panel {
@@ -1166,12 +1424,12 @@
 }
 
 .certificate-award-modal {
-    max-width: 900px;
+    max-width: min(1180px, 96vw);
 }
 
 .certificate-award-form {
     display: grid;
-    grid-template-columns: minmax(260px, 1fr) minmax(340px, 1.1fr);
+    grid-template-columns: minmax(260px, 0.8fr) minmax(620px, 1.2fr);
     gap: 16px;
 }
 
@@ -1203,10 +1461,46 @@
     border-radius: 8px;
     padding: 12px;
     color: #111827;
+    overflow-x: auto;
+}
+
+.certificate-award-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.certificate-award-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    color: #166534;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.certificate-ratio-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #0f172a;
+    padding: 7px 9px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
 }
 
 .certificate-preview-border {
-    min-height: 330px;
+    width: min(100%, 760px);
+    min-width: 620px;
+    aspect-ratio: 1.55 / 1;
     border: 2px solid #d97706;
     border-radius: 6px;
     padding: 18px;
@@ -1217,15 +1511,39 @@
     background: linear-gradient(180deg, #ffffff, #f1f5f9);
 }
 
+.certificate-award-preview.is-fit .certificate-preview-border {
+    min-width: 0;
+    width: 100%;
+}
+
 .certificate-preview-top {
     width: 100%;
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 72px 1fr 72px;
+    align-items: center;
     gap: 10px;
     color: #475569;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
+}
+
+.certificate-preview-top strong,
+.certificate-preview-top span {
+    display: block;
+}
+
+.certificate-preview-logo {
+    min-height: 38px;
+    display: grid;
+    place-items: center;
+}
+
+.certificate-preview-logo img,
+#certificate-award-preview-logos img {
+    max-width: 68px;
+    max-height: 38px;
+    object-fit: contain;
 }
 
 .certificate-preview-seal {
@@ -1247,6 +1565,11 @@
     text-transform: uppercase;
 }
 
+.certificate-preview-border small {
+    color: #64748b;
+    font-weight: 700;
+}
+
 .certificate-preview-border h4 {
     margin: 4px 0;
     font-family: 'Rajdhani', sans-serif;
@@ -1260,6 +1583,54 @@
     color: #334155;
     font-size: 13px;
     line-height: 1.35;
+}
+
+.certificate-preview-details {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin: 8px 0;
+}
+
+.certificate-preview-details div {
+    min-width: 0;
+    padding: 6px 5px;
+    border: 1px solid rgba(15,23,42,0.08);
+    border-radius: 6px;
+    background: rgba(15,23,42,0.04);
+}
+
+.certificate-preview-details dt {
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.certificate-preview-details dd {
+    margin: 1px 0 0;
+    color: #0f172a;
+    font-size: 10px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.certificate-preview-sponsors {
+    display: grid;
+    gap: 5px;
+    margin-top: 8px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+#certificate-award-preview-logos {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .certificate-preview-signatures {
@@ -1280,6 +1651,13 @@
 .certificate-preview-signatures b {
     height: 28px;
     border-bottom: 1.5px solid #334155;
+    background: center / contain no-repeat;
+}
+
+.certificate-preview-signatures strong {
+    color: #0f172a;
+    font-size: 10px;
+    text-transform: uppercase;
 }
 
 .certificate-preview-signatures small {
@@ -1300,6 +1678,317 @@
 @media (max-width: 820px) {
     .certificate-award-form { grid-template-columns: 1fr; }
     .certificate-award-preview { grid-row: auto; }
+    .certificate-award-preview-head { align-items: flex-start; flex-direction: column; }
+}
+
+.certificate-designer-shell {
+    display: grid;
+    grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.certificate-template-form,
+.certificate-official-editor,
+.admin-certificate-preview-wrap {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.certificate-template-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.certificate-template-form label,
+.certificate-template-official-card label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.certificate-template-form input,
+.certificate-template-form textarea,
+.certificate-template-official-card input {
+    width: 100%;
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.certificate-template-form textarea {
+    min-height: 92px;
+    resize: vertical;
+}
+
+.certificate-template-form .wide-field {
+    grid-column: 1 / -1;
+}
+
+.certificate-official-editor {
+    grid-column: 1;
+}
+
+.certificate-official-editor-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.certificate-template-official-card {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: rgba(15,23,42,0.2);
+    margin-bottom: 10px;
+}
+
+.certificate-template-signature-pad {
+    width: 100%;
+    height: 86px;
+    border: 1px dashed var(--border-default);
+    border-radius: 6px;
+    background: #fff;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.certificate-template-official-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.admin-certificate-preview-wrap {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    overflow-x: auto;
+}
+
+.admin-certificate-preview {
+    width: min(100%, 900px);
+    min-width: 620px;
+    aspect-ratio: 1.55 / 1;
+    background: #fff;
+    color: #111827;
+    padding: 14px;
+    border-radius: 6px;
+    box-shadow: 0 18px 42px rgba(0,0,0,0.28);
+}
+
+.real-certificate-border {
+    height: 100%;
+    border: 3px double var(--cert-accent, #b91c1c);
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.real-certificate-top {
+    display: grid;
+    grid-template-columns: 82px 1fr 82px;
+    align-items: center;
+    gap: 10px;
+}
+
+.real-logo-slot,
+.real-sponsor-logos img {
+    display: grid;
+    place-items: center;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+}
+
+.real-logo-slot {
+    width: 74px;
+    height: 58px;
+}
+
+.real-logo-slot img {
+    max-width: 68px;
+    max-height: 52px;
+    object-fit: contain;
+}
+
+.real-certificate-heading {
+    display: grid;
+    gap: 2px;
+    text-transform: uppercase;
+}
+
+.real-certificate-heading strong {
+    font-size: 13px;
+    color: #111827;
+}
+
+.real-certificate-heading span {
+    font-size: 9px;
+    color: #475569;
+    font-weight: 700;
+}
+
+.real-cert-small {
+    margin: 8px 0 2px;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.real-certificate-border h2 {
+    margin: 0;
+    color: var(--cert-accent, #b91c1c);
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.real-cert-award-line {
+    margin: 8px 0 2px;
+    font-size: 12px;
+    color: #334155;
+}
+
+.real-certificate-border h3 {
+    margin: 0;
+    color: #1d4ed8;
+    font-size: 22px;
+    font-family: Georgia, 'Times New Roman', serif;
+}
+
+.real-certificate-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 16px;
+    margin: 10px auto 0;
+    max-width: 720px;
+    text-align: left;
+}
+
+.real-certificate-details div {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 8px;
+    border-bottom: 1px dotted #94a3b8;
+    padding-bottom: 3px;
+}
+
+.real-certificate-details dt {
+    color: #111827;
+    font-weight: 800;
+    font-size: 10px;
+}
+
+.real-certificate-details dd {
+    margin: 0;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.real-certificate-regards {
+    max-width: 720px;
+    margin: 9px auto 0;
+    color: #334155;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.real-sponsor-row {
+    margin-top: auto;
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    color: #475569;
+    font-weight: 800;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.real-sponsor-logos {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.real-sponsor-logos img {
+    width: 54px;
+    height: 38px;
+    object-fit: contain;
+}
+
+.real-certificate-bottom {
+    display: grid;
+    grid-template-columns: 1fr 70px;
+    gap: 12px;
+    align-items: end;
+    margin-top: 8px;
+}
+
+.real-signatures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.real-signature-block {
+    display: grid;
+    gap: 2px;
+    text-align: center;
+}
+
+.real-signature-art {
+    height: 24px;
+    border-bottom: 1px solid #334155;
+    background: center bottom / contain no-repeat;
+}
+
+.real-signature-block strong {
+    font-size: 9px;
+    color: #111827;
+}
+
+.real-signature-block small {
+    font-size: 8px;
+    color: #64748b;
+    font-weight: 700;
+}
+
+.real-certificate-seal {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    border: 3px double var(--cert-accent, #b91c1c);
+    display: grid;
+    place-items: center;
+    color: var(--cert-accent, #b91c1c);
+    font-weight: 900;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+@media (max-width: 1100px) {
+    .certificate-designer-shell {
+        grid-template-columns: 1fr;
+    }
+    .certificate-official-editor,
+    .admin-certificate-preview-wrap {
+        grid-column: 1;
+        grid-row: auto;
+    }
 }
 
 .competitions-header {
@@ -1350,7 +2039,14 @@
     margin-top: 16px;
 }
 
-.tournament-list a {
+.tournament-list-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: stretch;
+}
+
+.tournament-list-row > a:first-child {
     display: flex;
     justify-content: space-between;
     gap: 12px;
@@ -1361,8 +2057,20 @@
     text-decoration: none;
 }
 
+.certificate-edit-link {
+    align-self: stretch;
+    white-space: nowrap;
+}
+
 .tournament-list span {
     color: var(--text-secondary);
+}
+
+.tournament-list em {
+    color: var(--accent-primary);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
 }
 
 .stats-cards {
@@ -1413,6 +2121,22 @@
     display: flex;
     gap: 15px;
     margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.check-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0;
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+
+.check-row input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--neon-cyan);
 }
 
 .recent-activity {
@@ -1704,10 +2428,345 @@ textarea {
 .admin-container[data-admin-theme="light"] .data-table tr:hover td {
     background: #f8fafc;
 }
+
+.admin-live-shortcut,
+.admin-certificate-shortcut {
+    margin-top: 18px;
+}
+
+.admin-certificate-shortcut .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+}
+
+.admin-live-grid {
+    display: grid;
+    gap: 18px;
+}
+
+.admin-live-room-card {
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--panel-glass);
+    overflow: hidden;
+}
+
+.admin-live-room-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    border-bottom: 1px solid var(--border-default);
+}
+
+.admin-live-room-head strong {
+    display: block;
+    font-size: 18px;
+    color: var(--text-primary);
+}
+
+.admin-live-room-head span,
+.admin-live-player-head span {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.admin-live-room-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.admin-live-players {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding: 14px;
+}
+
+.admin-live-player {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.admin-live-player-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+}
+
+.admin-live-output-wrap {
+    position: relative;
+    min-height: 260px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.admin-live-preview {
+    width: 100%;
+    height: 300px;
+    border: 0;
+    display: block;
+    background: #ffffff;
+}
+
+.admin-live-cam {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    width: 128px;
+    height: 96px;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,0.8);
+    border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.35);
+    background: #050816;
+}
+
+.admin-live-code-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.admin-live-code-tabs pre {
+    margin: 0;
+    min-height: 120px;
+    max-height: 220px;
+    overflow: auto;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: #050816;
+    color: #e5e7eb;
+    font: 12px/1.45 'JetBrains Mono', monospace;
+    white-space: pre-wrap;
+}
+
+.admin-live-code-tabs b {
+    display: block;
+    position: sticky;
+    top: 0;
+    padding: 7px 8px;
+    background: rgba(15,23,42,0.96);
+    color: var(--accent-primary);
+}
+
+.admin-live-code-tabs code {
+    display: block;
+    padding: 8px;
+}
+
+@media (max-width: 1100px) {
+    .admin-live-players,
+    .admin-live-code-tabs {
+        grid-template-columns: 1fr;
+    }
+}
 </style>
 
 <script>
 let adminTargetHtmlEditor, adminTargetCssEditor, adminStarterHtmlEditor, adminStarterCssEditor;
+let certificateTemplateSettings = {{ certificate_template|tojson }};
+
+function certificateFileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        if (!file) {
+            resolve('');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function normalizedCertificateOfficials(settings = certificateTemplateSettings) {
+    const officials = Array.isArray(settings?.officials) && settings.officials.length
+        ? settings.officials
+        : [{name: 'Chairperson', title: 'Competition Chairperson', signature: ''}];
+    return officials.slice(0, 6).map(official => ({
+        name: official?.name || '',
+        title: official?.title || '',
+        signature: official?.signature || ''
+    }));
+}
+
+function setupCertificateTemplateSignaturePad(canvas) {
+    if (!canvas || canvas.dataset.padReady === 'true') return;
+    canvas.dataset.padReady = 'true';
+    const ctx = canvas.getContext('2d');
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#111827';
+    let drawing = false;
+    const point = (event) => {
+        const rect = canvas.getBoundingClientRect();
+        const source = event.touches?.[0] || event;
+        return {
+            x: (source.clientX - rect.left) * (canvas.width / rect.width),
+            y: (source.clientY - rect.top) * (canvas.height / rect.height)
+        };
+    };
+    const start = (event) => {
+        drawing = true;
+        canvas.dataset.hasInk = 'true';
+        const p = point(event);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        event.preventDefault();
+    };
+    const move = (event) => {
+        if (!drawing) return;
+        const p = point(event);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        event.preventDefault();
+    };
+    const end = () => { drawing = false; };
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    canvas.addEventListener('mouseup', end);
+    canvas.addEventListener('mouseleave', end);
+    canvas.addEventListener('touchstart', start, {passive: false});
+    canvas.addEventListener('touchmove', move, {passive: false});
+    canvas.addEventListener('touchend', end);
+}
+
+function renderCertificateTemplateOfficials() {
+    const list = document.getElementById('certificate-template-officials');
+    if (!list) return;
+    list.innerHTML = normalizedCertificateOfficials().map((official, index) => `
+        <div class="certificate-template-official-card" data-official-index="${index}" data-signature="${escapeHtml(official.signature || '')}">
+            <label>Official Name
+                <input class="certificate-template-official-name" value="${escapeHtml(official.name)}" maxlength="120" placeholder="Official full name">
+            </label>
+            <label>Official Title
+                <input class="certificate-template-official-title" value="${escapeHtml(official.title)}" maxlength="120" placeholder="Chairperson">
+            </label>
+            <label>Signature File (PNG, JPG, JPEG, SVG, GIF)
+                <input class="certificate-template-signature-file" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/gif,.svg">
+            </label>
+            <canvas class="certificate-template-signature-pad" width="420" height="110"></canvas>
+            <div class="certificate-template-official-actions">
+                <button type="button" class="btn-secondary" data-clear-template-signature="${index}"><i class="fas fa-eraser"></i> Clear Signature</button>
+                <button type="button" class="btn-danger" data-remove-template-official="${index}"><i class="fas fa-user-minus"></i> Remove</button>
+            </div>
+        </div>
+    `).join('');
+    list.querySelectorAll('.certificate-template-signature-pad').forEach(setupCertificateTemplateSignaturePad);
+    list.querySelectorAll('input').forEach(input => input.addEventListener('input', updateAdminCertificatePreview));
+    list.querySelectorAll('input[type="file"]').forEach(input => input.addEventListener('change', updateAdminCertificatePreview));
+}
+
+async function collectCertificateTemplateSettings() {
+    const previousOfficials = normalizedCertificateOfficials();
+    const officials = [];
+    const cards = Array.from(document.querySelectorAll('.certificate-template-official-card')).slice(0, 6);
+    for (const [index, card] of cards.entries()) {
+        const file = card.querySelector('.certificate-template-signature-file')?.files?.[0];
+        const pad = card.querySelector('.certificate-template-signature-pad');
+        let signature = card.dataset.signature || previousOfficials[index]?.signature || '';
+        if (file) signature = await certificateFileToDataUrl(file);
+        if (!file && pad?.dataset.hasInk === 'true') signature = pad.toDataURL('image/png');
+        card.dataset.signature = signature;
+        officials.push({
+            name: card.querySelector('.certificate-template-official-name')?.value.trim() || '',
+            title: card.querySelector('.certificate-template-official-title')?.value.trim() || '',
+            signature
+        });
+    }
+    const logoFiles = Array.from(document.getElementById('cert-template-logos')?.files || []).slice(0, 8);
+    const nextSettings = {
+        organization: document.getElementById('cert-template-organization')?.value.trim() || '',
+        department: document.getElementById('cert-template-department')?.value.trim() || '',
+        association: document.getElementById('cert-template-association')?.value.trim() || '',
+        certificate_title: document.getElementById('cert-template-title')?.value.trim() || 'Certificate of Merit',
+        award_line: document.getElementById('cert-template-award-line')?.value.trim() || 'This certificate is awarded to',
+        recipient_name: document.getElementById('cert-template-recipient')?.value.trim() || 'Outstanding Player',
+        competition_name: document.getElementById('cert-template-competition')?.value.trim() || '',
+        category: document.getElementById('cert-template-category')?.value.trim() || '',
+        held_at: document.getElementById('cert-template-held-at')?.value.trim() || '',
+        award_date: document.getElementById('cert-template-date')?.value.trim() || '',
+        sponsor_name: document.getElementById('cert-template-sponsor')?.value.trim() || '',
+        seal_text: document.getElementById('cert-template-seal')?.value.trim() || 'Award',
+        regards_text: document.getElementById('cert-template-regards')?.value.trim() || '',
+        accent_color: document.getElementById('cert-template-color')?.value || '#b91c1c',
+        sponsor_logos: certificateTemplateSettings.sponsor_logos || [],
+        officials
+    };
+    if (logoFiles.length) nextSettings.sponsor_logos = await Promise.all(logoFiles.map(certificateFileToDataUrl));
+    return nextSettings;
+}
+
+function applyAdminCertificatePreview(settings = certificateTemplateSettings) {
+    const preview = document.getElementById('admin-certificate-preview');
+    if (!preview) return;
+    preview.style.setProperty('--cert-accent', settings.accent_color || '#b91c1c');
+    Object.entries({
+        organization: settings.organization,
+        department: settings.department,
+        association: settings.association,
+        certificate_title: settings.certificate_title,
+        award_line: settings.award_line,
+        recipient_name: settings.recipient_name,
+        competition_name: settings.competition_name,
+        category: settings.category,
+        held_at: settings.held_at,
+        award_date: settings.award_date,
+        regards_text: settings.regards_text,
+        sponsor_name: settings.sponsor_name,
+        seal_text: settings.seal_text
+    }).forEach(([key, value]) => {
+        document.querySelectorAll(`[data-cert-preview="${key}"]`).forEach(el => { el.textContent = value || ''; });
+    });
+    const logos = settings.sponsor_logos || [];
+    document.querySelectorAll('[data-logo-slot]').forEach((slot, index) => {
+        slot.innerHTML = logos[index] ? `<img src="${logos[index]}" alt="">` : '';
+    });
+    const logoStrip = document.getElementById('certificate-preview-logos');
+    if (logoStrip) logoStrip.innerHTML = logos.slice(2).map(src => `<img src="${src}" alt="">`).join('');
+    const signatureWrap = document.getElementById('certificate-preview-signatures');
+    if (signatureWrap) {
+        signatureWrap.innerHTML = normalizedCertificateOfficials(settings).slice(0, 6).map(official => `
+            <div class="real-signature-block">
+                <span class="real-signature-art" style="${official.signature ? `background-image:url('${official.signature}')` : ''}"></span>
+                <strong>${escapeHtml(official.name || 'Official Name')}</strong>
+                <small>${escapeHtml(official.title || 'Official Title')}</small>
+            </div>
+        `).join('');
+    }
+}
+
+async function updateAdminCertificatePreview() {
+    certificateTemplateSettings = await collectCertificateTemplateSettings();
+    applyAdminCertificatePreview();
+}
+
+window.saveAdminCertificateTemplate = async () => {
+    certificateTemplateSettings = await collectCertificateTemplateSettings();
+    applyAdminCertificatePreview();
+    const res = await fetch('/admin/certificate-template', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        body: JSON.stringify(certificateTemplateSettings)
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+        certificateTemplateSettings = data.certificate_template || certificateTemplateSettings;
+        showToast('Certificate template saved', 'success');
+    } else {
+        showToast(data.error || 'Could not save certificate template', 'error');
+    }
+};
 
 function initAdminEditors() {
     const targetHtmlTextarea = document.getElementById('target-html');
@@ -1819,6 +2878,8 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
     formData.append('time_limit', document.getElementById('time-limit').value);
     formData.append('description', document.getElementById('description').value);
     formData.append('room_visibility', document.getElementById('room-visibility').value);
+    formData.append('share_with_email', document.getElementById('share-with-email').checked ? 'true' : 'false');
+    formData.append('invite_message', document.getElementById('invite-message').value);
     
     if (challengeType === 'image') {
         const file = document.getElementById('target-image').files[0];
@@ -1861,8 +2922,10 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
 
         if (res.ok && data.success) {
             const visibility = data.is_public ? 'public' : 'private';
-            showToast(`Room created as ${visibility}! Code: ${data.room_code}`, 'success');
-            setTimeout(() => location.reload(), 1500);
+            const inviteStats = data.invite_stats || {sent: 0, failed: 0};
+            const suffix = inviteStats.sent ? ` Invites emailed: ${inviteStats.sent}.` : '';
+            showToast(`Room created as ${visibility}! Code: ${data.room_code}.${suffix}`, 'success');
+            setTimeout(() => location.reload(), 1800);
         } else {
             showToast(data.error || 'Error creating challenge', 'error');
         }
@@ -2069,6 +3132,62 @@ window.deleteUser = async (userId, username) => {
     }
 };
 
+window.renamePlayer = async (userId, username) => {
+    const nextName = await showPrompt({
+        title: 'Edit real certificate name',
+        message: 'Use the player real name that should appear on official certificates.',
+        label: 'Real name',
+        value: username || '',
+        required: true,
+        confirmText: 'Save Name'
+    });
+    if (!nextName || nextName.trim() === username) return;
+
+    const res = await fetch(`/admin/user/${userId}/rename`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        body: JSON.stringify({ username: nextName.trim() })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+        showToast(`Name updated to ${data.username}`, 'success');
+        setTimeout(() => location.reload(), 700);
+    } else {
+        showToast(data.error || 'Failed to update name', 'error');
+    }
+};
+
+window.emailPlayer = async (userId, username) => {
+    const subject = await showPrompt({
+        title: `Email ${username}`,
+        label: 'Subject',
+        value: 'UI Battle Arena update',
+        required: true,
+        confirmText: 'Next'
+    });
+    if (!subject) return;
+    const message = await showPrompt({
+        title: `Email ${username}`,
+        label: 'Message',
+        multiline: true,
+        required: true,
+        confirmText: 'Send Email'
+    });
+    if (!message) return;
+    try {
+        const res = await fetch(`/admin/user/${userId}/email`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({subject, message})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not send email');
+        showToast(`Email sent to ${username}`, 'success');
+    } catch (err) {
+        showToast(err.message || 'Could not send email', 'error');
+    }
+};
+
 // Toggle admin role
 window.toggleAdminRole = async (userId, username) => {
     const row = document.querySelector(`tr[data-user-id='${userId}']`);
@@ -2117,26 +3236,72 @@ window.resetPlayerStats = async (userId, username) => {
 };
 
 function updateCertificateAwardPreview() {
+    const cert = certificateTemplateSettings || {};
     const name = document.getElementById('certificate-award-recipient')?.value || 'Player';
-    const reason = document.getElementById('certificate-award-reason')?.value || 'Certificate of Achievement';
-    const details = document.getElementById('certificate-award-details')?.value || 'Recognized by an administrator for official arena achievement.';
-    const color = document.getElementById('certificate-award-color')?.value || '#d97706';
+    const reason = document.getElementById('certificate-award-reason')?.value || cert.certificate_title || 'Certificate of Achievement';
+    const details = document.getElementById('certificate-award-details')?.value || cert.regards_text || 'Recognized by an administrator for official arena achievement.';
+    const color = document.getElementById('certificate-award-color')?.value || cert.accent_color || '#b91c1c';
+    Object.entries({
+        organization: cert.organization || 'UI Battle Arena',
+        department: cert.department || 'Official Admin Certificate',
+        association: cert.association || '',
+        certificate_title: reason,
+        award_line: cert.award_line || 'This certificate is awarded to',
+        competition_name: cert.competition_name || '',
+        category: cert.category || '',
+        held_at: cert.held_at || '',
+        award_date: cert.award_date || '',
+        sponsor_name: cert.sponsor_name || '',
+    }).forEach(([key, value]) => {
+        document.querySelectorAll(`[data-award-preview="${key}"]`).forEach(el => { el.textContent = value; });
+    });
     document.getElementById('certificate-preview-name').textContent = name;
-    document.querySelector('.certificate-preview-border p').textContent = reason;
     document.getElementById('certificate-preview-copy').textContent = details;
+    const logos = Array.isArray(cert.sponsor_logos) ? cert.sponsor_logos : [];
+    document.querySelectorAll('[data-award-logo-slot]').forEach((slot, index) => {
+        slot.innerHTML = logos[index] ? `<img src="${logos[index]}" alt="">` : '';
+    });
+    const extraLogos = document.getElementById('certificate-award-preview-logos');
+    if (extraLogos) extraLogos.innerHTML = logos.slice(2).map(src => `<img src="${src}" alt="">`).join('');
+    const signatureWrap = document.querySelector('.certificate-preview-signatures');
+    if (signatureWrap) {
+        const officials = normalizedCertificateOfficials(cert).slice(0, 2);
+        signatureWrap.innerHTML = officials.map(official => `
+            <div>
+                <b style="${official.signature ? `background-image:url('${official.signature}')` : ''}"></b>
+                <strong>${escapeHtml(official.name || 'Official Name')}</strong>
+                <small>${escapeHtml(official.title || cert.seal_text || 'Official Signature')}</small>
+            </div>
+        `).join('');
+    }
     const preview = document.querySelector('.certificate-preview-border');
     if (preview) preview.style.borderColor = color;
     document.querySelector('.certificate-preview-seal')?.style.setProperty('color', color);
 }
 
-window.openCertificateAwardModal = (userId, username, alreadyAwarded) => {
+async function refreshSavedCertificateTemplate() {
+    try {
+        const res = await fetch('/admin/certificate-template', {headers: {'Accept': 'application/json'}});
+        const data = await res.json();
+        if (res.ok && data.success && data.certificate_template) {
+            certificateTemplateSettings = data.certificate_template;
+            applyAdminCertificatePreview();
+        }
+    } catch (err) {
+        console.error('refreshSavedCertificateTemplate error:', err);
+    }
+}
+
+window.openCertificateAwardModal = async (userId, username, alreadyAwarded) => {
     const modal = document.getElementById('certificate-award-modal');
     document.getElementById('certificate-award-user-id').value = userId;
     document.getElementById('certificate-award-recipient').value = username;
-    document.getElementById('certificate-award-title').textContent = alreadyAwarded ? `Update ${username}'s Certificate` : `Award ${username}`;
-    document.getElementById('certificate-award-reason').value = 'Certificate of Achievement';
-    document.getElementById('certificate-award-details').value = `Recognized for excellent participation, strong performance, and official contribution to UI Battle Arena.`;
-    document.getElementById('certificate-award-color').value = '#d97706';
+    await refreshSavedCertificateTemplate();
+    const cert = certificateTemplateSettings || {};
+    document.getElementById('certificate-award-title').textContent = alreadyAwarded ? `Send updated certificate to ${username}` : `Send certificate to ${username}`;
+    document.getElementById('certificate-award-reason').value = cert.certificate_title || 'Certificate of Achievement';
+    document.getElementById('certificate-award-details').value = cert.regards_text || `Recognized for excellent participation, strong performance, and official contribution to UI Battle Arena.`;
+    document.getElementById('certificate-award-color').value = cert.accent_color || '#b91c1c';
     const removeButton = document.getElementById('certificate-award-remove');
     removeButton.hidden = !alreadyAwarded;
     removeButton.dataset.userId = userId;
@@ -2151,10 +3316,14 @@ window.closeCertificateAwardModal = () => {
 
 async function saveCertificateAward(userId, username, award, reason = '', details = '', color = '#d97706') {
     try {
-        const res = await fetch(`/admin/user/${userId}/leaderboard-award`, {
+        const endpoint = award ? `/admin/user/${userId}/certificate-card` : `/admin/user/${userId}/leaderboard-award`;
+        const body = award
+            ? {title: reason, reason: certificateTemplateSettings?.award_line || 'Official certificate recognition', message: details, color, certificate_template: certificateTemplateSettings}
+            : {award, reason, details, color};
+        const res = await fetch(endpoint, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({award, reason, details, color})
+            body: JSON.stringify(body)
         });
         const text = await res.text();
         let data = {};
@@ -2164,7 +3333,7 @@ async function saveCertificateAward(userId, username, award, reason = '', detail
             data = {success: false, error: text || `Server returned ${res.status}`};
         }
         if (res.ok && data.success) {
-            showToast(award ? `Certificate awarded to ${username}` : `Certificate removed from ${username}`, 'success');
+            showToast(award ? `Certificate sent to ${username}` : `Certificate removed from ${username}`, 'success');
             setTimeout(() => location.reload(), 900);
         } else {
             showToast(data.error || 'Failed to update certificate award', 'error');
@@ -2198,6 +3367,14 @@ document.getElementById('certificate-award-remove')?.addEventListener('click', a
 
 ['certificate-award-recipient', 'certificate-award-reason', 'certificate-award-details', 'certificate-award-color'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', updateCertificateAwardPreview);
+});
+
+document.getElementById('certificate-ratio-toggle')?.addEventListener('click', (event) => {
+    const preview = document.querySelector('.certificate-award-preview');
+    const isFit = preview?.classList.toggle('is-fit');
+    event.currentTarget.innerHTML = isFit
+        ? '<i class="fas fa-up-right-and-down-left-from-center"></i> Full ratio'
+        : '<i class="fas fa-expand"></i> Fit view';
 });
 
 // View player profile
@@ -2274,6 +3451,44 @@ window.viewPlayerMatches = async (userId, username) => {
 };
 
 // Broadcast
+
+window.shareRoomByEmail = async (button, roomId) => {
+    const message = typeof showPrompt === 'function'
+        ? await showPrompt({
+            title: 'Share room invite',
+            message: 'Players will receive a join link by email. First two join as players; everyone after that opens as spectator.',
+            label: 'Optional message',
+            placeholder: 'Join this match when ready',
+            multiline: true,
+            confirmText: 'Send Invites'
+        })
+        : '';
+    if (message === null) return;
+    const original = button?.innerHTML;
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+    try {
+        const res = await fetch(`/admin/room/${roomId}/share-email`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message: message || ''})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not send room invites');
+        const stats = data.invite_stats || {sent: 0, failed: 0};
+        showToast(`Invite sent to ${stats.sent} player(s). Failed: ${stats.failed}.`, 'success');
+    } catch (err) {
+        showToast(err.message || 'Could not send room invites', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = original;
+        }
+    }
+};
+
 window.broadcastMessage = async () => {
     const message = document.getElementById('broadcast-message').value;
     const roomId = document.getElementById('broadcast-room-id').value;
@@ -2293,6 +3508,39 @@ window.broadcastToAll = async () => {
     socket.emit('broadcast_message', {message: message, room_id: null});
     showToast('Broadcast sent to all rooms', 'success');
     document.getElementById('broadcast-message').value = '';
+};
+
+window.emailBroadcastToAll = async () => {
+    const message = document.getElementById('broadcast-message').value.trim();
+    const subject = document.getElementById('broadcast-email-subject').value.trim() || 'UI Battle Arena notification';
+    const onlyPlayers = document.getElementById('broadcast-email-players-only')?.checked !== false;
+    const onlyVerified = Boolean(document.getElementById('broadcast-email-verified-only')?.checked);
+    if (!message) { showToast('Enter a message', 'warning'); return; }
+
+    const ok = await showConfirm(
+        `Send this email notification to ${onlyPlayers ? 'all players with email addresses' : 'all users with email addresses'}?`,
+        'Email broadcast'
+    );
+    if (!ok) return;
+
+    try {
+        const res = await fetch('/admin/broadcast-email', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                subject,
+                message,
+                only_players: onlyPlayers,
+                only_verified: onlyVerified,
+                also_web: true
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not send email broadcast');
+        showToast(`Email sent to ${data.sent} user(s). Failed: ${data.failed}. Skipped: ${data.skipped}.`, 'success');
+    } catch (err) {
+        showToast(err.message || 'Could not send email broadcast', 'error');
+    }
 };
 
 // Export data
@@ -2647,6 +3895,106 @@ window.refreshPlayers = () => location.reload();
 window.closeModal = () => document.getElementById('player-stats-modal').style.display = 'none';
 window.closeChallengeModal = () => document.getElementById('challenge-details-modal').style.display = 'none';
 
+window.showAdminSection = (section) => {
+    document.querySelectorAll('.sidebar-nav a').forEach(link => {
+        link.classList.toggle('active', link.dataset.section === section);
+    });
+    document.querySelectorAll('.admin-section').forEach(panel => {
+        panel.classList.toggle('active', panel.id === `section-${section}`);
+    });
+    if (section === 'live-arena') joinAllAdminLiveRooms();
+    if (section === 'moderation') loadModerationMessages();
+};
+
+let adminLiveSocket = null;
+const adminWatchedRooms = new Set();
+
+function getAdminLiveSocket() {
+    if (adminLiveSocket || typeof io === 'undefined') return adminLiveSocket;
+    adminLiveSocket = io();
+    adminLiveSocket.on('connect', () => joinAllAdminLiveRooms());
+    adminLiveSocket.on('admin_watch_ready', (data) => {
+        (data?.previews || []).forEach(preview => {
+            renderAdminLivePreview({...preview, room_id: data.room_id});
+        });
+    });
+    adminLiveSocket.on('admin_preview', renderAdminLivePreview);
+    adminLiveSocket.on('cam_frame', renderAdminLiveCamera);
+    adminLiveSocket.on('progress_update', (data) => {
+        const card = data?.room_id
+            ? document.getElementById(`admin-live-room-${data.room_id}`)
+            : findAdminLiveCardForUsername(data?.username);
+        if (!card) return;
+        const slot = slotForAdminLiveUsername(card, data.username);
+        const head = slot ? card.querySelector(`[data-slot="${slot}"] .admin-live-player-head span`) : null;
+        if (head) head.textContent = `${data.username} · ${data.accuracy}%`;
+    });
+    return adminLiveSocket;
+}
+
+window.watchAdminRoom = (roomId) => {
+    const socket = getAdminLiveSocket();
+    if (!socket || !roomId) return;
+    adminWatchedRooms.add(Number(roomId));
+    socket.emit('admin_watch_room', {room_id: Number(roomId)});
+    document.getElementById(`admin-live-room-${roomId}`)?.classList.add('is-watching');
+};
+
+window.joinAllAdminLiveRooms = () => {
+    document.querySelectorAll('.admin-live-room-card[data-room-id]').forEach(card => {
+        watchAdminRoom(Number(card.dataset.roomId));
+    });
+};
+
+window.openAdminLiveRoom = (roomId) => {
+    showAdminSection('live-arena');
+    setTimeout(() => {
+        watchAdminRoom(roomId);
+        document.getElementById(`admin-live-room-${roomId}`)?.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }, 40);
+};
+
+function slotForAdminLiveUsername(card, username) {
+    if (!card || !username) return '';
+    if (username === card.dataset.p1Name) return 'p1';
+    if (username === card.dataset.p2Name) return 'p2';
+    const player = Array.from(card.querySelectorAll('.admin-live-player')).find(node => node.dataset.playerName === username);
+    return player?.dataset.slot || '';
+}
+
+function findAdminLiveCardForUsername(username) {
+    return Array.from(document.querySelectorAll('.admin-live-room-card')).find(card => slotForAdminLiveUsername(card, username));
+}
+
+function renderAdminLivePreview(data = {}) {
+    const roomId = Number(data.room_id || 0);
+    const cards = roomId
+        ? [document.getElementById(`admin-live-room-${roomId}`)].filter(Boolean)
+        : Array.from(document.querySelectorAll('.admin-live-room-card'));
+    cards.forEach(card => {
+        const slot = slotForAdminLiveUsername(card, data.username);
+        if (!slot) return;
+        const preview = document.getElementById(`admin-live-preview-${slot}-${card.dataset.roomId}`);
+        if (preview && data.compiled_html) preview.srcdoc = data.compiled_html;
+        ['html', 'css', 'js'].forEach(kind => {
+            const codeEl = card.querySelector(`[data-slot="${slot}"] [data-code-kind="${kind}"]`);
+            if (codeEl) codeEl.textContent = data[`${kind}_code`] || '';
+        });
+    });
+}
+
+function renderAdminLiveCamera(data = {}) {
+    const card = data.room_id
+        ? document.getElementById(`admin-live-room-${data.room_id}`)
+        : findAdminLiveCardForUsername(data.username);
+    const slot = slotForAdminLiveUsername(card, data.username);
+    if (!card || !slot || !data.frame_data) return;
+    const img = document.getElementById(`admin-live-cam-${slot}-${card.dataset.roomId}`);
+    if (!img) return;
+    img.src = data.frame_data;
+    img.hidden = false;
+}
+
 // Close modals on outside click
 document.getElementById('player-stats-modal')?.addEventListener('click', (e) => {
     if (e.target === document.getElementById('player-stats-modal')) closeModal();
@@ -2666,12 +4014,7 @@ document.querySelectorAll('.sidebar-nav a').forEach(link => {
         // If this is an in-page navigation (href="#" or has data-section), handle via JS
         if (href === '#' || section) {
             e.preventDefault();
-            document.querySelectorAll('.sidebar-nav a').forEach(l => l.classList.remove('active'));
-            link.classList.add('active');
-            document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
-            const target = document.getElementById(`section-${section}`);
-            if (target) target.classList.add('active');
-            if (section === 'moderation') loadModerationMessages();
+            showAdminSection(section);
         }
         // Otherwise allow the link to navigate normally (external/admin pages)
     });
@@ -2686,6 +4029,48 @@ document.getElementById('challenge-search')?.addEventListener('input', filterCha
 document.getElementById('challenge-filter')?.addEventListener('change', filterChallenges);
 document.getElementById('moderation-search')?.addEventListener('input', filterModerationMessages);
 document.getElementById('moderation-filter')?.addEventListener('change', filterModerationMessages);
+document.querySelectorAll('#certificate-template-form input, #certificate-template-form textarea').forEach(input => {
+    input.addEventListener('input', updateAdminCertificatePreview);
+    input.addEventListener('change', updateAdminCertificatePreview);
+});
+document.getElementById('certificate-template-add-official')?.addEventListener('click', async () => {
+    certificateTemplateSettings = await collectCertificateTemplateSettings();
+    if ((certificateTemplateSettings.officials || []).length >= 6) {
+        showToast('You can add up to 6 officials', 'warning');
+        return;
+    }
+    certificateTemplateSettings.officials.push({name: '', title: 'Competition Official', signature: ''});
+    renderCertificateTemplateOfficials();
+    applyAdminCertificatePreview();
+});
+document.getElementById('certificate-template-officials')?.addEventListener('click', async (event) => {
+    const clearButton = event.target.closest('[data-clear-template-signature]');
+    const removeButton = event.target.closest('[data-remove-template-official]');
+    if (clearButton) {
+        const card = clearButton.closest('.certificate-template-official-card');
+        const canvas = card?.querySelector('.certificate-template-signature-pad');
+        if (canvas) {
+            canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            canvas.dataset.hasInk = 'false';
+        }
+        if (card) card.dataset.signature = '';
+        certificateTemplateSettings = await collectCertificateTemplateSettings();
+        applyAdminCertificatePreview();
+    }
+    if (removeButton) {
+        certificateTemplateSettings = await collectCertificateTemplateSettings();
+        if ((certificateTemplateSettings.officials || []).length <= 1) {
+            showToast('At least one official is required', 'warning');
+            return;
+        }
+        removeButton.closest('.certificate-template-official-card')?.remove();
+        certificateTemplateSettings = await collectCertificateTemplateSettings();
+        renderCertificateTemplateOfficials();
+        applyAdminCertificatePreview();
+    }
+});
+renderCertificateTemplateOfficials();
+applyAdminCertificatePreview();
 if (document.getElementById('moderation-feed')) {
     loadModerationMessages();
 }

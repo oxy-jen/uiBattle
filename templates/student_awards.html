@@ -18,6 +18,54 @@
     <section class="student-award-grid">
         {% for card in cards %}
         <article class="student-award-wrap">
+            {% if card.certificate_payload %}
+            {% set cert = card.certificate_payload %}
+            <div id="student-award-{{ card.id }}" class="student-certificate-card" style="--cert-color: {{ card.display_color }};">
+                <div class="student-certificate-border">
+                    <div class="student-certificate-top">
+                        <div class="student-certificate-logo">
+                            {% if cert.sponsor_logos and cert.sponsor_logos[0] %}<img src="{{ cert.sponsor_logos[0] }}" alt="">{% endif %}
+                        </div>
+                        <div>
+                            <strong>{{ cert.organization or 'UI Battle Arena' }}</strong>
+                            <span>{{ cert.department or 'Official Certificate' }}</span>
+                            <span>{{ cert.association or '' }}</span>
+                        </div>
+                        <div class="student-certificate-logo">
+                            {% if cert.sponsor_logos and cert.sponsor_logos|length > 1 %}<img src="{{ cert.sponsor_logos[1] }}" alt="">{% endif %}
+                        </div>
+                    </div>
+                    <div class="student-certificate-seal"><i class="fas {{ card.accent_icon }}"></i></div>
+                    <p class="student-certificate-title">{{ cert.certificate_title or card.title }}</p>
+                    <p class="student-certificate-line">{{ cert.award_line or card.reason }}</p>
+                    <h2>{{ cert.recipient_name or card.avatar_label }}</h2>
+                    <dl class="student-certificate-details">
+                        <div><dt>Competition</dt><dd>{{ cert.competition_name or '' }}</dd></div>
+                        <div><dt>Category</dt><dd>{{ cert.category or '' }}</dd></div>
+                        <div><dt>Held At</dt><dd>{{ cert.held_at or '' }}</dd></div>
+                        <div><dt>Date</dt><dd>{{ cert.award_date or (card.created_at.strftime('%B %d, %Y') if card.created_at else '') }}</dd></div>
+                    </dl>
+                    <p class="student-certificate-message">{{ cert.regards_text or card.message }}</p>
+                    <div class="student-certificate-sponsors">
+                        <span>{{ cert.sponsor_name or '' }}</span>
+                        <div>
+                            {% for logo in (cert.sponsor_logos or [])[2:] %}
+                            <img src="{{ logo }}" alt="">
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="student-certificate-footer">
+                        {% for official in (cert.officials or [])[:4] %}
+                        <div>
+                            <span {% if official.signature %}style="background-image:url('{{ official.signature }}')"{% endif %}></span>
+                            <strong>{{ official.name or 'Official Name' }}</strong>
+                            <small>{{ official.title or 'Official Signature' }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% else %}
             <div id="student-award-{{ card.id }}" class="student-award-card layout-{{ card.layout }} shape-{{ card.shape }}" style="--primary: {{ card.display_color }}; --secondary: {{ card.secondary_color }};">
                 <div class="student-award-bg"></div>
                 <div class="student-award-avatar avatar-{{ card.avatar_shape }}">
@@ -35,6 +83,7 @@
                     <strong>UI Battle Arena</strong>
                 </footer>
             </div>
+            {% endif %}
             <div class="student-card-actions">
                 <label>Color <input type="color" value="{{ card.display_color }}" data-card-color="{{ card.id }}"></label>
                 <button type="button" class="btn-secondary" onclick="saveStudentColor({{ card.id }})"><i class="fas fa-save"></i> Save Color</button>
@@ -65,6 +114,28 @@
 .student-award-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 20px; }
 .student-award-wrap { display: grid; gap: 10px; min-width: 0; }
 .student-award-card { position: relative; min-height: 360px; border-radius: 8px; overflow: hidden; color: #fff; background: var(--secondary); padding: 24px; display: grid; grid-template-rows: auto 1fr auto; box-shadow: 0 20px 42px rgba(0,0,0,0.34); isolation: isolate; }
+.student-certificate-card { background: #f8fafc; color: #111827; border-radius: 8px; padding: 16px; box-shadow: 0 20px 42px rgba(0,0,0,0.34); }
+.student-certificate-border { min-height: 520px; border: 2px solid var(--cert-color, #b91c1c); border-radius: 6px; padding: 22px; display: flex; flex-direction: column; align-items: center; text-align: center; background: linear-gradient(180deg, #ffffff, #f1f5f9); }
+.student-certificate-top { width: 100%; display: grid; grid-template-columns: 90px 1fr 90px; gap: 12px; align-items: center; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.student-certificate-top strong, .student-certificate-top span { display: block; }
+.student-certificate-logo { min-height: 44px; display: grid; place-items: center; }
+.student-certificate-logo img, .student-certificate-sponsors img { max-width: 82px; max-height: 44px; object-fit: contain; }
+.student-certificate-seal { width: 64px; height: 64px; display: grid; place-items: center; margin-top: 18px; border-radius: 50%; background: #111827; color: var(--cert-color, #b91c1c); font-size: 30px; }
+.student-certificate-title { margin: 10px 0 0; color: var(--cert-color, #b91c1c); font-weight: 700; text-transform: uppercase; }
+.student-certificate-line { margin: 6px 0 0; color: #64748b; }
+.student-certificate-card h2 { margin: 4px 0 8px; font-family: 'Rajdhani', sans-serif; font-size: 44px; line-height: 1; color: #111827; overflow-wrap: anywhere; }
+.student-certificate-details { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.student-certificate-details div { min-width: 0; padding: 8px 6px; border: 1px solid rgba(15,23,42,0.08); border-radius: 6px; background: rgba(15,23,42,0.04); }
+.student-certificate-details dt { color: #64748b; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.student-certificate-details dd { margin: 1px 0 0; color: #0f172a; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.student-certificate-message { max-width: 760px; margin: 0; color: #334155; line-height: 1.45; }
+.student-certificate-sponsors { display: grid; gap: 6px; margin-top: 10px; color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.student-certificate-sponsors div { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.student-certificate-footer { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 18px; margin-top: auto; padding-top: 22px; }
+.student-certificate-footer div { display: grid; gap: 5px; text-align: center; }
+.student-certificate-footer span { height: 34px; border-bottom: 1.5px solid #334155; background: center / contain no-repeat; }
+.student-certificate-footer strong { color: #0f172a; font-size: 11px; text-transform: uppercase; }
+.student-certificate-footer small { color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .student-award-bg { position: absolute; inset: 0; background: radial-gradient(circle at 18% 12%, var(--primary), transparent 28%), linear-gradient(135deg, var(--secondary), var(--primary)); z-index: -1; opacity: 0.96; }
 .student-award-card.shape-ticket { border-radius: 6px; clip-path: polygon(5% 0, 95% 0, 100% 10%, 100% 90%, 95% 100%, 5% 100%, 0 90%, 0 10%); }
 .student-award-card.shape-hex { clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%); }
@@ -97,7 +168,7 @@
 .empty-award-state i { font-size: 56px; color: var(--accent-primary); }
 .empty-award-state h2 { margin: 0; }
 .empty-award-state p { margin: 0; color: var(--text-secondary); }
-@media (max-width: 620px) { .student-award-grid { grid-template-columns: 1fr; } .award-page { padding: 20px; } .layout-split { grid-template-columns: 1fr; } .layout-split .student-award-content { grid-column: auto; } }
+@media (max-width: 620px) { .student-award-grid { grid-template-columns: 1fr; } .award-page { padding: 20px; } .layout-split { grid-template-columns: 1fr; } .layout-split .student-award-content { grid-column: auto; } .student-certificate-top, .student-certificate-details { grid-template-columns: 1fr; } .student-certificate-card h2 { font-size: 34px; } }
 @media print { .theme-toggle-global, .award-header, .student-card-actions, .empty-award-state { display: none !important; } .award-page { padding: 0; background: #fff; } .student-award-grid { display: block; } .student-award-wrap { break-after: page; } .student-award-card { box-shadow: none; } }
 </style>
 

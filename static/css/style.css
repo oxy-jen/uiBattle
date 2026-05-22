@@ -395,6 +395,73 @@ body {
   line-height: 1.35;
 }
 
+.two-factor-login-setup {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.two-factor-login-qr {
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.two-factor-login-qr img {
+  width: min(190px, 100%);
+  height: auto;
+}
+
+.setup-key-label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.setup-key-label input {
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--subtle-fill);
+  color: var(--text-primary);
+  padding: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.two-factor-login-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.two-factor-login-actions .btn-secondary {
+  flex: 1 1 150px;
+  text-align: center;
+}
+
+.login-recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.login-recovery-grid code {
+  padding: 7px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.24);
+  color: var(--neon-cyan);
+  text-align: center;
+  font-size: 12px;
+}
+
 .social-login-block {
   margin-top: 18px;
   display: grid;
@@ -1148,6 +1215,14 @@ input:checked + .slider:before { transform: translateX(30px); }
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.35;
+}
+
+.two-factor-setup-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
 }
 
 .two-factor-qr-wrap {
@@ -4570,6 +4645,220 @@ li.CodeMirror-hint-active {
     width: 100%;
     justify-content: center;
   }
+}
+
+.maintenance-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: var(--page-gradient);
+  color: var(--text-primary);
+}
+
+.maintenance-card {
+  width: min(560px, 100%);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--panel-glass);
+  padding: 28px;
+  text-align: center;
+  box-shadow: 0 18px 46px rgba(0,0,0,0.3);
+}
+
+.maintenance-card > span {
+  color: var(--accent-primary);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.maintenance-card h1 {
+  margin: 10px 0;
+  font: 700 38px 'Rajdhani', sans-serif;
+}
+
+.maintenance-card p {
+  color: var(--text-secondary);
+  margin: 0 0 18px;
+}
+
+.spectator-camera-stage {
+  display: none;
+}
+
+.admin-observer-workspace {
+  display: grid;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg-panel-alt);
+}
+
+.admin-player-code {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: rgba(15,23,42,0.5);
+  padding: 10px;
+}
+
+.admin-player-code header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-primary);
+}
+
+.admin-player-code header span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.admin-code-columns {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-code-columns pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  background: #050816;
+  color: #e5e7eb;
+  font: 12px/1.45 'JetBrains Mono', monospace;
+  white-space: pre-wrap;
+}
+
+.admin-code-columns b {
+  display: block;
+  position: sticky;
+  top: 0;
+  padding: 6px 8px;
+  background: rgba(15,23,42,0.96);
+  color: var(--accent-primary);
+}
+
+.admin-code-columns code {
+  display: block;
+  padding: 8px;
+}
+
+.spectator-mode .arena-main,
+.spectator-mode .arena-main.editor-collapsed,
+.spectator-mode .arena-main.sidebar-collapsed,
+.spectator-mode .arena-main.editor-collapsed.sidebar-collapsed {
+  grid-template-columns: minmax(280px, var(--editor-width)) minmax(0, 1fr) minmax(250px, var(--sidebar-width));
+  grid-template-areas: "editor center sidebar";
+  justify-content: stretch;
+}
+
+.spectator-mode .editor-panel,
+.spectator-mode .center-panel,
+.spectator-mode .output-panel,
+.spectator-mode .target-panel,
+.spectator-mode .diff-panel,
+.spectator-mode .cam-panel {
+  display: flex !important;
+}
+
+.spectator-mode .editor-tabs,
+.spectator-mode .editor-container,
+.spectator-mode .editor-statusbar,
+.spectator-mode .editor-overlay,
+.spectator-mode .editor-resizer {
+  display: none !important;
+}
+
+.spectator-mode .editor-header-left span:first-of-type {
+  font-size: 0;
+}
+
+.spectator-mode .editor-header-left span:first-of-type::after {
+  content: 'PLAYER VIEW';
+  font-size: 12px;
+}
+
+.spectator-mode .spectator-camera-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-panel-alt);
+}
+
+.spectator-stage-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: rgba(15,23,42,0.42);
+}
+
+.spectator-stage-head i {
+  color: var(--accent-primary);
+}
+
+.spectator-stage-head strong,
+.spectator-stage-head span {
+  display: block;
+}
+
+.spectator-stage-head span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.spectator-stage-preview-head {
+  margin-top: 4px;
+}
+
+.spectator-camera-list {
+  display: grid;
+  gap: 10px;
+}
+
+.spectator-camera-tile {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: #050816;
+  aspect-ratio: 4 / 3;
+}
+
+.spectator-camera-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.spectator-camera-tile span {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.62);
+  color: #fff;
+  font-weight: 700;
+}
+
+.diff-canvas {
+  object-fit: contain;
+  max-height: 100%;
 }
 
 

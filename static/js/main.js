@@ -67,6 +67,31 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+
+function initRoomInviteNotifications() {
+    if (!window.CURRENT_PROFILE || !window.io || window.roomInviteSocket) return;
+    try {
+        window.roomInviteSocket = window.io({
+            transports: ['polling'],
+            reconnection: true,
+            reconnectionAttempts: 5,
+            timeout: 20000,
+            upgrade: false
+        });
+        window.roomInviteSocket.on('room_invite', (data) => {
+            const title = data.challenge_title || 'New match invite';
+            const message = data.message || `You are invited to join ${title}.`;
+            showToast(`${message} Click to join.`, 'info');
+            const toast = document.querySelector('.toast:last-child');
+            if (toast && data.invite_url) {
+                toast.style.pointerEvents = 'auto';
+                toast.style.cursor = 'pointer';
+                toast.addEventListener('click', () => { window.location.href = data.invite_url; }, {once: true});
+            }
+        });
+    } catch (e) {}
+}
+
 // Add toast styles
 if (!document.getElementById('global-ui-styles')) {
     const toastStyles = document.createElement('style');
@@ -404,6 +429,56 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    const emailBox = document.getElementById('email-verification-box');
+    const emailStatus = document.getElementById('email-verification-status');
+    const sendEmailCodeBtn = document.getElementById('email-verification-send-btn');
+    const confirmEmailBtn = document.getElementById('email-verification-confirm-btn');
+    const emailCodeInput = document.getElementById('email-verification-code');
+    function syncEmailVerification(verified) {
+        if (emailBox) emailBox.dataset.verified = verified ? 'true' : 'false';
+        if (emailStatus) emailStatus.textContent = verified ? 'Verified' : 'Not verified';
+    }
+    syncEmailVerification(emailBox?.dataset.verified === 'true');
+    sendEmailCodeBtn?.addEventListener('click', async () => {
+        const emailInput = document.getElementById('profile-settings-email');
+        const email = emailInput?.value?.trim() || '';
+        if (!email) {
+            showToast('Enter your recovery email first', 'warning');
+            emailInput?.focus();
+            return;
+        }
+        try {
+            const response = await fetch('/api/account/email/send-verification', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email})
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'Could not send verification code');
+            showToast('Verification code sent. Check your inbox and spam folder.', 'success');
+            syncEmailVerification(false);
+            emailCodeInput?.focus();
+        } catch (error) {
+            showToast(error.message || 'Could not send verification code', 'error');
+        }
+    });
+    confirmEmailBtn?.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/account/email/verify', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({code: emailCodeInput?.value || ''})
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'Could not verify email');
+            syncEmailVerification(true);
+            if (emailCodeInput) emailCodeInput.value = '';
+            showToast('Email verified', 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not verify email', 'error');
+        }
+    });
+
     initTwoFactorSettings();
 });
 
@@ -469,6 +544,7 @@ function initTwoFactorSettings() {
                 if (qrWrap) qrWrap.hidden = false;
             } else if (qrWrap) {
                 qrWrap.hidden = true;
+                showToast('QR generation is unavailable. Use the setup key fallback.', 'warning');
             }
             if (openAppLink && data.otpauth_uri) {
                 openAppLink.href = data.otpauth_uri;
@@ -478,7 +554,7 @@ function initTwoFactorSettings() {
             if (recoveryPanel) recoveryPanel.hidden = true;
             if (enableBtn) enableBtn.hidden = false;
             codeInput?.focus();
-            showToast('Copy the setup key into your authenticator, then enter its code', 'info');
+            showToast('Scan the QR code with your authenticator, then enter its 6-digit code', 'info');
         } catch (error) {
             showToast(error.message || 'Could not start two-step setup', 'error');
         }
@@ -489,11 +565,15 @@ function initTwoFactorSettings() {
         if (!secret) return;
         try {
             await navigator.clipboard.writeText(secret);
-            showToast('Setup key copied', 'success');
+            showToast('Setup key copied. Paste it into your authenticator app.', 'success');
         } catch (error) {
             secretInput?.select();
-            showToast('Select and copy the setup key', 'info');
+            showToast('Select and copy the setup key, then add it manually in your authenticator app.', 'info');
         }
+    });
+
+    openAppLink?.addEventListener('click', () => {
+        showToast('If no app opens, scan the QR code or use Copy setup key. Desktop browsers often block authenticator app links.', 'info');
     });
 
     enableBtn?.addEventListener('click', async () => {
@@ -598,9 +678,16 @@ function updateProfileChrome(user) {
     });
 
     const usernameInput = document.getElementById('profile-settings-username');
+    const emailInput = document.getElementById('profile-settings-email');
     const bioInput = document.getElementById('profile-settings-bio');
     const avatarInput = document.getElementById('profile-settings-avatar');
     if (usernameInput) usernameInput.value = name;
+    if (emailInput) emailInput.value = user.email || '';
+    const emailBox = document.getElementById('email-verification-box');
+    const emailStatus = document.getElementById('email-verification-status');
+    const verified = Boolean(user.email_verified);
+    if (emailBox) emailBox.dataset.verified = verified ? 'true' : 'false';
+    if (emailStatus) emailStatus.textContent = verified ? 'Verified' : 'Not verified';
     if (bioInput) bioInput.value = user.bio || '';
     if (avatarInput) avatarInput.value = '';
 }
@@ -610,3 +697,6 @@ function escapeHtml(text) {
     div.textContent = text || '';
     return div.innerHTML;
 }
+
+
+document.addEventListener('DOMContentLoaded', initRoomInviteNotifications);

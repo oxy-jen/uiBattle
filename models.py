@@ -95,6 +95,7 @@ class Tournament(db.Model):
     challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
     status = db.Column(db.String(20), default='waiting')
     auto_advance = db.Column(db.Boolean, default=True)
+    certificate_settings = db.Column(db.Text, nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     started_at = db.Column(db.DateTime, nullable=True)
@@ -198,6 +199,7 @@ class AwardCard(db.Model):
     shape = db.Column(db.String(20), default='rounded')
     avatar_shape = db.Column(db.String(20), default='circle')
     layout = db.Column(db.String(20), default='classic')
+    certificate_payload = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', foreign_keys=[user_id], backref='award_cards')
