@@ -38,6 +38,7 @@ const STARTER_CSS_RAW = getElement('starter-css-data')?.value || arenaConfig.sta
 const PLAYER_ROLES = ['player1', 'player2'];
 const IS_PLAYER_ROLE = PLAYER_ROLES.includes(USER_ROLE);
 const IS_OBSERVER_ROLE = USER_ROLE === 'admin' || USER_ROLE === 'spectator';
+const CAN_PUBLISH_MEDIA = IS_PLAYER_ROLE || USER_ROLE === 'admin';
 
 // Parse target HTML/CSS (handle JSON escaping)
 let TARGET_HTML = TARGET_HTML_RAW;
@@ -925,9 +926,208 @@ function initDiffToggle() {
     }
 }
 
+const ArenaMedia = (() => {
+    const peers = new Map();
+    const knownPeers = new Map();
+    let localStream = null;
+
+    const rtcConfig = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+    };
+
+    function safeMediaId(username) {
+        return `remote-media-${String(username).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+    }
+
+    function shouldCreateOffer(username) {
+        return CURRENT_USERNAME.localeCompare(username) < 0;
+    }
+
+    function getRemoteMediaTile(username, role) {
+        const remoteCams = getElement('remote-cams');
+        if (!remoteCams || !username) return null;
+
+        remoteCams.closest('.cam-container')?.classList.add('has-remote');
+        const placeholder = getElement('cam-placeholder');
+        if (placeholder) placeholder.style.display = 'none';
+
+        const id = safeMediaId(username);
+        let item = getElement(id);
+        if (!item) {
+            item = document.createElement('div');
+            item.className = 'remote-cam-tile remote-media-tile';
+            item.id = id;
+            item.innerHTML = '<video autoplay playsinline></video><span></span>';
+            remoteCams.appendChild(item);
+        }
+        item.querySelector('span').textContent = role === 'admin' ? `${username} (Admin)` : username;
+        return item;
+    }
+
+    function removeRemoteMedia(username) {
+        const item = getElement(safeMediaId(username));
+        if (item) item.remove();
+    }
+
+    function closePeer(username) {
+        const existing = peers.get(username);
+        if (existing) {
+            existing.close();
+            peers.delete(username);
+        }
+        removeRemoteMedia(username);
+    }
+
+    function attachLocalTracks(peer) {
+        if (!localStream || !peer) return;
+        const senderTracks = new Set(peer.getSenders().map((sender) => sender.track).filter(Boolean));
+        localStream.getTracks().forEach((track) => {
+            if (!senderTracks.has(track)) {
+                peer.addTrack(track, localStream);
+            }
+        });
+    }
+
+    function createPeer(username, role) {
+        if (!window.RTCPeerConnection || !username || username === CURRENT_USERNAME) {
+            return null;
+        }
+        if (peers.has(username)) {
+            const existing = peers.get(username);
+            attachLocalTracks(existing);
+            return existing;
+        }
+
+        const peer = new RTCPeerConnection(rtcConfig);
+        peers.set(username, peer);
+        attachLocalTracks(peer);
+
+        peer.onicecandidate = (event) => {
+            if (!event.candidate || !window.socket) return;
+            window.socket.emit('media_ice_candidate', {
+                room_id: ROOM_ID,
+                to: username,
+                candidate: event.candidate
+            });
+        };
+
+        peer.ontrack = (event) => {
+            const [stream] = event.streams;
+            const tile = getRemoteMediaTile(username, role);
+            const video = tile?.querySelector('video');
+            if (video && stream && video.srcObject !== stream) {
+                video.srcObject = stream;
+                video.play?.().catch(() => {});
+            }
+        };
+
+        peer.onconnectionstatechange = () => {
+            if (['closed', 'failed', 'disconnected'].includes(peer.connectionState)) {
+                closePeer(username);
+            }
+        };
+
+        return peer;
+    }
+
+    async function createOffer(username, role) {
+        const peer = createPeer(username, role);
+        if (!peer || !window.socket || !localStream) return;
+        attachLocalTracks(peer);
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        window.socket.emit('media_offer', {
+            room_id: ROOM_ID,
+            to: username,
+            offer
+        });
+    }
+
+    function announceReady() {
+        if (!window.socket || !localStream) return;
+        window.socket.emit('media_ready', {
+            room_id: ROOM_ID,
+            has_audio: localStream.getAudioTracks().length > 0,
+            has_video: localStream.getVideoTracks().length > 0
+        });
+    }
+
+    async function start(stream) {
+        localStream = stream;
+        announceReady();
+        for (const [username, role] of knownPeers.entries()) {
+            await createOffer(username, role).catch((err) => console.error('Media offer error:', err));
+        }
+    }
+
+    function bindSocket(socketInstance) {
+        if (!socketInstance || socketInstance.__arenaMediaBound) return;
+        socketInstance.__arenaMediaBound = true;
+
+        socketInstance.on('connect', () => {
+            if (localStream) setTimeout(announceReady, 300);
+        });
+
+        socketInstance.on('media_peer_ready', async (data = {}) => {
+            if (Number(data.room_id) !== ROOM_ID || !data.username || data.username === CURRENT_USERNAME) return;
+            knownPeers.set(data.username, data.role || 'player');
+            if (localStream && shouldCreateOffer(data.username)) {
+                await createOffer(data.username, data.role || 'player').catch((err) => console.error('Media offer error:', err));
+            }
+        });
+
+        socketInstance.on('media_offer', async (data = {}) => {
+            if (Number(data.room_id) !== ROOM_ID || !data.from || data.from === CURRENT_USERNAME || !localStream) return;
+            knownPeers.set(data.from, data.role || 'player');
+            const peer = createPeer(data.from, data.role || 'player');
+            if (!peer) return;
+            await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await peer.createAnswer();
+            await peer.setLocalDescription(answer);
+            socketInstance.emit('media_answer', {
+                room_id: ROOM_ID,
+                to: data.from,
+                answer
+            });
+        });
+
+        socketInstance.on('media_answer', async (data = {}) => {
+            if (Number(data.room_id) !== ROOM_ID || !data.from || data.from === CURRENT_USERNAME) return;
+            const peer = peers.get(data.from);
+            if (!peer || peer.signalingState === 'stable') return;
+            await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
+        });
+
+        socketInstance.on('media_ice_candidate', async (data = {}) => {
+            if (Number(data.room_id) !== ROOM_ID || !data.from || data.from === CURRENT_USERNAME) return;
+            const peer = peers.get(data.from);
+            if (!peer || !data.candidate) return;
+            await peer.addIceCandidate(new RTCIceCandidate(data.candidate)).catch((err) => console.error('ICE candidate error:', err));
+        });
+
+        socketInstance.on('media_peer_left', (data = {}) => {
+            if (Number(data.room_id) !== ROOM_ID || !data.username) return;
+            knownPeers.delete(data.username);
+            closePeer(data.username);
+        });
+
+        window.addEventListener('beforeunload', () => {
+            if (localStream) socketInstance.emit('media_leave', { room_id: ROOM_ID });
+        });
+    }
+
+    return { start, bindSocket };
+})();
+
+window.ArenaMedia = ArenaMedia;
+if (window.socket) ArenaMedia.bindSocket(window.socket);
+
 // Camera setup
 async function setupCamera() {
-    if (!IS_PLAYER_ROLE) return;
+    if (!CAN_PUBLISH_MEDIA) return;
     const camFeed = getElement('cam-feed');
     const camPlaceholder = getElement('cam-placeholder');
     const recBadge = getElement('rec-badge');
@@ -950,6 +1150,47 @@ async function setupCamera() {
 
         return '';
     }
+
+    function mediaErrorMessage(err) {
+        const name = err?.name || '';
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+            return 'Camera or microphone permission was blocked. Open site settings for this page and allow camera and microphone.';
+        }
+        if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+            return 'No camera or microphone was found by this browser. Check browser site settings, OS privacy settings, and try opening the Render URL directly in Chrome or Safari.';
+        }
+        if (name === 'NotReadableError' || name === 'TrackStartError') {
+            return 'The camera or microphone is already being used by another app. Close other camera apps and try again.';
+        }
+        if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+            return 'This device could not use the requested camera settings. Retrying with simpler settings.';
+        }
+        return err?.message || 'Could not access camera or microphone';
+    }
+
+    async function requestMediaStream() {
+        const preferredConstraints = {
+            video: {
+                facingMode: 'user',
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            },
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
+        };
+
+        try {
+            return await navigator.mediaDevices.getUserMedia(preferredConstraints);
+        } catch (err) {
+            if (err?.name !== 'OverconstrainedError' && err?.name !== 'ConstraintNotSatisfiedError') {
+                throw err;
+            }
+            return navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        }
+    }
     
     async function enableCamera() {
         try {
@@ -957,11 +1198,14 @@ async function setupCamera() {
             if (supportMessage) {
                 throw new Error(supportMessage);
             }
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            const stream = await requestMediaStream();
             camFeed.srcObject = stream;
             if (camPlaceholder) camPlaceholder.style.display = 'none';
             if (recBadge) recBadge.style.display = 'inline-flex';
             camFeed.style.display = 'block';
+            if (window.ArenaMedia?.start) {
+                window.ArenaMedia.start(stream);
+            }
             
             // Broadcast frames
             const canvas = document.createElement('canvas');
@@ -984,12 +1228,13 @@ async function setupCamera() {
             }, 2000);
         } catch (err) {
             console.error('Camera error:', err);
+            const message = mediaErrorMessage(err);
             if (camPlaceholder) {
                 camPlaceholder.style.display = 'block';
                 const text = camPlaceholder.querySelector('p');
-                if (text) text.textContent = err.message || 'Could not access camera';
+                if (text) text.textContent = message;
             }
-            showToast(err.message || 'Could not access camera', 'error');
+            showToast(message, 'error');
         }
     }
     

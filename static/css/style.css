@@ -1926,6 +1926,14 @@ li.CodeMirror-hint-active {
   object-fit: cover;
 }
 
+.remote-cam-tile video {
+  display: block;
+  width: 100%;
+  height: 58px;
+  object-fit: cover;
+  background: #020617;
+}
+
 .remote-cam-tile span {
   display: block;
   padding: 3px 5px;
@@ -1972,6 +1980,12 @@ li.CodeMirror-hint-active {
 }
 
 .cam-container.has-remote .remote-cam-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cam-container.has-remote .remote-cam-tile video {
   width: 100%;
   height: 100%;
   object-fit: cover;

@@ -86,6 +86,12 @@ socketio = SocketIO(
     async_mode='threading'
 )
 
+
+@app.after_request
+def add_media_permission_headers(response):
+    response.headers.setdefault('Permissions-Policy', 'camera=(self), microphone=(self)')
+    return response
+
 room_timers = {}
 room_preview_data = {}
 connected_users = {}
@@ -4151,6 +4157,13 @@ def handle_join_room(data):
         }, room=request.sid)
 
     emit_presence(room_id)
+    socketio.emit('media_peer_ready', {
+        'room_id': room_id,
+        'username': username,
+        'role': user_role,
+        'has_audio': False,
+        'has_video': False
+    }, room=str(room_id), include_self=False)
     socketio.emit('chat_message', {
         'username': 'SYSTEM',
         'message': f'{username} joined the arena as {user_role.replace("player1", "Player 1").replace("player2", "Player 2").replace("spectator", "Spectator").replace("admin", "Admin")}!',
@@ -4335,6 +4348,92 @@ def handle_cam_frame(data):
         'room_id': room.id,
         'username': user.username,
         'frame_data': frame_data
+    }, room=str(room.id), include_self=False)
+
+
+def can_publish_room_media(user, room, role):
+    return bool(user and room and (role == 'admin' or is_room_player(user, room)))
+
+
+@socketio.on('media_ready')
+def handle_media_ready(data):
+    user, room, role = socket_room_context(data)
+    if not can_publish_room_media(user, room, role):
+        return
+
+    socketio.emit('media_peer_ready', {
+        'room_id': room.id,
+        'username': user.username,
+        'role': role,
+        'has_audio': bool((data or {}).get('has_audio')),
+        'has_video': bool((data or {}).get('has_video'))
+    }, room=str(room.id), include_self=False)
+
+
+@socketio.on('media_offer')
+def handle_media_offer(data):
+    user, room, role = socket_room_context(data)
+    if not can_publish_room_media(user, room, role):
+        return
+    target = str((data or {}).get('to') or '').strip()
+    offer = (data or {}).get('offer')
+    if not target or not offer:
+        return
+
+    socketio.emit('media_offer', {
+        'room_id': room.id,
+        'from': user.username,
+        'role': role,
+        'offer': offer
+    }, room=f"user_{target}")
+
+
+@socketio.on('media_answer')
+def handle_media_answer(data):
+    user, room, role = socket_room_context(data)
+    if not can_publish_room_media(user, room, role):
+        return
+    target = str((data or {}).get('to') or '').strip()
+    answer = (data or {}).get('answer')
+    if not target or not answer:
+        return
+
+    socketio.emit('media_answer', {
+        'room_id': room.id,
+        'from': user.username,
+        'role': role,
+        'answer': answer
+    }, room=f"user_{target}")
+
+
+@socketio.on('media_ice_candidate')
+def handle_media_ice_candidate(data):
+    user, room, role = socket_room_context(data)
+    if not can_publish_room_media(user, room, role):
+        return
+    target = str((data or {}).get('to') or '').strip()
+    candidate = (data or {}).get('candidate')
+    if not target or not candidate:
+        return
+
+    socketio.emit('media_ice_candidate', {
+        'room_id': room.id,
+        'from': user.username,
+        'role': role,
+        'candidate': candidate
+    }, room=f"user_{target}")
+
+
+@socketio.on('media_leave')
+def handle_media_leave(data):
+    user, room, role = socket_room_context(data)
+    if not can_publish_room_media(user, room, role):
+        return
+
+    socketio.emit('media_peer_left', {
+        'room_id': room.id,
+        'username': user.username,
+        'role': role
     }, room=str(room.id), include_self=False)
 
 
