@@ -59,7 +59,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=arena21">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=arena22">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='site-icon.svg') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='site-icon.svg') }}">
     <meta name="theme-color" content="#0f172a">
@@ -136,6 +136,29 @@
                 <div class="profile-menu-actions">
                     <button class="profile-menu-link" id="email-verification-send-btn" type="button"><i class="fas fa-envelope"></i> Send code</button>
                     <button class="profile-menu-save" id="email-verification-confirm-btn" type="button"><i class="fas fa-check"></i> Verify email</button>
+                </div>
+            </div>
+            <div class="profile-site-permissions" id="profile-site-permissions">
+                <div>
+                    <strong>Site media permissions</strong>
+                    <span id="profile-media-summary">Checking</span>
+                </div>
+                <p>{% if user.role == 'admin' %}Allow microphone for voice broadcasts, and camera/microphone for joining rooms.{% else %}Allow camera and microphone before joining battles.{% endif %}</p>
+                <div class="profile-permission-grid">
+                    <div class="profile-permission-row">
+                        <span><i class="fas fa-video"></i> Camera</span>
+                        <strong id="profile-camera-permission">Checking</strong>
+                    </div>
+                    <div class="profile-permission-row">
+                        <span><i class="fas fa-microphone"></i> Microphone</span>
+                        <strong id="profile-microphone-permission">Checking</strong>
+                    </div>
+                </div>
+                <div class="profile-menu-actions">
+                    <button class="profile-menu-link" id="profile-request-media-btn" type="button"><i class="fas fa-lock-open"></i> Allow camera & mic</button>
+                    {% if user.role == 'admin' %}
+                    <button class="profile-menu-link" id="profile-test-mic-btn" type="button"><i class="fas fa-microphone-lines"></i> Test mic</button>
+                    {% endif %}
                 </div>
             </div>
             <label>
@@ -232,7 +255,7 @@
     </script>
     {% endif %}
     
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=profile-media2"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

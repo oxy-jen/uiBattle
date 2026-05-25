@@ -32,6 +32,7 @@ applyGlobalTheme(getSavedGlobalTheme());
 
 document.addEventListener('DOMContentLoaded', () => {
     applyGlobalTheme(getSavedGlobalTheme());
+    initProfileSitePermissions();
     if (document.getElementById('admin-theme-toggle')) {
         const globalToggle = document.getElementById('global-theme-toggle');
         if (globalToggle) globalToggle.hidden = true;
@@ -280,6 +281,112 @@ function showPrompt(options = {}) {
             if (event.key === 'Enter' && !multiline) submit();
         });
     });
+}
+
+function initProfileSitePermissions() {
+    const root = document.getElementById('profile-site-permissions');
+    if (!root) return;
+
+    const cameraState = document.getElementById('profile-camera-permission');
+    const microphoneState = document.getElementById('profile-microphone-permission');
+    const summary = document.getElementById('profile-media-summary');
+    const requestBtn = document.getElementById('profile-request-media-btn');
+    const testMicBtn = document.getElementById('profile-test-mic-btn');
+    let testStream = null;
+
+    function setState(el, state) {
+        if (!el) return;
+        const label = state === 'granted' ? 'Allowed' : state === 'denied' ? 'Blocked' : state === 'prompt' ? 'Ask' : 'Unknown';
+        el.textContent = label;
+        el.dataset.state = state || 'unknown';
+    }
+
+    async function readPermission(name) {
+        if (!navigator.permissions?.query) return 'unknown';
+        try {
+            const status = await navigator.permissions.query({ name });
+            status.onchange = updatePermissionStatus;
+            return status.state;
+        } catch (error) {
+            return 'unknown';
+        }
+    }
+
+    async function updatePermissionStatus() {
+        const [camera, microphone] = await Promise.all([
+            readPermission('camera'),
+            readPermission('microphone')
+        ]);
+        setState(cameraState, camera);
+        setState(microphoneState, microphone);
+        if (summary) {
+            if (camera === 'granted' && microphone === 'granted') {
+                summary.textContent = 'Ready';
+                summary.dataset.state = 'granted';
+            } else if (camera === 'denied' || microphone === 'denied') {
+                summary.textContent = 'Blocked';
+                summary.dataset.state = 'denied';
+            } else {
+                summary.textContent = 'Needs allow';
+                summary.dataset.state = 'prompt';
+            }
+        }
+    }
+
+    async function requestProfileMedia() {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            showToast('This browser does not support camera and microphone access here.', 'error');
+            return;
+        }
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user' },
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+            stream.getTracks().forEach((track) => track.stop());
+            showToast('Camera and microphone are allowed for this site.', 'success');
+        } catch (error) {
+            const message = error?.name === 'NotAllowedError'
+                ? 'Permission was blocked. Open browser site settings for this page and allow camera and microphone.'
+                : error?.name === 'NotFoundError'
+                    ? 'No camera or microphone was found by this browser.'
+                    : 'Could not enable camera and microphone from profile settings.';
+            showToast(message, 'error');
+        } finally {
+            setTimeout(updatePermissionStatus, 250);
+        }
+    }
+
+    async function testMicrophone() {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            showToast('This browser cannot test the microphone here.', 'error');
+            return;
+        }
+        if (testStream) {
+            testStream.getTracks().forEach((track) => track.stop());
+            testStream = null;
+            if (testMicBtn) testMicBtn.innerHTML = '<i class="fas fa-microphone-lines"></i> Test mic';
+            showToast('Microphone test stopped.', 'info');
+            return;
+        }
+        try {
+            testStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            if (testMicBtn) testMicBtn.innerHTML = '<i class="fas fa-stop"></i> Stop mic test';
+            showToast('Microphone permission works. You can stop the test now.', 'success');
+        } catch (error) {
+            showToast('Microphone test failed. Allow microphone in browser site settings.', 'error');
+        } finally {
+            setTimeout(updatePermissionStatus, 250);
+        }
+    }
+
+    if (requestBtn) requestBtn.addEventListener('click', requestProfileMedia);
+    if (testMicBtn) testMicBtn.addEventListener('click', testMicrophone);
+    updatePermissionStatus();
 }
 // Format timestamp
 function formatTimestamp(date) {
