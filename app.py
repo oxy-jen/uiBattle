@@ -4437,6 +4437,46 @@ def handle_media_leave(data):
     }, room=str(room.id), include_self=False)
 
 
+@socketio.on('voice_broadcast_start')
+def handle_voice_broadcast_start(data):
+    user, room, role = socket_room_context(data)
+    if not user or not room or role != 'admin':
+        return
+
+    socketio.emit('voice_broadcast_start', {
+        'room_id': room.id,
+        'username': user.username
+    }, room=str(room.id), include_self=False)
+
+
+@socketio.on('voice_broadcast_chunk')
+def handle_voice_broadcast_chunk(data):
+    user, room, role = socket_room_context(data)
+    if not user or not room or role != 'admin':
+        return
+    chunk = str((data or {}).get('chunk') or '')
+    if not chunk.startswith('data:audio/') or len(chunk) > 250000:
+        return
+
+    socketio.emit('voice_broadcast_chunk', {
+        'room_id': room.id,
+        'username': user.username,
+        'chunk': chunk
+    }, room=str(room.id), include_self=False)
+
+
+@socketio.on('voice_broadcast_end')
+def handle_voice_broadcast_end(data):
+    user, room, role = socket_room_context(data)
+    if not user or not room or role != 'admin':
+        return
+
+    socketio.emit('voice_broadcast_end', {
+        'room_id': room.id,
+        'username': user.username
+    }, room=str(room.id), include_self=False)
+
+
 @socketio.on('code_preview')
 def handle_code_preview(data):
     user, room, _role = socket_room_context(data)

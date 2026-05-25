@@ -335,6 +335,30 @@
                 </div>
             </div>
             {% endif %}
+            {% if user_role in ['player1', 'player2', 'admin'] %}
+            <div class="sidebar-card media-settings-card">
+                <div class="sidebar-card-header">
+                    <i class="fas fa-sliders"></i> MEDIA SETTINGS
+                </div>
+                <div class="media-permission-grid">
+                    <div class="media-permission-row">
+                        <span><i class="fas fa-video"></i> Camera</span>
+                        <strong id="camera-permission-state">Checking</strong>
+                    </div>
+                    <div class="media-permission-row">
+                        <span><i class="fas fa-microphone"></i> Microphone</span>
+                        <strong id="microphone-permission-state">Checking</strong>
+                    </div>
+                </div>
+                <div class="media-settings-actions">
+                    <button id="media-permission-btn" type="button" class="btn-small"><i class="fas fa-lock-open"></i> Allow Media</button>
+                    {% if user_role == 'admin' %}
+                    <button id="admin-voice-broadcast-btn" type="button" class="btn-small admin-broadcast-voice-btn"><i class="fas fa-bullhorn"></i> Broadcast Mic</button>
+                    {% endif %}
+                </div>
+                <p id="media-settings-note" class="media-settings-note">Waiting for browser permission</p>
+            </div>
+            {% endif %}
             <div class="sidebar-card online-card">
                 <div class="sidebar-card-header">
                     <i class="fas fa-signal"></i> ONLINE
@@ -427,8 +451,8 @@
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/socket.js') }}?v=arena10"></script>
-<script src="{{ url_for('static', filename='js/arena.js') }}?v=arena16"></script>
+<script src="{{ url_for('static', filename='js/socket.js') }}?v=arena11"></script>
+<script src="{{ url_for('static', filename='js/arena.js') }}?v=arena17"></script>
 
 {% endblock %}
  

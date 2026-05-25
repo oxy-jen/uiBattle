@@ -1243,6 +1243,148 @@ async function setupCamera() {
     } else {
         enableCamera();
     }
+    window.requestArenaMedia = enableCamera;
+}
+
+function initMediaSettings() {
+    if (!CAN_PUBLISH_MEDIA) return;
+
+    const allowBtn = getElement('media-permission-btn');
+    const cameraState = getElement('camera-permission-state');
+    const microphoneState = getElement('microphone-permission-state');
+    const note = getElement('media-settings-note');
+    const broadcastBtn = getElement('admin-voice-broadcast-btn');
+    let broadcastRecorder = null;
+    let broadcastStream = null;
+
+    function setState(el, state) {
+        if (!el) return;
+        const label = state === 'granted' ? 'Allowed' : state === 'denied' ? 'Blocked' : state === 'prompt' ? 'Ask' : 'Unknown';
+        el.textContent = label;
+        el.dataset.state = state || 'unknown';
+    }
+
+    async function readPermission(name) {
+        if (!navigator.permissions?.query) return 'unknown';
+        try {
+            const status = await navigator.permissions.query({ name });
+            status.onchange = updatePermissionStatus;
+            return status.state;
+        } catch (err) {
+            return 'unknown';
+        }
+    }
+
+    async function updatePermissionStatus() {
+        const [camera, microphone] = await Promise.all([
+            readPermission('camera'),
+            readPermission('microphone')
+        ]);
+        setState(cameraState, camera);
+        setState(microphoneState, microphone);
+
+        if (note) {
+            if (camera === 'denied' || microphone === 'denied') {
+                note.textContent = 'Blocked in browser site settings';
+            } else if (camera === 'granted' && microphone === 'granted') {
+                note.textContent = USER_ROLE === 'admin' ? 'Admin media ready' : 'Player media ready';
+            } else {
+                note.textContent = 'Tap Allow Media to continue';
+            }
+        }
+    }
+
+    async function requestMediaFromSettings() {
+        if (window.requestArenaMedia) {
+            await window.requestArenaMedia();
+        } else {
+            getElement('enable-cam-btn')?.click();
+        }
+        setTimeout(updatePermissionStatus, 250);
+    }
+
+    function getSupportedAudioMime() {
+        const options = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            ''
+        ];
+        return options.find((type) => !type || MediaRecorder.isTypeSupported(type)) || '';
+    }
+
+    async function startVoiceBroadcast() {
+        if (USER_ROLE !== 'admin' || !window.socket) return;
+        if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+            showToast('This browser cannot record microphone broadcasts.', 'error');
+            return;
+        }
+
+        try {
+            broadcastStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                },
+                video: false
+            });
+            const mimeType = getSupportedAudioMime();
+            broadcastRecorder = new MediaRecorder(broadcastStream, mimeType ? { mimeType } : undefined);
+            broadcastRecorder.ondataavailable = (event) => {
+                if (!event.data || event.data.size === 0) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    window.socket.emit('voice_broadcast_chunk', {
+                        room_id: ROOM_ID,
+                        chunk: reader.result
+                    });
+                };
+                reader.readAsDataURL(event.data);
+            };
+            broadcastRecorder.onstop = () => {
+                window.socket.emit('voice_broadcast_end', { room_id: ROOM_ID });
+                broadcastStream?.getTracks().forEach((track) => track.stop());
+                broadcastStream = null;
+                broadcastRecorder = null;
+                if (broadcastBtn) {
+                    broadcastBtn.classList.remove('active');
+                    broadcastBtn.innerHTML = '<i class="fas fa-bullhorn"></i> Broadcast Mic';
+                }
+            };
+            window.socket.emit('voice_broadcast_start', { room_id: ROOM_ID });
+            broadcastRecorder.start(900);
+            if (broadcastBtn) {
+                broadcastBtn.classList.add('active');
+                broadcastBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Broadcast';
+            }
+            showToast('Voice broadcast started', 'success');
+            setTimeout(updatePermissionStatus, 250);
+        } catch (err) {
+            console.error('Voice broadcast error:', err);
+            showToast('Microphone broadcast could not start. Check site microphone permission.', 'error');
+            setTimeout(updatePermissionStatus, 250);
+        }
+    }
+
+    function stopVoiceBroadcast() {
+        if (broadcastRecorder && broadcastRecorder.state !== 'inactive') {
+            broadcastRecorder.stop();
+        }
+    }
+
+    if (allowBtn) allowBtn.addEventListener('click', requestMediaFromSettings);
+    if (broadcastBtn) {
+        broadcastBtn.addEventListener('click', () => {
+            if (broadcastRecorder && broadcastRecorder.state !== 'inactive') {
+                stopVoiceBroadcast();
+            } else {
+                startVoiceBroadcast();
+            }
+        });
+    }
+
+    updatePermissionStatus();
 }
 
 // Reset code
@@ -2075,6 +2217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTarget();
     initDiffToggle();
     setupCamera();
+    initMediaSettings();
     initCollapseEditor();
     initPanelCollapse();
     initSidebarTabs();

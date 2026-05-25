@@ -560,6 +560,48 @@ socket.on('system_announcement', (data) => {
     appendChatMessage('ADMIN', data.message, true);
 });
 
+const voiceBroadcastQueue = [];
+let voiceBroadcastPlaying = false;
+
+function playNextVoiceBroadcastChunk() {
+    if (voiceBroadcastPlaying || voiceBroadcastQueue.length === 0) return;
+    voiceBroadcastPlaying = true;
+    const audio = new Audio(voiceBroadcastQueue.shift());
+    audio.onended = () => {
+        voiceBroadcastPlaying = false;
+        playNextVoiceBroadcastChunk();
+    };
+    audio.onerror = () => {
+        voiceBroadcastPlaying = false;
+        playNextVoiceBroadcastChunk();
+    };
+    audio.play().catch(() => {
+        voiceBroadcastPlaying = false;
+        showToast('Tap Allow Media to hear admin voice broadcasts.', 'warning');
+    });
+}
+
+socket.on('voice_broadcast_start', (data = {}) => {
+    const userRole = document.getElementById('user-role')?.value || window.ARENA_CONFIG?.userRole;
+    if (!['player1', 'player2', 'spectator'].includes(userRole)) return;
+    const name = data.username || 'Admin';
+    showToast(`${name} started a voice broadcast`, 'info');
+    appendChatMessage('ADMIN', `${name} started a voice broadcast`, true);
+});
+
+socket.on('voice_broadcast_chunk', (data = {}) => {
+    const userRole = document.getElementById('user-role')?.value || window.ARENA_CONFIG?.userRole;
+    if (!['player1', 'player2', 'spectator'].includes(userRole) || !data.chunk) return;
+    voiceBroadcastQueue.push(data.chunk);
+    playNextVoiceBroadcastChunk();
+});
+
+socket.on('voice_broadcast_end', (data = {}) => {
+    const userRole = document.getElementById('user-role')?.value || window.ARENA_CONFIG?.userRole;
+    if (!['player1', 'player2', 'spectator'].includes(userRole)) return;
+    showToast('Voice broadcast ended', 'info');
+});
+
 // Kicked
 socket.on('kicked', (data) => {
     console.log('ðŸ‘¢ kicked:', data);
