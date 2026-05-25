@@ -14,6 +14,7 @@ import io
 import base64
 import binascii
 import hashlib
+import html as html_lib
 import hmac
 import struct
 import smtplib
@@ -342,12 +343,75 @@ def smtp_configuration_error():
     return ''
 
 
-def send_email_via_mailjet_api(to_email, subject, body):
+def email_footer_text():
+    sender = valid_email(app.config.get('SMTP_FROM')) or 'the UI Battle Arena administrator'
+    return (
+        '\n\n--\n'
+        'UI Battle Arena\n'
+        f'Sent by {app.config.get("SMTP_FROM_NAME") or "UI Battle Arena"} from {sender}.\n'
+        'This message was sent because you have a UI Battle Arena account, match invite, or admin notification. '
+        'If you did not expect this email, contact the arena administrator.'
+    )
+
+
+def build_email_html(subject, body):
+    safe_subject = html_lib.escape((subject or 'UI Battle Arena').strip())
+    paragraphs = [
+        html_lib.escape(part.strip()).replace('\n', '<br>')
+        for part in re.split(r'\n\s*\n', (body or '').strip())
+        if part.strip()
+    ]
+    content = ''.join(f'<p>{paragraph}</p>' for paragraph in paragraphs)
+    brand = html_lib.escape(app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena')
+    sender = html_lib.escape(valid_email(app.config.get('SMTP_FROM')) or '')
+    return f'''<!doctype html>
+<html>
+<body style="margin:0;background:#f6f8fb;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">{safe_subject}</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f8fb;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+          <tr>
+            <td style="background:#111827;color:#ffffff;padding:20px 24px;">
+              <div style="font-size:18px;font-weight:700;letter-spacing:.2px;">{brand}</div>
+              <div style="font-size:13px;color:#cbd5e1;margin-top:4px;">Official arena notification</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;font-size:15px;line-height:1.58;color:#172033;">
+              <h1 style="font-size:20px;line-height:1.3;margin:0 0 16px;color:#111827;">{safe_subject}</h1>
+              {content}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px;background:#f9fafb;border-top:1px solid #e5e7eb;font-size:12px;line-height:1.5;color:#64748b;">
+              Sent by {brand}{f' from {sender}' if sender else ''}. This message was sent because you have a UI Battle Arena account, match invite, or admin notification.
+              If you did not expect this email, contact the arena administrator.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>'''
+
+
+def prepare_email_content(subject, body, html_body=None):
+    text_body = (body or '').strip()
+    if email_footer_text().strip() not in text_body:
+        text_body += email_footer_text()
+    return text_body, html_body or build_email_html(subject, text_body)
+
+
+def send_email_via_mailjet_api(to_email, subject, body, html_body=None):
     api_key = app.config.get('MAILJET_API_KEY') or app.config.get('SMTP_USERNAME')
     secret_key = app.config.get('MAILJET_SECRET_KEY') or app.config.get('SMTP_PASSWORD')
     from_email = valid_email(app.config['SMTP_FROM'])
     if not api_key or not secret_key or not to_email or not from_email:
         return False
+    text_body, html_body = prepare_email_content(subject, body, html_body)
     payload = {
         'Messages': [{
             'From': {
@@ -355,8 +419,17 @@ def send_email_via_mailjet_api(to_email, subject, body):
                 'Name': app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena'
             },
             'To': [{'Email': to_email}],
+            'ReplyTo': {
+                'Email': from_email,
+                'Name': app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena'
+            },
             'Subject': subject[:160],
-            'TextPart': body.strip()
+            'TextPart': text_body,
+            'HTMLPart': html_body,
+            'Headers': {
+                'List-Unsubscribe': f'<mailto:{from_email}>',
+                'X-Entity-Ref-ID': secrets.token_hex(12)
+            }
         }]
     }
     data = json.dumps(payload).encode('utf-8')
@@ -384,13 +457,14 @@ def send_email_via_mailjet_api(to_email, subject, body):
         return False
 
 
-def send_email(to_email, subject, body):
+def send_email(to_email, subject, body, html_body=None):
     to_email = valid_email(to_email)
     from_email = valid_email(app.config['SMTP_FROM'])
     if not to_email or not from_email or not email_configured():
         return False
     if mailjet_api_configured():
-        return send_email_via_mailjet_api(to_email, subject, body)
+        return send_email_via_mailjet_api(to_email, subject, body, html_body)
+    text_body, html_body = prepare_email_content(subject, body, html_body)
     message = EmailMessage()
     message['Subject'] = subject[:160]
     message['From'] = formataddr((app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena', from_email))
@@ -399,7 +473,9 @@ def send_email(to_email, subject, body):
     message['Date'] = formatdate(localtime=True)
     message['Message-ID'] = make_msgid(domain=from_email.split('@')[-1])
     message['X-Mailer'] = 'UI Battle Arena'
-    message.set_content(body.strip() + '\n')
+    message['List-Unsubscribe'] = f'<mailto:{from_email}>'
+    message.set_content(text_body + '\n')
+    message.add_alternative(html_body, subtype='html')
     with smtplib.SMTP(app.config['SMTP_HOST'], app.config['SMTP_PORT'], timeout=10) as smtp:
         if app.config['SMTP_USE_TLS']:
             smtp.starttls()
@@ -2202,8 +2278,8 @@ def admin_broadcast():
 @app.route('/admin/broadcast-email', methods=['POST'])
 @admin_required
 def admin_broadcast_email():
-    if not smtp_configured():
-        return jsonify({'success': False, 'error': 'Email sending is not configured'}), 400
+    if not email_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
     if rate_limited('admin-broadcast-email', str(session.get('user_id')), limit=5, window_seconds=60 * 60):
         return rate_limit_response('Too many bulk email broadcasts. Wait a while before sending another.')
 
@@ -2537,8 +2613,8 @@ def admin_email_user(user_id):
         return jsonify({'success': False, 'error': 'User not found'}), 404
     if not target_user.email:
         return jsonify({'success': False, 'error': 'This user does not have an email address'}), 400
-    if not smtp_configured():
-        return jsonify({'success': False, 'error': 'Email sending is not configured'}), 400
+    if not email_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
     data = request.get_json(silent=True) or {}
     subject = (data.get('subject') or 'UI Battle Arena update').strip()[:160]
     message = (data.get('message') or '').strip()[:2000]
@@ -2639,7 +2715,7 @@ def create_challenge():
         return jsonify({'success': False, 'error': 'Invalid challenge type'}), 400
     if not title:
         return jsonify({'success': False, 'error': 'Challenge name is required'}), 400
-    if share_with_email and not smtp_configured():
+    if share_with_email and not email_configured():
         return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
     
     new_challenge = Challenge(
@@ -3463,7 +3539,7 @@ def room_invite(room_code):
 @app.route('/admin/room/<int:room_id>/share-email', methods=['POST'])
 @admin_required
 def admin_share_room_email(room_id):
-    if not smtp_configured():
+    if not email_configured():
         return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
     if rate_limited('room-share-email', f"{session.get('user_id')}:{room_id}", limit=5, window_seconds=60 * 60):
         return rate_limit_response('Too many invite emails for this room. Wait a while before sending again.')
