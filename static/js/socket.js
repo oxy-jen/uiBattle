@@ -587,6 +587,9 @@ socket.on('cam_frame', (data) => {
 
     const remoteCams = document.getElementById('remote-cams');
     if (remoteCams && data.username && data.frame_data) {
+        remoteCams.closest('.cam-container')?.classList.add('has-remote');
+        const placeholder = document.getElementById('cam-placeholder');
+        if (placeholder) placeholder.style.display = 'none';
         const safeId = `remote-cam-${String(data.username).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
         let item = document.getElementById(safeId);
         if (!item) {

@@ -1890,6 +1890,8 @@ li.CodeMirror-hint-active {
   justify-content: center;
   position: relative;
   min-height: 150px;
+  overflow: hidden;
+  background: #0f172a;
 }
 
 #cam-feed {
@@ -1931,6 +1933,64 @@ li.CodeMirror-hint-active {
   font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cam-container.has-remote {
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.cam-container.has-remote #cam-feed {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  width: clamp(74px, 18%, 118px);
+  height: clamp(54px, 18%, 88px);
+  border: 2px solid rgba(255,255,255,0.72);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.34);
+  background: #020617;
+}
+
+.cam-container.has-remote .remote-cams {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: 0;
+}
+
+.cam-container.has-remote .remote-cam-tile {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: #020617;
+}
+
+.cam-container.has-remote .remote-cam-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cam-container.has-remote .remote-cam-tile span {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  max-width: calc(100% - 150px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.68);
+  color: #f8fafc;
+  font-size: 11px;
+}
+
+.cam-container.has-remote .cam-placeholder {
+  display: none !important;
 }
 
 .cam-placeholder {
@@ -2993,11 +3053,13 @@ li.CodeMirror-hint-active {
 }
 
 .center-panel {
+  --center-split-x: 50%;
+  --center-split-y: 50%;
   grid-area: center;
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(48px, 1fr) minmax(48px, 1fr);
+  grid-template-rows: minmax(88px, calc(var(--center-split-y) - 7px)) minmax(88px, calc(100% - var(--center-split-y) - 7px));
   gap: 14px;
   position: relative;
 }
@@ -3005,9 +3067,80 @@ li.CodeMirror-hint-active {
 .panel-row {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(180px, calc(var(--center-split-x) - 7px)) minmax(180px, calc(100% - var(--center-split-x) - 7px));
   gap: 14px;
   align-items: stretch;
+}
+
+.center-panel-splitter {
+  position: absolute;
+  z-index: 45;
+  border: 0;
+  background: transparent;
+  opacity: 0.68;
+  cursor: grab;
+  touch-action: none;
+}
+
+.center-panel-splitter::after {
+  content: '';
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.42);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.center-panel-splitter:hover::after,
+.is-resizing-center .center-panel-splitter::after {
+  background: rgba(96, 165, 250, 0.8);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+}
+
+.center-panel-splitter-x {
+  top: 0;
+  bottom: 0;
+  left: calc(var(--center-split-x) - 7px);
+  width: 14px;
+  cursor: ew-resize;
+}
+
+.center-panel-splitter-x::after {
+  top: 18px;
+  bottom: 18px;
+  left: 6px;
+  width: 2px;
+}
+
+.center-panel-splitter-y {
+  left: 0;
+  right: 0;
+  top: calc(var(--center-split-y) - 7px);
+  height: 14px;
+  cursor: ns-resize;
+}
+
+.center-panel-splitter-y::after {
+  left: 18px;
+  right: 18px;
+  top: 6px;
+  height: 2px;
+}
+
+.center-panel.has-expanded-panel .center-panel-splitter,
+.center-panel.camera-compact .center-panel-splitter {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .center-panel {
+    --center-split-x: 50%;
+    --center-split-y: 50%;
+  }
+
+  .center-panel-splitter {
+    display: none;
+  }
 }
 
 .panel {
@@ -3299,10 +3432,13 @@ li.CodeMirror-hint-active {
 
 .center-panel.has-expanded-panel .cam-panel #cam-feed,
 .center-panel.camera-compact .cam-panel #cam-feed {
+  position: static;
   width: 100%;
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+  border: 0;
+  box-shadow: none;
 }
 
 .center-panel.has-expanded-panel .cam-panel .cam-placeholder,
@@ -4513,7 +4649,7 @@ li.CodeMirror-hint-active {
   border: 3px solid #ff6b35;
   border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.18), 0 0 18px rgba(255, 107, 53, 0.65);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.12), 0 0 8px rgba(255, 107, 53, 0.32);
   appearance: none;
 }
 
@@ -4523,7 +4659,7 @@ li.CodeMirror-hint-active {
   border: 3px solid #ff6b35;
   border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.18), 0 0 18px rgba(255, 107, 53, 0.65);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.12), 0 0 8px rgba(255, 107, 53, 0.32);
 }
 
 .arena-root:not(.spectator-mode) .arena-main,

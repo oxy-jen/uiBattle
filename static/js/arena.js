@@ -1309,6 +1309,71 @@ function initArenaResizers(arenaMain) {
     sidebarHandle.addEventListener('pointerdown', (event) => startResize('sidebar', event));
 }
 
+function initCenterPanelResizers() {
+    const centerPanel = document.querySelector('.center-panel');
+    if (!centerPanel || centerPanel.dataset.centerResizersReady) return;
+    centerPanel.dataset.centerResizersReady = 'true';
+
+    const savedX = Number(localStorage.getItem(`arena_${ROOM_ID}_center_split_x`) || 50);
+    const savedY = Number(localStorage.getItem(`arena_${ROOM_ID}_center_split_y`) || 50);
+    const clampPercent = (value) => Math.max(30, Math.min(70, Number(value) || 50));
+
+    centerPanel.style.setProperty('--center-split-x', `${clampPercent(savedX)}%`);
+    centerPanel.style.setProperty('--center-split-y', `${clampPercent(savedY)}%`);
+
+    const xHandle = document.createElement('button');
+    xHandle.type = 'button';
+    xHandle.className = 'center-panel-splitter center-panel-splitter-x';
+    xHandle.setAttribute('aria-label', 'Resize arena panels left and right');
+
+    const yHandle = document.createElement('button');
+    yHandle.type = 'button';
+    yHandle.className = 'center-panel-splitter center-panel-splitter-y';
+    yHandle.setAttribute('aria-label', 'Resize arena panels up and down');
+
+    centerPanel.append(xHandle, yHandle);
+
+    function refreshAfterResize() {
+        if (typeof drawLiveDiff === 'function') scheduleLiveDiffCheck(80);
+        const outputFrame = getElement('output-frame');
+        const targetFrame = getElement('target-frame');
+        outputFrame?.dispatchEvent(new Event('resize'));
+        targetFrame?.dispatchEvent(new Event('resize'));
+    }
+
+    function startResize(axis, event) {
+        event.preventDefault();
+        const rect = centerPanel.getBoundingClientRect();
+        document.body.classList.add('is-resizing-center');
+
+        function move(moveEvent) {
+            if (axis === 'x') {
+                const next = clampPercent(((moveEvent.clientX - rect.left) / rect.width) * 100);
+                centerPanel.style.setProperty('--center-split-x', `${next}%`);
+                localStorage.setItem(`arena_${ROOM_ID}_center_split_x`, String(Math.round(next)));
+            } else {
+                const next = clampPercent(((moveEvent.clientY - rect.top) / rect.height) * 100);
+                centerPanel.style.setProperty('--center-split-y', `${next}%`);
+                localStorage.setItem(`arena_${ROOM_ID}_center_split_y`, String(Math.round(next)));
+            }
+            refreshAfterResize();
+        }
+
+        function stop() {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', stop);
+            document.body.classList.remove('is-resizing-center');
+            refreshAfterResize();
+        }
+
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop, { once: true });
+    }
+
+    xHandle.addEventListener('pointerdown', (event) => startResize('x', event));
+    yHandle.addEventListener('pointerdown', (event) => startResize('y', event));
+}
+
 function initPanelCollapse() {
     function installCollapse(target, headerSelector, collapsedClass, bodySelector = null) {
         const header = target.querySelector(headerSelector);
@@ -1768,6 +1833,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initCollapseEditor();
     initPanelCollapse();
     initSidebarTabs();
+    initCenterPanelResizers();
     initPanelSizing();
     initSurfaceZoom();
     initLiveScoringObservers();
