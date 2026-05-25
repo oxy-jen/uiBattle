@@ -337,14 +337,19 @@ socket.on('chat_flag_notice', (data) => {
 socket.on('typing_update', (data) => {
     const indicator = document.getElementById('typing-indicator');
     if (!indicator) return;
+    const roomId = document.getElementById('room-id')?.value || window.ARENA_CONFIG?.roomId;
+    if (data?.room_id && Number(data.room_id) !== Number(roomId)) return;
     const currentUser = document.getElementById('current-username')?.value || window.ARENA_CONFIG?.currentUsername;
     const users = (Array.isArray(data?.users) ? data.users : []).filter((name) => name && name !== currentUser);
     if (!users.length) {
         indicator.textContent = '';
+        indicator.classList.remove('active');
     } else if (users.length === 1) {
         indicator.textContent = `${users[0]} is typing...`;
+        indicator.classList.add('active');
     } else {
         indicator.textContent = `${users.slice(0, 2).join(', ')} are typing...`;
+        indicator.classList.add('active');
     }
 });
 
@@ -728,7 +733,10 @@ window.updateAdminPlayerCode = window.updateAdminPlayerCode || function () {};
 function sendChatMessage() {
     const input = document.getElementById('chat-input');
     const message = input?.value.trim();
-    if (!message) return;
+    if (!message) {
+        emitTyping(false, true);
+        return;
+    }
     if (window.setArenaChatOpen) window.setArenaChatOpen(true);
     if (window.activateArenaSidebarCard) window.activateArenaSidebarCard('chat');
     
@@ -743,14 +751,14 @@ function sendChatMessage() {
     
     input.value = '';
     document.getElementById('send-chat')?.setAttribute('disabled', 'disabled');
-    emitTyping(false);
+    emitTyping(false, true);
 }
 
-function emitTyping(isTyping) {
+function emitTyping(isTyping, force = false) {
     const roomId = document.getElementById('room-id')?.value || window.ARENA_CONFIG?.roomId;
     const username = document.getElementById('current-username')?.value || window.ARENA_CONFIG?.currentUsername;
-    if (!roomId || !username || !socket) return;
-    if (typingActive === isTyping) return;
+    if (!roomId || !username || !socket?.connected) return;
+    if (!force && typingActive === isTyping) return;
     typingActive = isTyping;
     socket.emit('typing', {
         room_id: parseInt(roomId),
@@ -791,17 +799,32 @@ document.addEventListener('DOMContentLoaded', () => {
         chatInput.addEventListener('focus', () => {
             if (window.setArenaChatOpen) window.setArenaChatOpen(true);
             if (window.activateArenaSidebarCard) window.activateArenaSidebarCard('chat');
+            if (chatInput.value.trim().length > 0) emitTyping(true);
         });
-        chatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendChatMessage();
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendChatMessage();
+                return;
+            }
+            if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
+                setTimeout(() => {
+                    emitTyping(chatInput.value.trim().length > 0, true);
+                    if (typingTimer) clearTimeout(typingTimer);
+                    typingTimer = setTimeout(() => emitTyping(false, true), 1600);
+                }, 0);
+            }
         });
         chatInput.addEventListener('input', () => {
-            emitTyping(chatInput.value.trim().length > 0);
+            emitTyping(chatInput.value.trim().length > 0, true);
             if (typingTimer) clearTimeout(typingTimer);
-            typingTimer = setTimeout(() => emitTyping(false), 1400);
+            typingTimer = setTimeout(() => emitTyping(false, true), 1600);
             syncSendState();
         });
-        chatInput.addEventListener('blur', () => emitTyping(false));
+        chatInput.addEventListener('paste', () => {
+            setTimeout(() => emitTyping(chatInput.value.trim().length > 0, true), 0);
+        });
+        chatInput.addEventListener('blur', () => emitTyping(false, true));
     }
     
     const shareBtn = document.getElementById('share-btn');

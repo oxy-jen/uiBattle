@@ -97,6 +97,7 @@ room_preview_data = {}
 connected_users = {}
 room_spectators = {}
 room_typing_users = {}
+room_typing_expiry = {}
 RATE_LIMITS = {}
 PROFILE_STORE = os.path.join(app.root_path, 'profile_store.json')
 LEADERBOARD_STREAK_TARGET = 5
@@ -4074,6 +4075,7 @@ def handle_disconnect():
             emit_spectator_list(room_id)
         if room_id in room_typing_users:
             room_typing_users[room_id].discard(info.get('username'))
+            room_typing_expiry.pop((room_id, info.get('username')), None)
         emit_presence(room_id)
 
 
@@ -4086,6 +4088,25 @@ def emit_spectator_list(room_id):
         'spectators': get_spectator_names(room_id),
         'count': len(room_spectators.get(room_id, set()))
     }, room=str(room_id))
+
+
+def emit_typing_update(room_id):
+    socketio.emit('typing_update', {
+        'room_id': room_id,
+        'users': sorted(room_typing_users.get(room_id, set()))
+    }, room=str(room_id))
+
+
+def expire_typing_user(room_id, username, expires_at):
+    time.sleep(3)
+    if room_typing_expiry.get((room_id, username)) != expires_at:
+        return
+    if room_id in room_typing_users:
+        room_typing_users[room_id].discard(username)
+        if not room_typing_users[room_id]:
+            del room_typing_users[room_id]
+    room_typing_expiry.pop((room_id, username), None)
+    emit_typing_update(room_id)
 
 
 def emit_presence(room_id):
@@ -4201,6 +4222,8 @@ def handle_leave_room(data):
         emit_spectator_list(room_id)
     if room_id in room_typing_users and username:
         room_typing_users[room_id].discard(username)
+        room_typing_expiry.pop((room_id, username), None)
+        emit_typing_update(room_id)
     emit_presence(room_id)
 
     if username:
@@ -4247,12 +4270,11 @@ def handle_chat_message(data):
     if contains_bad_language(message):
         if room_id in room_typing_users:
             room_typing_users[room_id].discard(username)
+            room_typing_expiry.pop((room_id, username), None)
         emit('chat_warning', {
             'message': 'Please keep the arena chat respectful. Your message was not sent.'
         }, room=request.sid)
-        socketio.emit('typing_update', {
-            'users': sorted(room_typing_users.get(room_id, set()))
-        }, room=str(room_id))
+        emit_typing_update(room_id)
         return
 
     auto_flagged = contains_sensitive_language(message)
@@ -4279,9 +4301,8 @@ def handle_chat_message(data):
         }, room=str(room_id))
     if room_id in room_typing_users:
         room_typing_users[room_id].discard(username)
-    socketio.emit('typing_update', {
-        'users': sorted(room_typing_users.get(room_id, set()))
-    }, room=str(room_id))
+        room_typing_expiry.pop((room_id, username), None)
+    emit_typing_update(room_id)
 
 @socketio.on('flag_chat_message')
 def handle_flag_chat_message(data):
@@ -4330,11 +4351,13 @@ def handle_typing(data):
     is_typing = bool((data or {}).get('is_typing'))
     if is_typing:
         room_typing_users.setdefault(room.id, set()).add(user.username)
+        expires_at = time.time() + 3
+        room_typing_expiry[(room.id, user.username)] = expires_at
+        socketio.start_background_task(expire_typing_user, room.id, user.username, expires_at)
     elif room.id in room_typing_users:
         room_typing_users[room.id].discard(user.username)
-    socketio.emit('typing_update', {
-        'users': sorted(room_typing_users.get(room.id, set()))
-    }, room=str(room.id))
+        room_typing_expiry.pop((room.id, user.username), None)
+    emit_typing_update(room.id)
 
 
 @socketio.on('cam_frame')

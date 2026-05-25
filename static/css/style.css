@@ -3964,6 +3964,15 @@ li.CodeMirror-hint-active {
   padding: 0 14px 8px;
   color: var(--text-muted);
   font-size: 12px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.typing-indicator.active {
+  opacity: 1;
+  transform: translateY(0);
+  color: var(--neon-cyan);
 }
 
 .chat-input-wrapper {
