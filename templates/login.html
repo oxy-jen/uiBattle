@@ -68,7 +68,7 @@
             <form id="two-factor-login-form" class="auth-form {% if pending_two_factor %}active{% endif %}">
                 <div class="auth-help-panel">
                     <strong>Secure verification</strong>
-                    <span>Admins can use an email code when mail is configured, or an authenticator QR code that works without email.</span>
+                    <span>Enter the code sent to your email. Admins may also use an authenticator or recovery code.</span>
                 </div>
                 <div class="input-group">
                     <i class="fas fa-shield-halved"></i>
@@ -202,11 +202,11 @@ function showAuthForm(formId) {
     document.querySelector(`[data-form="${tabName}"]`)?.classList.add('active');
 }
 
-function setLoginCodeMode(isEmailCode) {
+function setLoginCodeMode(isEmailCode, canUseQrSetup = false) {
     const resendButton = document.getElementById('resend-login-code-btn');
     const qrSetupButton = document.getElementById('use-authenticator-setup-btn');
     if (resendButton) resendButton.hidden = !isEmailCode;
-    if (qrSetupButton) qrSetupButton.hidden = !isEmailCode;
+    if (qrSetupButton) qrSetupButton.hidden = !(isEmailCode && canUseQrSetup);
 }
 
 function showAdmin2faSetup(data) {
@@ -233,7 +233,7 @@ function showAdmin2faSetup(data) {
 
 {% if pending_two_factor %}
 showAuthForm('two-factor-login-form');
-setLoginCodeMode({{ 'true' if pending_email_otp else 'false' }});
+setLoginCodeMode({{ 'true' if pending_email_code else 'false' }}, {{ 'true' if pending_can_use_qr_setup else 'false' }});
 {% endif %}
 
 document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -251,7 +251,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
     } else if (data.requires_2fa) {
         showAuthForm('two-factor-login-form');
-        setLoginCodeMode(Boolean(data.email_otp && data.can_use_qr_setup));
+        setLoginCodeMode(Boolean(data.email_otp || data.email_verification), Boolean(data.can_use_qr_setup));
         document.getElementById('login-2fa-code').focus();
         showToast(data.message || 'Enter your verification code', 'info');
     } else if (data.requires_2fa_setup) {
@@ -430,14 +430,12 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
     });
     const data = await response.json();
     if (data.success) {
-        if (data.email_verification_sent) {
-            showToast('Verification code sent to your email', 'success');
-        } else if (data.email_verification_error) {
-            showToast(data.email_verification_error, 'warning');
-        }
-        setTimeout(() => {
-            window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
-        }, data.email_verification_sent || data.email_verification_error ? 900 : 0);
+        window.location.href = data.role === 'admin' ? '/admin' : '/dashboard';
+    } else if (data.requires_2fa) {
+        showAuthForm('two-factor-login-form');
+        setLoginCodeMode(Boolean(data.email_otp || data.email_verification), Boolean(data.can_use_qr_setup));
+        document.getElementById('login-2fa-code').focus();
+        showToast(data.message || 'Enter the email verification code', 'info');
     } else {
         showToast(data.error || 'Registration failed', 'error');
     }

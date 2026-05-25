@@ -540,6 +540,7 @@ def complete_login(user):
     session.pop('pending_email_otp_user_id', None)
     session.pop('pending_email_otp_hash', None)
     session.pop('pending_email_otp_expires_at', None)
+    session.pop('pending_email_verification_user_id', None)
     session.pop('pending_admin_2fa_setup_user_id', None)
     session.permanent = True
     session['user_id'] = user.id
@@ -602,11 +603,13 @@ def send_admin_login_otp(user, code):
 
 
 def begin_admin_email_otp_login(user, csrf_token=None):
-    if not user or user.role != 'admin' or not email_configured():
+    if not user or user.role != 'admin':
         return None
+    if not email_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
     target_email = valid_email(user.email) or configured_admin_email()
     if not target_email:
-        return None
+        return jsonify({'success': False, 'error': 'Admin email is missing or invalid.'}), 400
     if rate_limited('admin-email-otp-send', str(user.id), limit=10, window_seconds=15 * 60):
         return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
     csrf_token = csrf_token or session.get('csrf_token')
@@ -621,7 +624,7 @@ def begin_admin_email_otp_login(user, csrf_token=None):
     if not sent:
         session.clear()
         session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
-        return None
+        return jsonify({'success': False, 'error': 'Could not send admin login code. Check Mailjet/SMTP settings and try again.'}), 500
     return jsonify({
         'success': False,
         'requires_2fa': True,
@@ -1454,6 +1457,31 @@ def send_email_verification(user):
         f'Your UI Battle Arena email verification code is {code}.\n\nIt expires in 15 minutes.'
     )
 
+def begin_email_verification_login(user, message='Verification code sent to your email. Enter it to continue.'):
+    if not user or not user.email:
+        return jsonify({'success': False, 'error': 'This account has no email address to verify.'}), 400
+    if not email_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+    if rate_limited('email-verification-send', str(user.id), limit=10, window_seconds=15 * 60):
+        return rate_limit_response('Too many verification code requests. Wait a few minutes and try again.')
+    try:
+        sent = send_email_verification(user)
+    except Exception:
+        app.logger.exception('Email verification send failed for user %s', user.id)
+        sent = False
+    if not sent:
+        return jsonify({'success': False, 'error': 'Could not send verification code. Check Mailjet/SMTP settings and try again.'}), 500
+    csrf_token = session.get('csrf_token')
+    session.clear()
+    session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
+    session['pending_email_verification_user_id'] = user.id
+    return jsonify({
+        'success': False,
+        'requires_2fa': True,
+        'email_verification': True,
+        'message': message
+    })
+
 def notify_users_by_email(users, subject, body, only_verified=True):
     sent = 0
     for target in users:
@@ -1665,8 +1693,9 @@ def login_page():
         'login.html',
         challenge_count=Challenge.query.filter_by(is_active=True).count(),
         google_oauth_enabled=google_oauth_configured(),
-        pending_two_factor=bool(session.get('pending_2fa_user_id') or session.get('pending_email_otp_user_id')),
-        pending_email_otp=bool(session.get('pending_email_otp_user_id'))
+        pending_two_factor=bool(session.get('pending_2fa_user_id') or session.get('pending_email_otp_user_id') or session.get('pending_email_verification_user_id')),
+        pending_email_code=bool(session.get('pending_email_otp_user_id') or session.get('pending_email_verification_user_id')),
+        pending_can_use_qr_setup=bool(session.get('pending_email_otp_user_id'))
     )
 
 @app.route('/auth/login', methods=['POST'])
@@ -1701,6 +1730,8 @@ def login():
             session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
             session['pending_2fa_user_id'] = user.id
             return jsonify({'success': False, 'requires_2fa': True, 'message': 'Enter your two-step verification code.'})
+        if not is_email_verified(user):
+            return begin_email_verification_login(user)
         complete_login(user)
         return jsonify({'success': True, 'role': user.role})
     return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
@@ -1709,13 +1740,19 @@ def login():
 def verify_login_2fa():
     data = request.get_json() or {}
     email_otp_user_id = session.get('pending_email_otp_user_id')
-    user_id = session.get('pending_2fa_user_id') or email_otp_user_id
+    email_verification_user_id = session.get('pending_email_verification_user_id')
+    user_id = session.get('pending_2fa_user_id') or email_otp_user_id or email_verification_user_id
     if rate_limited('2fa-login', str(user_id or client_rate_identity()), limit=6, window_seconds=10 * 60):
         return rate_limit_response('Too many verification attempts. Wait a few minutes and try again.')
     user = db.session.get(User, user_id) if user_id else None
     if not user:
         return jsonify({'success': False, 'error': 'Login session expired. Sign in again.'}), 401
     code = data.get('code')
+    if email_verification_user_id:
+        if verify_email_code(user, code):
+            complete_login(user)
+            return jsonify({'success': True, 'role': user.role})
+        return jsonify({'success': False, 'error': 'Invalid or expired email verification code'}), 401
     if email_otp_user_id and verify_pending_email_otp(user, code):
         complete_login(user)
         return jsonify({'success': True, 'role': user.role})
@@ -1736,10 +1773,22 @@ def verify_login_2fa():
 
 @app.route('/auth/2fa/resend-login-code', methods=['POST'])
 def resend_login_2fa_code():
-    user_id = session.get('pending_email_otp_user_id')
+    email_verification_user_id = session.get('pending_email_verification_user_id')
+    user_id = session.get('pending_email_otp_user_id') or email_verification_user_id
     user = db.session.get(User, user_id) if user_id else None
     if not user:
         return jsonify({'success': False, 'error': 'Login session expired. Sign in again.'}), 401
+    if email_verification_user_id:
+        if rate_limited('email-verification-send', str(user.id), limit=10, window_seconds=15 * 60):
+            return rate_limit_response('Too many verification code requests. Wait a few minutes and try again.')
+        try:
+            sent = send_email_verification(user)
+        except Exception:
+            app.logger.exception('Email verification resend failed for user %s', user.id)
+            sent = False
+        if not sent:
+            return jsonify({'success': False, 'error': 'Could not send verification code. Check Mailjet/SMTP settings and try again.'}), 500
+        return jsonify({'success': True, 'message': 'New verification code sent. Check your inbox and spam folder.'})
     if rate_limited('admin-email-otp-send', str(user.id), limit=10, window_seconds=15 * 60):
         return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
     code = create_admin_email_otp(user)
@@ -1795,7 +1844,7 @@ def request_password_reset():
     normalized_identifier = identifier.lower()
     if rate_limited('password-reset-request', normalized_identifier or client_rate_identity(), limit=5, window_seconds=15 * 60):
         return rate_limit_response()
-    if not smtp_configured():
+    if not email_configured():
         return jsonify({'success': False, 'email_sent': False, 'error': smtp_configuration_error()}), 400
     user = User.query.filter(
         (User.username == identifier) | (User.email == normalized_identifier)
@@ -1872,29 +1921,14 @@ def register():
         return jsonify({'success': False, 'error': 'Username already exists'}), 400
     if User.query.filter_by(email=email).first():
         return jsonify({'success': False, 'error': 'Email already exists'}), 400
+    if not email_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
     
     user = User(username=username, email=email, role='player')
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
-    email_sent = False
-    email_error = ''
-    if smtp_configured():
-        try:
-            email_sent = send_email_verification(user)
-        except Exception:
-            app.logger.exception('Could not send verification email')
-            email_error = 'Account created, but the verification email could not be sent. Check SMTP settings.'
-    else:
-        email_error = smtp_configuration_error()
-    
-    complete_login(user)
-    return jsonify({
-        'success': True,
-        'role': user.role,
-        'email_verification_sent': email_sent,
-        'email_verification_error': email_error
-    })
+    return begin_email_verification_login(user, 'Account created. Enter the email verification code to continue.')
 
 @app.route('/auth/google')
 def google_login():
@@ -1965,6 +1999,11 @@ def google_callback():
         if user.auth_provider == 'local':
             user.auth_provider = 'local+google'
     db.session.commit()
+    profiles, profile = get_profile_record(user.id)
+    profile['email_verified'] = True
+    profile.pop('email_verification_hash', None)
+    profile.pop('email_verification_expires_at', None)
+    save_profile_store(profiles)
 
     if user.two_factor_enabled:
         session.clear()
@@ -3749,7 +3788,7 @@ def account_send_email_verification():
         return jsonify({'success': False, 'error': 'Add a recovery email first'}), 400
     if User.query.filter(User.email == requested_email, User.id != user.id).first():
         return jsonify({'success': False, 'error': 'Recovery email is already used by another account'}), 400
-    if not smtp_configured():
+    if not email_configured():
         return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
 
     email_changed = requested_email != (user.email or '')
