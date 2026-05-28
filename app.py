@@ -514,6 +514,49 @@ def default_certificate_template():
         ]
     }
 
+def normalize_certificate_settings(data=None, fallback=None):
+    source = {}
+    source.update(default_certificate_template())
+    if isinstance(fallback, dict):
+        source.update(fallback)
+    if isinstance(data, dict):
+        source.update(data)
+
+    officials = []
+    for item in (source.get('officials') if isinstance(source.get('officials'), list) else [])[:6]:
+        if not isinstance(item, dict):
+            continue
+        officials.append({
+            'name': str(item.get('name') or '')[:120],
+            'title': str(item.get('title') or '')[:120],
+            'signature': str(item.get('signature') or '')[:500000]
+        })
+    if not officials:
+        officials = default_certificate_template()['officials']
+
+    return {
+        'organization': str(source.get('organization') or '')[:160],
+        'department': str(source.get('department') or '')[:160],
+        'association': str(source.get('association') or '')[:180],
+        'certificate_title': str(source.get('certificate_title') or 'Certificate of Merit')[:140],
+        'award_line': str(source.get('award_line') or 'This certificate is awarded to')[:180],
+        'recipient_name': str(source.get('recipient_name') or 'Outstanding Player')[:140],
+        'competition_name': str(source.get('competition_name') or '')[:180],
+        'category': str(source.get('category') or '')[:160],
+        'held_at': str(source.get('held_at') or '')[:160],
+        'award_date': str(source.get('award_date') or '')[:80],
+        'regards_text': str(source.get('regards_text') or '')[:800],
+        'sponsor_name': str(source.get('sponsor_name') or '')[:160],
+        'accent_color': clean_hex_color(source.get('accent_color'), '#b91c1c'),
+        'seal_text': str(source.get('seal_text') or 'Award')[:40],
+        'sponsor_logos': [
+            str(item)[:500000]
+            for item in (source.get('sponsor_logos') if isinstance(source.get('sponsor_logos'), list) else [])
+            if item
+        ][:24],
+        'officials': officials
+    }
+
 def get_card_template(template_id):
     return next((item for item in CARD_TEMPLATES if item['id'] == template_id), CARD_TEMPLATES[0])
 
@@ -1451,15 +1494,8 @@ def save_profile_store(profiles):
 
 def get_certificate_template_settings():
     profiles = load_profile_store()
-    settings = default_certificate_template()
     saved = profiles.get('__certificate_template__', {})
-    if isinstance(saved, dict):
-        settings.update(saved)
-    if not isinstance(settings.get('officials'), list) or not settings['officials']:
-        settings['officials'] = default_certificate_template()['officials']
-    if not isinstance(settings.get('sponsor_logos'), list):
-        settings['sponsor_logos'] = []
-    return settings
+    return normalize_certificate_settings(saved if isinstance(saved, dict) else {})
 
 def save_certificate_template_settings(settings):
     profiles = load_profile_store()
@@ -2219,39 +2255,7 @@ def admin_certificate_template():
         return jsonify({'success': True, 'certificate_template': get_certificate_template_settings()})
 
     data = request.get_json(silent=True) or {}
-    officials = []
-    for item in (data.get('officials') if isinstance(data.get('officials'), list) else [])[:6]:
-        if not isinstance(item, dict):
-            continue
-        officials.append({
-            'name': str(item.get('name') or '')[:120],
-            'title': str(item.get('title') or '')[:120],
-            'signature': str(item.get('signature') or '')[:500000]
-        })
-    if not officials:
-        officials = default_certificate_template()['officials']
-
-    settings = {
-        'organization': str(data.get('organization') or '')[:160],
-        'department': str(data.get('department') or '')[:160],
-        'association': str(data.get('association') or '')[:180],
-        'certificate_title': str(data.get('certificate_title') or 'Certificate of Merit')[:140],
-        'award_line': str(data.get('award_line') or 'This certificate is awarded to')[:180],
-        'recipient_name': str(data.get('recipient_name') or 'Outstanding Player')[:140],
-        'competition_name': str(data.get('competition_name') or '')[:180],
-        'category': str(data.get('category') or '')[:160],
-        'held_at': str(data.get('held_at') or '')[:160],
-        'award_date': str(data.get('award_date') or '')[:80],
-        'regards_text': str(data.get('regards_text') or '')[:320],
-        'sponsor_name': str(data.get('sponsor_name') or '')[:160],
-        'accent_color': clean_hex_color(data.get('accent_color'), '#b91c1c'),
-        'seal_text': str(data.get('seal_text') or 'Award')[:40],
-        'sponsor_logos': [
-            str(item)[:500000]
-            for item in (data.get('sponsor_logos') if isinstance(data.get('sponsor_logos'), list) else [])
-        ][:8],
-        'officials': officials
-    }
+    settings = normalize_certificate_settings(data)
     save_certificate_template_settings(settings)
     return jsonify({'success': True, 'certificate_template': settings})
 
@@ -2561,8 +2565,7 @@ def admin_send_certificate_card(user_id):
     data = request.get_json(silent=True) or {}
     cert = get_certificate_template_settings()
     posted_template = data.get('certificate_template')
-    if isinstance(posted_template, dict):
-        cert.update(posted_template)
+    cert = normalize_certificate_settings(posted_template if isinstance(posted_template, dict) else {}, cert)
     title = (data.get('title') or cert.get('certificate_title') or 'Certificate of Merit').strip()[:140]
     reason = (data.get('reason') or cert.get('award_line') or 'Official certificate recognition').strip()[:200]
     message = (data.get('message') or cert.get('regards_text') or 'Recognized by an administrator for official arena achievement.').strip()[:800]
@@ -3987,7 +3990,7 @@ def get_user_all_matches(user_id):
             'id': s.id,
             'date': event['completed_at'].strftime('%Y-%m-%d %H:%M') if event['completed_at'] else 'Unknown',
             'challenge': challenge.title if challenge else 'Unknown',
-            'type': s.challenge.challenge_type.upper() if s.challenge else 'Ã¢â‚¬â€',
+            'type': s.challenge.challenge_type.upper() if s.challenge else '-',
             'accuracy': round(s.accuracy, 1),
             'status': 'Forfeit' if s.is_forfeit else event['result'].title(),
             'result': event['result'],

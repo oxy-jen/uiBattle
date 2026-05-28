@@ -20,46 +20,46 @@
         <article class="student-award-wrap">
             {% if card.certificate_payload %}
             {% set cert = card.certificate_payload %}
-            <div id="student-award-{{ card.id }}" class="student-certificate-card" style="--cert-color: {{ card.display_color }};">
-                <div class="student-certificate-border">
-                    <div class="student-certificate-top">
-                        <div class="student-certificate-logo">
-                            {% if cert.sponsor_logos and cert.sponsor_logos[0] %}<img src="{{ cert.sponsor_logos[0] }}" alt="">{% endif %}
+            <div id="student-award-{{ card.id }}" class="student-certificate-card certificate-award-preview is-fit" style="--cert-color: {{ cert.accent_color or card.display_color }};">
+                <div class="certificate-preview-border">
+                    <div class="certificate-preview-top">
+                        <div class="certificate-preview-logo">
+                            {% if cert.sponsor_logos and cert.sponsor_logos[0] %}<img src="{{ cert.sponsor_logos[0] }}" alt="Sponsor logo">{% endif %}
                         </div>
                         <div>
                             <strong>{{ cert.organization or 'UI Battle Arena' }}</strong>
-                            <span>{{ cert.department or 'Official Certificate' }}</span>
+                            <span>{{ cert.department or 'Official Admin Certificate' }}</span>
                             <span>{{ cert.association or '' }}</span>
                         </div>
-                        <div class="student-certificate-logo">
-                            {% if cert.sponsor_logos and cert.sponsor_logos|length > 1 %}<img src="{{ cert.sponsor_logos[1] }}" alt="">{% endif %}
+                        <div class="certificate-preview-logo">
+                            {% if cert.sponsor_logos and cert.sponsor_logos|length > 1 %}<img src="{{ cert.sponsor_logos[1] }}" alt="Sponsor logo">{% endif %}
                         </div>
                     </div>
-                    <div class="student-certificate-seal"><i class="fas {{ card.accent_icon }}"></i></div>
-                    <p class="student-certificate-title">{{ cert.certificate_title or card.title }}</p>
-                    <p class="student-certificate-line">{{ cert.award_line or card.reason }}</p>
-                    <h2>{{ cert.recipient_name or card.avatar_label }}</h2>
-                    <dl class="student-certificate-details">
+                    <div class="certificate-preview-seal"><i class="fas {{ card.accent_icon }}"></i></div>
+                    <p>{{ cert.certificate_title or card.title }}</p>
+                    <small>{{ cert.award_line or card.reason }}</small>
+                    <h4>{{ cert.recipient_name or card.avatar_label }}</h4>
+                    <dl class="certificate-preview-details">
                         <div><dt>Competition</dt><dd>{{ cert.competition_name or '' }}</dd></div>
                         <div><dt>Category</dt><dd>{{ cert.category or '' }}</dd></div>
                         <div><dt>Held At</dt><dd>{{ cert.held_at or '' }}</dd></div>
                         <div><dt>Date</dt><dd>{{ cert.award_date or (card.created_at.strftime('%B %d, %Y') if card.created_at else '') }}</dd></div>
                     </dl>
-                    <p class="student-certificate-message">{{ cert.regards_text or card.message }}</p>
-                    <div class="student-certificate-sponsors">
+                    <span>{{ cert.regards_text or card.message }}</span>
+                    <div class="certificate-preview-sponsors">
                         <span>{{ cert.sponsor_name or '' }}</span>
-                        <div>
+                        <div class="certificate-extra-logos">
                             {% for logo in (cert.sponsor_logos or [])[2:] %}
-                            <img src="{{ logo }}" alt="">
+                            <img src="{{ logo }}" alt="Sponsor logo">
                             {% endfor %}
                         </div>
                     </div>
-                    <div class="student-certificate-footer">
-                        {% for official in (cert.officials or [])[:4] %}
+                    <div class="certificate-preview-signatures">
+                        {% for official in (cert.officials or [])[:6] %}
                         <div>
-                            <span {% if official.signature %}style="background-image:url('{{ official.signature }}')"{% endif %}></span>
+                            <b {% if official.signature %}style="background-image:url('{{ official.signature }}')"{% endif %}></b>
                             <strong>{{ official.name or 'Official Name' }}</strong>
-                            <small>{{ official.title or 'Official Signature' }}</small>
+                            <small>{{ official.title or (cert.seal_text or 'Official Signature') }}</small>
                         </div>
                         {% endfor %}
                     </div>
@@ -114,28 +114,29 @@
 .student-award-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 20px; }
 .student-award-wrap { display: grid; gap: 10px; min-width: 0; }
 .student-award-card { position: relative; min-height: 360px; border-radius: 8px; overflow: hidden; color: #fff; background: var(--secondary); padding: 24px; display: grid; grid-template-rows: auto 1fr auto; box-shadow: 0 20px 42px rgba(0,0,0,0.34); isolation: isolate; }
-.student-certificate-card { background: #f8fafc; color: #111827; border-radius: 8px; padding: 16px; box-shadow: 0 20px 42px rgba(0,0,0,0.34); }
-.student-certificate-border { min-height: 520px; border: 2px solid var(--cert-color, #b91c1c); border-radius: 6px; padding: 22px; display: flex; flex-direction: column; align-items: center; text-align: center; background: linear-gradient(180deg, #ffffff, #f1f5f9); }
-.student-certificate-top { width: 100%; display: grid; grid-template-columns: 90px 1fr 90px; gap: 12px; align-items: center; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-.student-certificate-top strong, .student-certificate-top span { display: block; }
-.student-certificate-logo { min-height: 44px; display: grid; place-items: center; }
-.student-certificate-logo img, .student-certificate-sponsors img { max-width: 82px; max-height: 44px; object-fit: contain; }
-.student-certificate-seal { width: 64px; height: 64px; display: grid; place-items: center; margin-top: 18px; border-radius: 50%; background: #111827; color: var(--cert-color, #b91c1c); font-size: 30px; }
-.student-certificate-title { margin: 10px 0 0; color: var(--cert-color, #b91c1c); font-weight: 700; text-transform: uppercase; }
-.student-certificate-line { margin: 6px 0 0; color: #64748b; }
-.student-certificate-card h2 { margin: 4px 0 8px; font-family: 'Rajdhani', sans-serif; font-size: 44px; line-height: 1; color: #111827; overflow-wrap: anywhere; }
-.student-certificate-details { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
-.student-certificate-details div { min-width: 0; padding: 8px 6px; border: 1px solid rgba(15,23,42,0.08); border-radius: 6px; background: rgba(15,23,42,0.04); }
-.student-certificate-details dt { color: #64748b; font-size: 9px; font-weight: 700; text-transform: uppercase; }
-.student-certificate-details dd { margin: 1px 0 0; color: #0f172a; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
-.student-certificate-message { max-width: 760px; margin: 0; color: #334155; line-height: 1.45; }
-.student-certificate-sponsors { display: grid; gap: 6px; margin-top: 10px; color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-.student-certificate-sponsors div { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
-.student-certificate-footer { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 18px; margin-top: auto; padding-top: 22px; }
-.student-certificate-footer div { display: grid; gap: 5px; text-align: center; }
-.student-certificate-footer span { height: 34px; border-bottom: 1.5px solid #334155; background: center / contain no-repeat; }
-.student-certificate-footer strong { color: #0f172a; font-size: 11px; text-transform: uppercase; }
-.student-certificate-footer small { color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.student-certificate-card { background: #f8fafc; color: #111827; border-radius: 8px; padding: 12px; box-shadow: 0 20px 42px rgba(0,0,0,0.34); overflow-x: auto; }
+.certificate-preview-border { width: min(100%, 760px); min-width: 620px; aspect-ratio: 1.55 / 1; border: 2px solid var(--cert-color, #b91c1c); border-radius: 6px; padding: 18px; display: flex; flex-direction: column; align-items: center; text-align: center; background: linear-gradient(180deg, #ffffff, #f1f5f9); }
+.certificate-award-preview.is-fit .certificate-preview-border { min-width: 0; width: 100%; }
+.certificate-preview-top { width: 100%; display: grid; grid-template-columns: 72px 1fr 72px; align-items: center; gap: 10px; color: #475569; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.certificate-preview-top strong, .certificate-preview-top span { display: block; }
+.certificate-preview-logo { min-height: 38px; display: grid; place-items: center; }
+.certificate-preview-logo img, .certificate-extra-logos img { max-width: 68px; max-height: 38px; object-fit: contain; }
+.certificate-preview-seal { width: 58px; height: 58px; display: grid; place-items: center; margin-top: 18px; border-radius: 50%; background: #111827; color: var(--cert-color, #b91c1c); font-size: 26px; }
+.certificate-preview-border p { margin: 10px 0 0; color: var(--cert-color, #b91c1c); font-weight: 700; text-transform: uppercase; }
+.certificate-preview-border small { color: #64748b; font-weight: 700; }
+.certificate-preview-border h4 { margin: 4px 0; font-family: 'Rajdhani', sans-serif; font-size: 34px; color: #111827; overflow-wrap: anywhere; }
+.certificate-preview-border > span { max-width: 520px; color: #334155; font-size: 13px; line-height: 1.35; }
+.certificate-preview-details { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+.certificate-preview-details div { min-width: 0; padding: 6px 5px; border: 1px solid rgba(15,23,42,0.08); border-radius: 6px; background: rgba(15,23,42,0.04); }
+.certificate-preview-details dt { color: #64748b; font-size: 8px; font-weight: 700; text-transform: uppercase; }
+.certificate-preview-details dd { margin: 1px 0 0; color: #0f172a; font-size: 10px; font-weight: 700; overflow-wrap: anywhere; }
+.certificate-preview-sponsors { display: grid; gap: 5px; margin-top: 8px; color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.certificate-extra-logos { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.certificate-preview-signatures { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 14px; margin-top: auto; padding-top: 18px; }
+.certificate-preview-signatures div { display: grid; gap: 6px; text-align: center; }
+.certificate-preview-signatures b { height: 28px; border-bottom: 1.5px solid #334155; background: center / contain no-repeat; }
+.certificate-preview-signatures strong { color: #0f172a; font-size: 10px; text-transform: uppercase; }
+.certificate-preview-signatures small { color: #475569; font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .student-award-bg { position: absolute; inset: 0; background: radial-gradient(circle at 18% 12%, var(--primary), transparent 28%), linear-gradient(135deg, var(--secondary), var(--primary)); z-index: -1; opacity: 0.96; }
 .student-award-card.shape-ticket { border-radius: 6px; clip-path: polygon(5% 0, 95% 0, 100% 10%, 100% 90%, 95% 100%, 5% 100%, 0 90%, 0 10%); }
 .student-award-card.shape-hex { clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%); }
@@ -168,14 +169,16 @@
 .empty-award-state i { font-size: 56px; color: var(--accent-primary); }
 .empty-award-state h2 { margin: 0; }
 .empty-award-state p { margin: 0; color: var(--text-secondary); }
-@media (max-width: 620px) { .student-award-grid { grid-template-columns: 1fr; } .award-page { padding: 20px; } .layout-split { grid-template-columns: 1fr; } .layout-split .student-award-content { grid-column: auto; } .student-certificate-top, .student-certificate-details { grid-template-columns: 1fr; } .student-certificate-card h2 { font-size: 34px; } }
+@media (max-width: 620px) { .student-award-grid { grid-template-columns: 1fr; } .award-page { padding: 20px; } .layout-split { grid-template-columns: 1fr; } .layout-split .student-award-content { grid-column: auto; } .certificate-preview-top, .certificate-preview-details { grid-template-columns: 1fr; } .certificate-preview-border h4 { font-size: 30px; } }
 @media print { .theme-toggle-global, .award-header, .student-card-actions, .empty-award-state { display: none !important; } .award-page { padding: 0; background: #fff; } .student-award-grid { display: block; } .student-award-wrap { break-after: page; } .student-award-card { box-shadow: none; } }
 </style>
 
 <script>
 document.querySelectorAll('[data-card-color]').forEach((input) => {
     input.addEventListener('input', () => {
-        document.getElementById(`student-award-${input.dataset.cardColor}`)?.style.setProperty('--primary', input.value);
+        const card = document.getElementById(`student-award-${input.dataset.cardColor}`);
+        card?.style.setProperty('--primary', input.value);
+        card?.style.setProperty('--cert-color', input.value);
     });
 });
 

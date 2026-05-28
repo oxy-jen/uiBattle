@@ -169,6 +169,10 @@
                     <label>Sponsor Logos (PNG, JPG, JPEG, SVG, GIF)
                         <input id="cert-template-logos" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/gif,.svg" multiple>
                     </label>
+                    <div class="wide-field">
+                        <strong class="field-caption">Sponsor logos on this certificate</strong>
+                        <div id="certificate-template-logo-list" class="certificate-template-logo-list"></div>
+                    </div>
                 </form>
 
                 <div class="certificate-official-editor">
@@ -1648,10 +1652,10 @@
 .certificate-preview-signatures {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 14px;
     margin-top: auto;
-    padding-top: 22px;
+    padding-top: 18px;
 }
 
 .certificate-preview-signatures div {
@@ -1940,6 +1944,61 @@
     width: 54px;
     height: 38px;
     object-fit: contain;
+}
+
+.field-caption {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.certificate-template-logo-list {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-height: 46px;
+    padding: 8px;
+    border: 1px dashed var(--border-default);
+    border-radius: 8px;
+    background: rgba(15,23,42,0.16);
+}
+
+.empty-inline {
+    color: var(--text-muted);
+    font-size: 12px;
+    align-self: center;
+}
+
+.certificate-template-logo-item {
+    position: relative;
+    width: 74px;
+    height: 50px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.certificate-template-logo-item img {
+    max-width: 64px;
+    max-height: 38px;
+    object-fit: contain;
+}
+
+.certificate-template-logo-item button {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 50%;
+    background: #991b1b;
+    color: #fff;
+    cursor: pointer;
+    font-size: 11px;
 }
 
 .real-certificate-bottom {
@@ -2679,6 +2738,24 @@ function renderCertificateTemplateOfficials() {
     list.querySelectorAll('input[type="file"]').forEach(input => input.addEventListener('change', updateAdminCertificatePreview));
 }
 
+function renderCertificateTemplateLogoList(settings = certificateTemplateSettings) {
+    const list = document.getElementById('certificate-template-logo-list');
+    if (!list) return;
+    const logos = Array.isArray(settings?.sponsor_logos) ? settings.sponsor_logos : [];
+    if (!logos.length) {
+        list.innerHTML = '<span class="empty-inline">No sponsor logos added yet.</span>';
+        return;
+    }
+    list.innerHTML = logos.map((src, index) => `
+        <div class="certificate-template-logo-item">
+            <img src="${src}" alt="Sponsor logo ${index + 1}">
+            <button type="button" data-remove-template-logo="${index}" aria-label="Remove sponsor logo ${index + 1}">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
 async function collectCertificateTemplateSettings() {
     const previousOfficials = normalizedCertificateOfficials();
     const officials = [];
@@ -2696,7 +2773,8 @@ async function collectCertificateTemplateSettings() {
             signature
         });
     }
-    const logoFiles = Array.from(document.getElementById('cert-template-logos')?.files || []).slice(0, 8);
+    const logoInput = document.getElementById('cert-template-logos');
+    const logoFiles = Array.from(logoInput?.files || []);
     const nextSettings = {
         organization: document.getElementById('cert-template-organization')?.value.trim() || '',
         department: document.getElementById('cert-template-department')?.value.trim() || '',
@@ -2712,10 +2790,14 @@ async function collectCertificateTemplateSettings() {
         seal_text: document.getElementById('cert-template-seal')?.value.trim() || 'Award',
         regards_text: document.getElementById('cert-template-regards')?.value.trim() || '',
         accent_color: document.getElementById('cert-template-color')?.value || '#b91c1c',
-        sponsor_logos: certificateTemplateSettings.sponsor_logos || [],
+        sponsor_logos: Array.isArray(certificateTemplateSettings.sponsor_logos) ? certificateTemplateSettings.sponsor_logos : [],
         officials
     };
-    if (logoFiles.length) nextSettings.sponsor_logos = await Promise.all(logoFiles.map(certificateFileToDataUrl));
+    if (logoFiles.length) {
+        const newLogos = await Promise.all(logoFiles.map(certificateFileToDataUrl));
+        nextSettings.sponsor_logos = [...nextSettings.sponsor_logos, ...newLogos].filter(Boolean).slice(0, 24);
+        if (logoInput) logoInput.value = '';
+    }
     return nextSettings;
 }
 
@@ -2746,6 +2828,7 @@ function applyAdminCertificatePreview(settings = certificateTemplateSettings) {
     });
     const logoStrip = document.getElementById('certificate-preview-logos');
     if (logoStrip) logoStrip.innerHTML = logos.slice(2).map(src => `<img src="${src}" alt="">`).join('');
+    renderCertificateTemplateLogoList(settings);
     const signatureWrap = document.getElementById('certificate-preview-signatures');
     if (signatureWrap) {
         signatureWrap.innerHTML = normalizedCertificateOfficials(settings).slice(0, 6).map(official => `
@@ -3277,7 +3360,7 @@ function updateCertificateAwardPreview() {
     if (extraLogos) extraLogos.innerHTML = logos.slice(2).map(src => `<img src="${src}" alt="">`).join('');
     const signatureWrap = document.querySelector('.certificate-preview-signatures');
     if (signatureWrap) {
-        const officials = normalizedCertificateOfficials(cert).slice(0, 2);
+        const officials = normalizedCertificateOfficials(cert).slice(0, 6);
         signatureWrap.innerHTML = officials.map(official => `
             <div>
                 <b style="${official.signature ? `background-image:url('${official.signature}')` : ''}"></b>
@@ -4080,6 +4163,15 @@ document.getElementById('certificate-template-officials')?.addEventListener('cli
         renderCertificateTemplateOfficials();
         applyAdminCertificatePreview();
     }
+});
+document.getElementById('certificate-template-logo-list')?.addEventListener('click', async (event) => {
+    const removeButton = event.target.closest('[data-remove-template-logo]');
+    if (!removeButton) return;
+    certificateTemplateSettings = await collectCertificateTemplateSettings();
+    const logos = Array.isArray(certificateTemplateSettings.sponsor_logos) ? certificateTemplateSettings.sponsor_logos : [];
+    logos.splice(Number(removeButton.dataset.removeTemplateLogo), 1);
+    certificateTemplateSettings.sponsor_logos = logos;
+    applyAdminCertificatePreview();
 });
 renderCertificateTemplateOfficials();
 applyAdminCertificatePreview();
