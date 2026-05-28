@@ -5624,6 +5624,70 @@ li.CodeMirror-hint-active {
     max-height: 42vh;
 }
 
+.spectator-mode .arena-main,
+.spectator-mode .arena-main.editor-collapsed,
+.spectator-mode .arena-main.sidebar-collapsed,
+.spectator-mode .arena-main.editor-collapsed.sidebar-collapsed {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    grid-template-areas: "center sidebar";
+    gap: 14px;
+    overflow: hidden;
+}
+
+.spectator-mode .editor-panel,
+.spectator-mode .arena-resizer,
+.spectator-mode .center-panel-splitter {
+    display: none !important;
+}
+
+.spectator-mode .center-panel {
+    grid-area: center;
+    display: grid !important;
+    min-width: 0;
+}
+
+.spectator-mode .right-sidebar {
+    grid-area: sidebar;
+    display: flex !important;
+    flex-direction: column;
+    min-width: 0;
+    overflow: auto;
+}
+
+.spectator-mode .output-panel,
+.spectator-mode .target-panel,
+.spectator-mode .diff-panel,
+.spectator-mode .cam-panel {
+    display: flex !important;
+    min-height: 0;
+}
+
+.spectator-mode .spectator-preview-card {
+    display: block;
+}
+
+.spectator-mode .spectator-preview-item iframe {
+    height: 220px;
+}
+
+@media (max-width: 1100px) {
+    .spectator-mode .arena-main,
+    .spectator-mode .arena-main.editor-collapsed,
+    .spectator-mode .arena-main.sidebar-collapsed,
+    .spectator-mode .arena-main.editor-collapsed.sidebar-collapsed {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "center"
+            "sidebar";
+        overflow: auto;
+    }
+
+    .spectator-mode .right-sidebar {
+        max-height: none;
+    }
+}
+
 @keyframes siteMediaDrift {
     from { transform: translateX(0); }
     to { transform: translateX(-22%); }

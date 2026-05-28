@@ -1026,7 +1026,7 @@
                     </div>
                 </div>
                 <div class="site-content-grid">
-                    {% for key, label in [('about', 'About Page'), ('support', 'Support Page'), ('terms', 'Terms and Conditions'), ('contact', 'Contact and Hotlines'), ('help', 'Help Center'), ('feedback', 'Feedback Page')] %}
+                    {% for key, label in [('about', 'About Page'), ('support', 'Support Page'), ('terms', 'Terms and Conditions'), ('contact', 'Contact and Hotlines'), ('help', 'Help Center'), ('feedback', 'Feedback Page'), ('report', 'Report Page')] %}
                     {% set page = site_content.get(key, {}) %}
                     <div class="content-editor-card" data-content-section="{{ key }}">
                         <div class="content-editor-head">
@@ -3880,6 +3880,7 @@ window.saveSiteContent = async (button) => {
             contact: readContentSection('contact'),
             help: readContentSection('help'),
             feedback: readContentSection('feedback'),
+            report: readContentSection('report'),
             maintenance_notice: readContentSection('maintenance_notice')
         };
         const res = await fetch('/admin/site-content', {
@@ -3919,7 +3920,8 @@ function renderDraftPreview(section) {
         terms: '/terms',
         contact: '/contact',
         help: '/help',
-        feedback: '/feedback'
+        feedback: '/feedback',
+        report: '/report'
     };
     const contacts = (data.contact_items || []).map((item) => `
         <a class="site-contact-item" href="${escapeHtml(item.url || '#')}">
@@ -3950,7 +3952,8 @@ window.previewSiteSection = (section) => {
         terms: '/terms',
         contact: '/contact',
         help: '/help',
-        feedback: '/feedback'
+        feedback: '/feedback',
+        report: '/report'
     };
     document.querySelectorAll('[data-content-section]').forEach((card) => {
         card.classList.toggle('is-previewing', card.dataset.contentSection === section);

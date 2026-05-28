@@ -11,6 +11,8 @@ let diffPending = false;
 let matchIsRunning = false;
 let lastLiveSaveAt = 0;
 let previewBroadcastTimer = null;
+let lastSavedCodeHash = null;
+let lastSavedScore = null;
 
 const LIVE_DIFF_DELAY = 180;
 const LIVE_SAVE_INTERVAL = 1000;
@@ -40,6 +42,7 @@ const IS_PLAYER_ROLE = PLAYER_ROLES.includes(USER_ROLE);
 const IS_OBSERVER_ROLE = USER_ROLE === 'admin' || USER_ROLE === 'spectator';
 const CAN_PUBLISH_MEDIA = IS_PLAYER_ROLE || USER_ROLE === 'admin';
 const INITIAL_SCORES = arenaConfig.initialScores || {};
+const SCORE_CACHE_KEY = `arena_${ROOM_ID}_${CURRENT_USERNAME}_score_cache`;
 
 // Parse target HTML/CSS (handle JSON escaping)
 let TARGET_HTML = TARGET_HTML_RAW;
@@ -249,11 +252,21 @@ function initEditors() {
     if (savedHtml && (!HTML_LOCKED || CHALLENGE_TYPE !== 'html')) htmlEditor.setValue(savedHtml);
     if (savedCss) cssEditor.setValue(savedCss);
     if (savedJs) jsEditor.setValue(savedJs);
+
+    const cachedScore = readScoreCache();
+    const currentHash = stableCodeHash();
+    if (cachedScore.hash === currentHash && Number.isFinite(Number(cachedScore.accuracy))) {
+        lastSavedCodeHash = cachedScore.hash;
+        lastSavedScore = Number(cachedScore.accuracy);
+        updateMyProgressBar(lastSavedScore);
+        updateAccuracyBadge(lastSavedScore);
+    }
     
     // Add change listeners
     htmlEditor.on('change', debounce(() => {
         updatePreview();
         saveArenaToLocal();
+        lastSavedCodeHash = null;
         scheduleLiveDiffCheck(80);
         scheduleCodePreviewBroadcast();
     }, 120));
@@ -261,6 +274,7 @@ function initEditors() {
     cssEditor.on('change', debounce(() => {
         updatePreview();
         saveArenaToLocal();
+        lastSavedCodeHash = null;
         scheduleLiveDiffCheck(80);
         scheduleCodePreviewBroadcast();
     }, 120));
@@ -268,6 +282,7 @@ function initEditors() {
     jsEditor.on('change', debounce(() => {
         updatePreview();
         saveArenaToLocal();
+        lastSavedCodeHash = null;
         scheduleLiveDiffCheck(80);
         scheduleCodePreviewBroadcast();
     }, 120));
@@ -608,9 +623,12 @@ async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
 
     const now = Date.now();
     if (live && now - lastLiveSaveAt < LIVE_SAVE_INTERVAL) {
-        return;
+        return { accuracy: lastSavedScore ?? 0, scoreDetails: {}, skipped: true };
     }
-    lastLiveSaveAt = now;
+    const codeHash = stableCodeHash();
+    if (live && lastSavedCodeHash === codeHash && Number.isFinite(Number(lastSavedScore))) {
+        return { accuracy: lastSavedScore, scoreDetails: {}, skipped: true };
+    }
 
     const response = await fetch('/submission/save', {
         method: 'POST',
@@ -621,7 +639,8 @@ async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
             html_code: htmlEditor.getValue(),
             css_code: cssEditor.getValue(),
             js_code: jsEditor.getValue(),
-            accuracy: accuracy
+            accuracy: accuracy,
+            code_hash: codeHash
         })
     });
 
@@ -630,6 +649,8 @@ async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
     }
     const data = await response.json();
     const serverAccuracy = Number.isFinite(Number(data.accuracy)) ? Number(data.accuracy) : accuracy;
+    lastLiveSaveAt = now;
+    writeScoreCache(codeHash, serverAccuracy);
 
     if (window.socket) {
         window.socket.emit('progress_update', {
@@ -639,6 +660,42 @@ async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
         });
     }
     return { accuracy: serverAccuracy, scoreDetails: data.score_details || {} };
+}
+
+function stableCodeHash() {
+    const text = JSON.stringify({
+        room: ROOM_ID,
+        challenge: CHALLENGE_ID,
+        html: htmlEditor?.getValue() || '',
+        css: cssEditor?.getValue() || '',
+        js: jsEditor?.getValue() || ''
+    });
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i += 1) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16);
+}
+
+function readScoreCache() {
+    try {
+        return JSON.parse(localStorage.getItem(SCORE_CACHE_KEY) || '{}');
+    } catch (error) {
+        return {};
+    }
+}
+
+function writeScoreCache(hash, accuracy) {
+    lastSavedCodeHash = hash;
+    lastSavedScore = Math.max(0, Math.min(100, Number(accuracy) || 0));
+    try {
+        localStorage.setItem(SCORE_CACHE_KEY, JSON.stringify({
+            hash,
+            accuracy: lastSavedScore,
+            savedAt: Date.now()
+        }));
+    } catch (error) {}
 }
 
 // Diff check system
@@ -735,8 +792,8 @@ async function runDiffCheck(options = {}) {
                 ? parseFloat((((total - result.mismatched) / total) * 100).toFixed(1))
                 : 0;
             
-            // Update UI
-            updateMyProgressBar(accuracy);
+            // The badge can show the immediate visual diff, but the trusted
+            // progress bar only moves after the server returns the canonical score.
             updateAccuracyBadge(accuracy);
             
             // Populate slider canvases
@@ -745,7 +802,7 @@ async function runDiffCheck(options = {}) {
             let finalAccuracy = accuracy;
             if (save) {
                 const saved = await saveAndBroadcastScore(accuracy, { live });
-                finalAccuracy = saved.accuracy;
+                finalAccuracy = Number.isFinite(Number(saved?.accuracy)) ? Number(saved.accuracy) : accuracy;
                 updateMyProgressBar(finalAccuracy);
                 updateAccuracyBadge(finalAccuracy);
             }
@@ -821,6 +878,28 @@ function applyInitialScoreState() {
         const label = getElement(item.label);
         if (bar) bar.style.width = `${accuracy}%`;
         if (label) label.textContent = `${accuracy.toFixed(1)}%`;
+    });
+}
+
+window.addEventListener('arena-score-state', (event) => {
+    const score = event.detail || {};
+    if (score.username !== CURRENT_USERNAME) return;
+    const accuracy = Math.max(0, Math.min(100, Number(score.accuracy) || 0));
+    lastSavedScore = accuracy;
+    if (htmlEditor && cssEditor && jsEditor) {
+        writeScoreCache(stableCodeHash(), accuracy);
+    }
+    updateMyProgressBar(accuracy);
+    updateAccuracyBadge(accuracy);
+});
+
+function initRefreshGuard() {
+    if (!IS_PLAYER_ROLE) return;
+    window.addEventListener('beforeunload', (event) => {
+        if (!matchIsRunning || !hasPlayerAttempted()) return;
+        event.preventDefault();
+        event.returnValue = 'Your code is saved locally, but refreshing during a live match can interrupt your flow.';
+        return event.returnValue;
     });
 }
 
@@ -2282,6 +2361,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSpectatorMode();
     initAdminObserverWorkspace();
     initAdminControls();
+    initRefreshGuard();
     applyInitialScoreState();
     startCodePreview();
     

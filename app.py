@@ -1005,6 +1005,15 @@ CSS_SCORE_PROPERTIES = {
     'flex-direction'
 }
 
+CSS_SCORE_GROUPS = {
+    'Typography': {'font-size', 'font-family', 'font-weight', 'line-height', 'letter-spacing'},
+    'Color': {'color', 'background', 'background-color', 'opacity'},
+    'Layout': {'display', 'position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'max-width', 'min-height', 'transform'},
+    'Spacing': {'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'gap'},
+    'Shape': {'border', 'border-color', 'border-radius', 'box-shadow'},
+    'Alignment': {'align-items', 'justify-content', 'grid-template-columns', 'flex-direction'}
+}
+
 def normalize_code_text(value):
     text_value = str(value or '').lower()
     text_value = re.sub(r'/\*.*?\*/', ' ', text_value, flags=re.S)
@@ -1046,6 +1055,26 @@ def css_property_similarity(player_css, target_css):
             score += best * 0.65
     return score / len(target_props)
 
+def css_group_similarity(player_css, target_css):
+    target_props = extract_css_properties(target_css)
+    player_props = extract_css_properties(player_css)
+    groups = {}
+    for label, properties in CSS_SCORE_GROUPS.items():
+        group_targets = {prop: values for prop, values in target_props.items() if prop in properties}
+        if not group_targets:
+            continue
+        score = 0
+        for prop, target_values in group_targets.items():
+            player_values = player_props.get(prop, set())
+            if not player_values:
+                continue
+            if target_values & player_values:
+                score += 1
+            else:
+                score += max((token_similarity(pv, tv) for pv in player_values for tv in target_values), default=0) * 0.65
+        groups[label.lower().replace(' ', '_')] = round((score / len(group_targets)) * 100, 1)
+    return groups
+
 def calculate_code_quality(html_code, css_code, js_code=''):
     combined = '\n'.join([str(html_code or ''), str(css_code or ''), str(js_code or '')])
     stripped = combined.strip()
@@ -1080,6 +1109,7 @@ def deterministic_submission_score(challenge, html_code, css_code, js_code='', v
     html_similarity = token_similarity(html_code, target_html) if target_html else min(1.0, len(normalize_code_text(html_code)) / 260)
     css_similarity = token_similarity(css_code, target_css) if target_css else min(1.0, len(extract_css_properties(css_code)) / 18)
     property_similarity = css_property_similarity(css_code, target_css) if target_css else min(1.0, len(extract_css_properties(css_code)) / 24)
+    property_groups = css_group_similarity(css_code, target_css) if target_css else {}
     js_penalty = 0 if not js_code.strip() else min(6, len(js_code.strip()) / 600)
 
     if challenge_type == 'html' and (target_html or target_css):
@@ -1094,6 +1124,7 @@ def deterministic_submission_score(challenge, html_code, css_code, js_code='', v
         'css_similarity': round(css_similarity * 100, 1),
         'style_property_match': round(property_similarity * 100, 1),
         'code_quality': quality,
+        'style_groups': property_groups,
         'scoring_mode': 'target-code' if challenge_type == 'html' and (target_html or target_css) else 'visual-code-rubric'
     }
     return round(max(0, min(100, score)), 1), details
@@ -1107,6 +1138,10 @@ def build_submission_analysis(submission, challenge):
         suggestions.append('Match the target HTML structure more closely: headings, sections, wrappers, and class names are part of the comparison.')
     if details['style_property_match'] < 70:
         suggestions.append('Tune visual CSS properties such as font size, font family, spacing, dimensions, borders, colors, alignment, and layout.')
+    groups = details.get('style_groups') or {}
+    weak_groups = [label.replace('_', ' ') for label, value in groups.items() if float(value or 0) < 70]
+    if weak_groups:
+        suggestions.append('The weakest style categories are: ' + ', '.join(weak_groups[:4]) + '.')
     if details['css_similarity'] < 60:
         suggestions.append('Your CSS uses a different set of selectors or style tokens than the target. Re-check the admin reference styling.')
     if details['code_quality'] < 80:
@@ -1906,6 +1941,24 @@ DEFAULT_SITE_CONTENT = {
         'images': [],
         'videos': []
     },
+    'report': {
+        'hero_title': 'Report a Problem',
+        'hero_subtitle': 'Send urgent match, scoring, safety, or access issues to the arena admins.',
+        'body': 'Use this page for problems that need admin review: unfair scores, room access issues, harassment, broken pages, or tournament mistakes. Include the room code, usernames, and what happened.',
+        'contact_email': '',
+        'nav_label': 'Report',
+        'visible': True,
+        'placements': ['dashboard', 'arena', 'profile', 'footer'],
+        'layout_style': 'feedback',
+        'text_effect': 'slide',
+        'contact_items': [],
+        'links': [
+            {'label': 'Help Center', 'url': '/help'},
+            {'label': 'Contact', 'url': '/contact'}
+        ],
+        'images': [],
+        'videos': []
+    },
     'maintenance_notice': {
         'enabled': False,
         'title': 'Scheduled maintenance',
@@ -1933,7 +1986,7 @@ def save_site_content(content):
     profiles['__site_content__'] = content
     save_profile_store(profiles)
 
-SITE_PAGE_KEYS = ['about', 'support', 'terms', 'contact', 'help', 'feedback']
+SITE_PAGE_KEYS = ['about', 'support', 'terms', 'contact', 'help', 'feedback', 'report']
 SITE_PAGE_PLACEMENTS = ['public', 'dashboard', 'arena', 'profile', 'footer']
 
 def site_page_url(page_key):
@@ -1943,7 +1996,8 @@ def site_page_url(page_key):
         'terms': 'terms_page',
         'contact': 'contact_page',
         'help': 'help_page',
-        'feedback': 'feedback_page'
+        'feedback': 'feedback_page',
+        'report': 'report_page'
     }.get(page_key)
     return url_for(endpoint) if endpoint else '#'
 
@@ -2573,6 +2627,29 @@ def feedback_page():
         save_profile_store(profiles)
         return jsonify({'success': True, 'message': 'Feedback sent'})
     return render_template('site_page.html', page_key='feedback', site_content=get_site_content())
+
+@app.route('/report', methods=['GET', 'POST'])
+def report_page():
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or request.form or {}
+        data = dict(data)
+        data['message'] = f"[REPORT] {data.get('message') or ''}"
+        profiles = load_profile_store()
+        message = str(data.get('message') or '').strip()
+        if not message or message == '[REPORT]':
+            return jsonify({'success': False, 'error': 'Report message is required'}), 400
+        feedback_rows = profiles.setdefault('__feedback_messages__', [])
+        feedback_rows.insert(0, {
+            'name': str(data.get('name') or session.get('username') or 'Visitor')[:120],
+            'email': str(data.get('email') or '')[:180],
+            'message': message[:2000],
+            'room_code': str(data.get('room_code') or '')[:80],
+            'created_at': datetime.now(timezone.utc).isoformat()
+        })
+        profiles['__feedback_messages__'] = feedback_rows[:100]
+        save_profile_store(profiles)
+        return jsonify({'success': True, 'message': 'Report sent'})
+    return render_template('site_page.html', page_key='report', site_content=get_site_content())
 
 # ========== DASHBOARD ==========
 @app.route('/dashboard')

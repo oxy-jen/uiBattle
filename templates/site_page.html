@@ -52,13 +52,13 @@
             {% endfor %}
         </div>
         {% endif %}
-        {% if page_key == 'feedback' %}
+        {% if page_key in ['feedback', 'report'] %}
         <form class="feedback-form" id="feedback-form">
             <label>Name <input name="name" maxlength="120" placeholder="Your name"></label>
             <label>Email <input name="email" type="email" maxlength="180" placeholder="you@example.com"></label>
             <label>Room code <input name="room_code" maxlength="80" placeholder="Optional"></label>
             <label>Message <textarea name="message" rows="6" maxlength="2000" required placeholder="What should the organizers know?"></textarea></label>
-            <button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send Feedback</button>
+            <button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> {{ 'Send Report' if page_key == 'report' else 'Send Feedback' }}</button>
         </form>
         {% endif %}
         {% if page.get('contact_email') %}
@@ -111,7 +111,7 @@ document.getElementById('feedback-form')?.addEventListener('submit', async (even
     event.preventDefault();
     const form = event.currentTarget;
     const payload = Object.fromEntries(new FormData(form).entries());
-    const res = await fetch('{{ url_for("feedback_page") }}', {
+    const res = await fetch('{{ url_for("report_page") if page_key == "report" else url_for("feedback_page") }}', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload)
