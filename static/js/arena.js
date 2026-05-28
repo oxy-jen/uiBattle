@@ -39,6 +39,7 @@ const PLAYER_ROLES = ['player1', 'player2'];
 const IS_PLAYER_ROLE = PLAYER_ROLES.includes(USER_ROLE);
 const IS_OBSERVER_ROLE = USER_ROLE === 'admin' || USER_ROLE === 'spectator';
 const CAN_PUBLISH_MEDIA = IS_PLAYER_ROLE || USER_ROLE === 'admin';
+const INITIAL_SCORES = arenaConfig.initialScores || {};
 
 // Parse target HTML/CSS (handle JSON escaping)
 let TARGET_HTML = TARGET_HTML_RAW;
@@ -627,14 +628,17 @@ async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
     if (!response.ok) {
         throw new Error('Could not save submission');
     }
+    const data = await response.json();
+    const serverAccuracy = Number.isFinite(Number(data.accuracy)) ? Number(data.accuracy) : accuracy;
 
     if (window.socket) {
         window.socket.emit('progress_update', {
             room_id: ROOM_ID,
             username: CURRENT_USERNAME,
-            accuracy: accuracy
+            accuracy: serverAccuracy
         });
     }
+    return { accuracy: serverAccuracy, scoreDetails: data.score_details || {} };
 }
 
 // Diff check system
@@ -666,7 +670,9 @@ async function runDiffCheck(options = {}) {
             updateMyProgressBar(0);
             updateAccuracyBadge(0);
             if (save) {
-                await saveAndBroadcastScore(0, { live });
+                const saved = await saveAndBroadcastScore(0, { live });
+                updateMyProgressBar(saved.accuracy);
+                updateAccuracyBadge(saved.accuracy);
             }
             if (!silent) {
                 showToast('No code entered yet. Score is 0%.', 'info');
@@ -736,14 +742,18 @@ async function runDiffCheck(options = {}) {
             // Populate slider canvases
             populateSliderCanvases(outputCanvas, targetCanvas);
             
+            let finalAccuracy = accuracy;
             if (save) {
-                await saveAndBroadcastScore(accuracy, { live });
+                const saved = await saveAndBroadcastScore(accuracy, { live });
+                finalAccuracy = saved.accuracy;
+                updateMyProgressBar(finalAccuracy);
+                updateAccuracyBadge(finalAccuracy);
             }
             
             if (!silent) {
-                showToast(`Score: ${accuracy}% match`, accuracy >= 80 ? 'success' : 'info');
+                showToast(`Score: ${finalAccuracy}% match`, finalAccuracy >= 80 ? 'success' : 'info');
             }
-            return accuracy;
+            return finalAccuracy;
         }
     } catch (err) {
         console.error('Diff failed:', err);
@@ -773,9 +783,10 @@ function updateMyProgressBar(accuracy) {
     const bar = getElement(barId);
     const label = getElement(lblId);
     
-    if (bar) bar.style.width = accuracy + '%';
+    const safeAccuracy = Math.max(0, Math.min(100, Number(accuracy) || 0));
+    if (bar) bar.style.width = safeAccuracy + '%';
     if (label) {
-        label.textContent = accuracy + '%';
+        label.textContent = safeAccuracy.toFixed(1) + '%';
         label.classList.add('flash-update');
         setTimeout(() => label.classList.remove('flash-update'), 600);
     }
@@ -784,11 +795,53 @@ function updateMyProgressBar(accuracy) {
 function updateAccuracyBadge(accuracy) {
     const badge = getElement('accuracy-badge');
     if (badge) {
-        badge.textContent = accuracy + '% MATCH';
-        const stateClass = accuracy >= 80 ? 'badge-success' : 
-                         accuracy >= 50 ? 'badge-warning' : 'badge-danger';
+        const safeAccuracy = Math.max(0, Math.min(100, Number(accuracy) || 0));
+        badge.textContent = safeAccuracy.toFixed(1) + '% MATCH';
+        const stateClass = safeAccuracy >= 80 ? 'badge-success' :
+                         safeAccuracy >= 50 ? 'badge-warning' : 'badge-danger';
         badge.className = `accuracy-badge ${stateClass}`;
     }
+}
+
+function applyInitialScoreState() {
+    const p1Name = arenaConfig.player1Username || '';
+    const p2Name = arenaConfig.player2Username || '';
+    const ownInitial = Number(INITIAL_SCORES[CURRENT_USERNAME]);
+    if (IS_PLAYER_ROLE && Number.isFinite(ownInitial)) {
+        updateMyProgressBar(ownInitial);
+        updateAccuracyBadge(ownInitial);
+    }
+    [
+        { name: p1Name, bar: 'p1-progress-fill', label: 'p1-accuracy-label' },
+        { name: p2Name, bar: 'p2-progress-fill', label: 'p2-accuracy-label' }
+    ].forEach((item) => {
+        if (!item.name || !Object.prototype.hasOwnProperty.call(INITIAL_SCORES, item.name)) return;
+        const accuracy = Math.max(0, Math.min(100, Number(INITIAL_SCORES[item.name]) || 0));
+        const bar = getElement(item.bar);
+        const label = getElement(item.label);
+        if (bar) bar.style.width = `${accuracy}%`;
+        if (label) label.textContent = `${accuracy.toFixed(1)}%`;
+    });
+}
+
+function initArenaInspectGuards() {
+    if (!document.querySelector('.arena-root')) return;
+    document.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        showToast('Inspect and right-click are disabled in active arena rooms.', 'warning');
+    });
+    document.addEventListener('keydown', (event) => {
+        const key = String(event.key || '').toLowerCase();
+        const blocked =
+            key === 'f12' ||
+            ((event.ctrlKey || event.metaKey) && event.shiftKey && ['i', 'j', 'c'].includes(key)) ||
+            ((event.ctrlKey || event.metaKey) && ['u', 's'].includes(key));
+        if (blocked) {
+            event.preventDefault();
+            event.stopPropagation();
+            showToast('Browser inspection shortcuts are disabled during matches.', 'warning');
+        }
+    }, true);
 }
 
 function clearDiffViews() {
@@ -2213,6 +2266,7 @@ function initAdminControls() {
 
 // Initialize all arena features
 document.addEventListener('DOMContentLoaded', () => {
+    initArenaInspectGuards();
     initEditors();
     initTarget();
     initDiffToggle();
@@ -2228,6 +2282,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSpectatorMode();
     initAdminObserverWorkspace();
     initAdminControls();
+    applyInitialScoreState();
     startCodePreview();
     
     // Tab buttons

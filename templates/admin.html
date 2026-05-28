@@ -16,6 +16,7 @@
             <a href="#" data-section="competitions"><i class="fas fa-trophy"></i> Competitions</a>
             <a href="#" data-section="moderation"><i class="fas fa-comments"></i> Chat Moderation</a>
             <a href="#" data-section="broadcast"><i class="fas fa-broadcast-tower"></i> Broadcast</a>
+            <a href="#" data-section="site-content"><i class="fas fa-pen-to-square"></i> Site Content</a>
             <a href="#" data-section="maintenance"><i class="fas fa-sliders"></i> Maintenance</a>
             <button class="sidebar-profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">
                 <i class="fas fa-user-shield"></i> Admin Profile
@@ -1004,6 +1005,66 @@
             </div>
         </div>
 
+        <!-- Site Content Section -->
+        <div id="section-site-content" class="admin-section">
+            <div class="maintenance-panel site-content-admin">
+                <div class="maintenance-head">
+                    <div>
+                        <h3><i class="fas fa-pen-to-square"></i> Site Content</h3>
+                        <p>Edit About, Support, Terms, public media, and scheduled maintenance notices.</p>
+                    </div>
+                    <button type="button" class="btn-primary" onclick="saveSiteContent(this)"><i class="fas fa-save"></i> Save Site Content</button>
+                </div>
+                <div class="site-content-grid">
+                    {% for key, label in [('about', 'About Page'), ('support', 'Support Page'), ('terms', 'Terms and Conditions')] %}
+                    {% set page = site_content.get(key, {}) %}
+                    <div class="content-editor-card" data-content-section="{{ key }}">
+                        <h4>{{ label }}</h4>
+                        <label>Hero title <input data-field="hero_title" value="{{ page.get('hero_title', '') }}"></label>
+                        <label>Hero subtitle <input data-field="hero_subtitle" value="{{ page.get('hero_subtitle', '') }}"></label>
+                        <label>Body <textarea data-field="body" rows="7">{{ page.get('body', '') }}</textarea></label>
+                        <label>Contact email <input data-field="contact_email" value="{{ page.get('contact_email', '') }}"></label>
+                        {% if key == 'about' %}
+                        <label>Carousel mode
+                            <select data-field="carousel_mode">
+                                {% for mode in ['infinite', 'rotating', 'scroll-snap', 'static'] %}
+                                <option value="{{ mode }}" {% if page.get('carousel_mode') == mode %}selected{% endif %}>{{ mode }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>Text effect
+                            <select data-field="text_effect">
+                                {% for effect in ['fade', 'slide', 'scale', 'glow'] %}
+                                <option value="{{ effect }}" {% if page.get('text_effect') == effect %}selected{% endif %}>{{ effect }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>Media effects
+                            <select data-field="media_effects" multiple size="5">
+                                {% for effect in ['scroll', 'hover', 'autoplay', 'parallax', 'pause-on-hover'] %}
+                                <option value="{{ effect }}" {% if effect in page.get('media_effects', []) %}selected{% endif %}>{{ effect }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>Images JSON <textarea data-field="images_json" rows="5" placeholder='[{"url": "...", "caption": "...", "effect": "hover"}]'>{{ page.get('images', [])|tojson }}</textarea></label>
+                        <label>Videos JSON <textarea data-field="videos_json" rows="5" placeholder='[{"url": "...", "caption": "...", "start_time": "0", "duration": "12"}]'>{{ page.get('videos', [])|tojson }}</textarea></label>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    {% set notice = site_content.get('maintenance_notice', {}) %}
+                    <div class="content-editor-card" data-content-section="maintenance_notice">
+                        <h4>Maintenance and Update Notice</h4>
+                        <label class="checkbox-label"><input data-field="enabled" type="checkbox" {% if notice.get('enabled') %}checked{% endif %}> Show popup notice</label>
+                        <label>Popup title <input data-field="title" value="{{ notice.get('title', '') }}"></label>
+                        <label>Message <textarea data-field="message" rows="5">{{ notice.get('message', '') }}</textarea></label>
+                        <label>Maintenance date/time <input data-field="maintenance_at" value="{{ notice.get('maintenance_at', '') }}"></label>
+                        <label>Update release date/time <input data-field="release_at" value="{{ notice.get('release_at', '') }}"></label>
+                        <label class="checkbox-label"><input data-field="email_users" type="checkbox"> Email users on save</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Maintenance Section -->
         <div id="section-maintenance" class="admin-section">
             <div class="maintenance-panel">
@@ -1066,6 +1127,40 @@
     color: var(--text-secondary);
     margin-top: 4px;
     font-size: 14px;
+}
+.site-content-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+.content-editor-card {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+}
+.content-editor-card h4 {
+    margin: 0;
+    color: var(--text-primary);
+}
+.content-editor-card label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+}
+.content-editor-card input,
+.content-editor-card textarea,
+.content-editor-card select {
+    width: 100%;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    padding: 10px 12px;
 }
 
 .search-input, .filter-select {
@@ -3635,6 +3730,60 @@ window.emailBroadcastToAll = async () => {
         showToast(`Email sent to ${data.sent} user(s). Failed: ${data.failed}. Skipped: ${data.skipped}.`, 'success');
     } catch (err) {
         showToast(err.message || 'Could not send email broadcast', 'error');
+    }
+};
+
+function readContentSection(section) {
+    const card = document.querySelector(`[data-content-section="${section}"]`);
+    if (!card) return {};
+    const data = {};
+    card.querySelectorAll('[data-field]').forEach((field) => {
+        const key = field.dataset.field;
+        if (field.type === 'checkbox') {
+            data[key] = field.checked;
+        } else if (field.multiple) {
+            data[key] = Array.from(field.selectedOptions).map((option) => option.value);
+        } else if (key === 'images_json' || key === 'videos_json') {
+            try {
+                data[key.replace('_json', '')] = JSON.parse(field.value || '[]');
+            } catch (error) {
+                throw new Error(`${section} ${key.replace('_json', '')} must be valid JSON`);
+            }
+        } else {
+            data[key] = field.value;
+        }
+    });
+    return data;
+}
+
+window.saveSiteContent = async (button) => {
+    const original = button?.innerHTML;
+    try {
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+        const payload = {
+            about: readContentSection('about'),
+            support: readContentSection('support'),
+            terms: readContentSection('terms'),
+            maintenance_notice: readContentSection('maintenance_notice')
+        };
+        const res = await fetch('/admin/site-content', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not save site content');
+        showToast('Site content saved', 'success');
+    } catch (err) {
+        showToast(err.message || 'Could not save site content', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = original;
+        }
     }
 };
 

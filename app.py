@@ -964,13 +964,195 @@ def ensure_schema_upgrades():
     db.session.commit()
     schema_upgrades_ready = True
 
+def submission_score_analysis(submission, challenge=None):
+    if not submission or submission.is_forfeit:
+        return 0.0, {
+            'html_similarity': 0.0,
+            'css_similarity': 0.0,
+            'style_property_match': 0.0,
+            'code_quality': 0.0,
+            'scoring_mode': 'forfeit'
+        }
+    challenge = challenge or getattr(submission, 'challenge', None)
+    accuracy, details = deterministic_submission_score(
+        challenge,
+        submission.html_code,
+        submission.css_code,
+        submission.js_code
+    )
+    return accuracy, details
+
 def get_best_room_submission(room_id, user_id):
-    submissions = Submission.query.filter_by(room_id=room_id, user_id=user_id).order_by(
-        Submission.is_final.desc(),
-        Submission.accuracy.desc(),
-        Submission.submitted_at.desc()
-    ).all()
-    return submissions[0] if submissions else None
+    submissions = Submission.query.filter_by(room_id=room_id, user_id=user_id).all()
+    if not submissions:
+        return None
+    room = db.session.get(Room, room_id)
+    challenge = room.challenge if room else None
+    for sub in submissions:
+        accuracy, _details = submission_score_analysis(sub, challenge)
+        if round(float(sub.accuracy or 0), 1) != accuracy:
+            sub.accuracy = accuracy
+    return max(submissions, key=lambda sub: submission_rank_tuple(sub, challenge))
+
+CSS_SCORE_PROPERTIES = {
+    'font-size', 'font-family', 'font-weight', 'line-height', 'letter-spacing',
+    'color', 'background', 'background-color', 'display', 'position', 'top',
+    'right', 'bottom', 'left', 'width', 'height', 'max-width', 'min-height',
+    'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+    'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+    'border', 'border-color', 'border-radius', 'box-shadow', 'opacity',
+    'transform', 'gap', 'align-items', 'justify-content', 'grid-template-columns',
+    'flex-direction'
+}
+
+def normalize_code_text(value):
+    text_value = str(value or '').lower()
+    text_value = re.sub(r'/\*.*?\*/', ' ', text_value, flags=re.S)
+    text_value = re.sub(r'<!--.*?-->', ' ', text_value, flags=re.S)
+    text_value = re.sub(r'//.*', ' ', text_value)
+    return re.sub(r'\s+', ' ', text_value).strip()
+
+def token_similarity(left, right):
+    left_tokens = set(re.findall(r'[a-z0-9_-]+', normalize_code_text(left)))
+    right_tokens = set(re.findall(r'[a-z0-9_-]+', normalize_code_text(right)))
+    if not left_tokens and not right_tokens:
+        return 1.0
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+def extract_css_properties(css_text):
+    properties = {}
+    for name, value in re.findall(r'([a-zA-Z-]+)\s*:\s*([^;{}]+)', str(css_text or '')):
+        key = name.strip().lower()
+        if key in CSS_SCORE_PROPERTIES:
+            properties.setdefault(key, set()).add(normalize_code_text(value))
+    return properties
+
+def css_property_similarity(player_css, target_css):
+    target_props = extract_css_properties(target_css)
+    player_props = extract_css_properties(player_css)
+    if not target_props:
+        return 0.0
+    score = 0
+    for prop, target_values in target_props.items():
+        player_values = player_props.get(prop, set())
+        if not player_values:
+            continue
+        if target_values & player_values:
+            score += 1
+        else:
+            best = max((token_similarity(pv, tv) for pv in player_values for tv in target_values), default=0)
+            score += best * 0.65
+    return score / len(target_props)
+
+def calculate_code_quality(html_code, css_code, js_code=''):
+    combined = '\n'.join([str(html_code or ''), str(css_code or ''), str(js_code or '')])
+    stripped = combined.strip()
+    if not stripped:
+        return 0.0
+    score = 100.0
+    lines = [line.rstrip() for line in combined.splitlines() if line.strip()]
+    duplicate_ratio = 0 if not lines else 1 - (len(set(lines)) / len(lines))
+    score -= min(18, duplicate_ratio * 30)
+    score -= min(16, combined.count('!important') * 2)
+    score -= min(12, len(re.findall(r'\bconsole\.log\b', combined)) * 3)
+    score -= min(14, len([line for line in lines if len(line) > 140]) * 2)
+    if '<style' in combined.lower():
+        score -= 5
+    if len(re.findall(r'<\s*div\b', combined, re.I)) > 18 and not re.search(r'<\s*(main|section|article|header|footer|nav)\b', combined, re.I):
+        score -= 8
+    if str(css_code or '').count('{') != str(css_code or '').count('}'):
+        score -= 14
+    if str(html_code or '').count('<') < 2:
+        score -= 12
+    return round(max(0, min(100, score)), 1)
+
+def deterministic_submission_score(challenge, html_code, css_code, js_code='', visual_hint=None):
+    html_code = str(html_code or '')
+    css_code = str(css_code or '')
+    js_code = str(js_code or '')
+    quality = calculate_code_quality(html_code, css_code, js_code)
+    target_html = getattr(challenge, 'target_html', '') or ''
+    target_css = getattr(challenge, 'target_css', '') or ''
+    challenge_type = getattr(challenge, 'challenge_type', 'image') if challenge else 'image'
+
+    html_similarity = token_similarity(html_code, target_html) if target_html else min(1.0, len(normalize_code_text(html_code)) / 260)
+    css_similarity = token_similarity(css_code, target_css) if target_css else min(1.0, len(extract_css_properties(css_code)) / 18)
+    property_similarity = css_property_similarity(css_code, target_css) if target_css else min(1.0, len(extract_css_properties(css_code)) / 24)
+    js_penalty = 0 if not js_code.strip() else min(6, len(js_code.strip()) / 600)
+
+    if challenge_type == 'html' and (target_html or target_css):
+        score = (html_similarity * 32) + (css_similarity * 18) + (property_similarity * 36) + (quality * 0.14) - js_penalty
+    else:
+        structure_score = min(1.0, (len(re.findall(r'<[a-z][\w-]*', html_code, re.I)) / 10))
+        style_score = min(1.0, len(extract_css_properties(css_code)) / 20)
+        score = (structure_score * 28) + (style_score * 42) + (css_similarity * 12) + (quality * 0.18) - js_penalty
+
+    details = {
+        'html_similarity': round(html_similarity * 100, 1),
+        'css_similarity': round(css_similarity * 100, 1),
+        'style_property_match': round(property_similarity * 100, 1),
+        'code_quality': quality,
+        'scoring_mode': 'target-code' if challenge_type == 'html' and (target_html or target_css) else 'visual-code-rubric'
+    }
+    return round(max(0, min(100, score)), 1), details
+
+def build_submission_analysis(submission, challenge):
+    if not submission:
+        return None
+    accuracy, details = submission_score_analysis(submission, challenge)
+    suggestions = []
+    if details['html_similarity'] < 65:
+        suggestions.append('Match the target HTML structure more closely: headings, sections, wrappers, and class names are part of the comparison.')
+    if details['style_property_match'] < 70:
+        suggestions.append('Tune visual CSS properties such as font size, font family, spacing, dimensions, borders, colors, alignment, and layout.')
+    if details['css_similarity'] < 60:
+        suggestions.append('Your CSS uses a different set of selectors or style tokens than the target. Re-check the admin reference styling.')
+    if details['code_quality'] < 80:
+        suggestions.append('Clean up repeated code, very long lines, unbalanced braces, unnecessary inline styles, console logs, and overuse of !important.')
+    if not suggestions:
+        suggestions.append('Strong submission. Remaining differences are likely fine visual details or small spacing/style mismatches.')
+    return {
+        'accuracy': accuracy,
+        'details': details,
+        'suggestions': suggestions
+    }
+
+def get_submission_quality(submission):
+    if not submission or submission.is_forfeit:
+        return 0.0
+    return calculate_code_quality(submission.html_code, submission.css_code, submission.js_code)
+
+def submission_rank_tuple(submission, challenge=None):
+    if not submission or submission.is_forfeit:
+        return (0.0, 0.0, 0.0, 0.0)
+    accuracy, details = submission_score_analysis(submission, challenge)
+    return (
+        accuracy,
+        details.get('code_quality', get_submission_quality(submission)),
+        1.0 if submission.is_final else 0.0,
+        datetime_sort_value(submission.submitted_at)
+    )
+
+def room_score_payload(room):
+    if not room:
+        return []
+    rows = []
+    for player in [room.player1, room.player2]:
+        if not player:
+            continue
+        sub = get_best_room_submission(room.id, player.id)
+        accuracy, details = submission_score_analysis(sub, room.challenge) if sub else (0.0, {})
+        rows.append({
+            'user_id': player.id,
+            'username': player.username,
+            'accuracy': accuracy,
+            'code_quality': details.get('code_quality', 0.0),
+            'score_details': details,
+            'is_forfeit': bool(sub.is_forfeit) if sub else False
+        })
+    return rows
 
 def get_room_winner_id(room):
     if not room or not room.player1_id or not room.player2_id:
@@ -981,11 +1163,11 @@ def get_room_winner_id(room):
     if not p1_sub and not p2_sub:
         return None
 
-    p1_score = p1_sub.accuracy if p1_sub and not p1_sub.is_forfeit else 0
-    p2_score = p2_sub.accuracy if p2_sub and not p2_sub.is_forfeit else 0
-    if p1_score == p2_score:
+    p1_rank = submission_rank_tuple(p1_sub)
+    p2_rank = submission_rank_tuple(p2_sub)
+    if p1_rank[:2] == p2_rank[:2]:
         return None
-    return room.player1_id if p1_score > p2_score else room.player2_id
+    return room.player1_id if p1_rank[:2] > p2_rank[:2] else room.player2_id
 
 def datetime_sort_value(value):
     if not value:
@@ -1218,7 +1400,9 @@ def get_player_room_score(room_id, user_id):
     sub = get_best_room_submission(room_id, user_id)
     if not sub or sub.is_forfeit:
         return 0.0
-    return round(float(sub.accuracy or 0), 1)
+    room = db.session.get(Room, room_id)
+    accuracy, _details = submission_score_analysis(sub, room.challenge if room else None)
+    return accuracy
 
 def get_participant(tournament_id, user_id):
     return TournamentParticipant.query.filter_by(tournament_id=tournament_id, user_id=user_id).first()
@@ -1409,11 +1593,10 @@ def sync_tournament_match_for_room(room):
     player_ids = [pid for pid in [match.player1_id, match.player2_id] if pid]
     if len(player_ids) < 2:
         return
-    scores = {pid: get_player_room_score(room.id, pid) for pid in player_ids}
-    if scores[player_ids[0]] == scores[player_ids[1]]:
+    winner_id = get_room_winner_id(room)
+    if not winner_id:
         match.status = 'completed'
         return
-    winner_id = max(player_ids, key=lambda pid: scores[pid])
     complete_tournament_match(match, winner_id, 'auto')
 
 def maybe_advance_tournament(tournament):
@@ -1618,6 +1801,91 @@ def notify_users_by_email(users, subject, body, only_verified=True):
 def get_profile_record(user_id):
     profiles = load_profile_store()
     return profiles, profiles.setdefault(str(user_id), {'bio': '', 'avatar_filename': None})
+
+DEFAULT_SITE_CONTENT = {
+    'about': {
+        'hero_title': 'UI Battle Arena',
+        'hero_subtitle': 'A live coding arena for fair UI challenges, spectators, tournaments, and player growth.',
+        'body': 'Compete by recreating target interfaces, learn from deterministic score analysis, and follow live matches in a production-ready arena.',
+        'contact_email': '',
+        'carousel_mode': 'infinite',
+        'media_effects': ['scroll', 'hover'],
+        'text_effect': 'fade',
+        'images': [],
+        'videos': []
+    },
+    'support': {
+        'hero_title': 'Support',
+        'hero_subtitle': 'Get help with accounts, match access, scoring, certificates, or arena setup.',
+        'body': 'Contact the organizer if you cannot join a room, need an email reset, or want a result reviewed.',
+        'contact_email': ''
+    },
+    'terms': {
+        'hero_title': 'Terms and Conditions',
+        'hero_subtitle': 'Fair play, respectful chat, and responsible use keep the arena trustworthy.',
+        'body': 'Do not cheat, harass other users, abuse platform features, or submit harmful code. Admins may moderate rooms, remove players, and reset testing data when needed.'
+    },
+    'maintenance_notice': {
+        'enabled': False,
+        'title': 'Scheduled maintenance',
+        'message': 'The arena will be updated soon. Download anything you need before the maintenance window.',
+        'maintenance_at': '',
+        'release_at': '',
+        'email_users': False
+    }
+}
+
+def get_site_content():
+    profiles = load_profile_store()
+    saved = profiles.get('__site_content__', {})
+    content = json.loads(json.dumps(DEFAULT_SITE_CONTENT))
+    if isinstance(saved, dict):
+        for key, value in saved.items():
+            if isinstance(value, dict) and isinstance(content.get(key), dict):
+                content[key].update(value)
+            else:
+                content[key] = value
+    return content
+
+def save_site_content(content):
+    profiles = load_profile_store()
+    profiles['__site_content__'] = content
+    save_profile_store(profiles)
+
+def normalize_site_content_payload(data):
+    current = get_site_content()
+    for section in ['about', 'support', 'terms']:
+        source = data.get(section) if isinstance(data.get(section), dict) else {}
+        target = current.setdefault(section, {})
+        for key in ['hero_title', 'hero_subtitle', 'body', 'contact_email', 'carousel_mode', 'text_effect']:
+            if key in source:
+                target[key] = str(source.get(key) or '')[:5000]
+        effects = source.get('media_effects')
+        if isinstance(effects, list):
+            target['media_effects'] = [str(item)[:40] for item in effects if str(item).strip()][:8]
+        for media_key in ['images', 'videos']:
+            items = source.get(media_key)
+            if isinstance(items, list):
+                target[media_key] = [
+                    {
+                        'url': str(item.get('url') or '')[:1000],
+                        'caption': str(item.get('caption') or '')[:240],
+                        'effect': str(item.get('effect') or '')[:40],
+                        'start_time': str(item.get('start_time') or '')[:40],
+                        'duration': str(item.get('duration') or '')[:40]
+                    }
+                    for item in items if isinstance(item, dict) and str(item.get('url') or '').strip()
+                ][:12]
+    notice = data.get('maintenance_notice') if isinstance(data.get('maintenance_notice'), dict) else {}
+    current['maintenance_notice'] = {
+        'enabled': bool(notice.get('enabled')),
+        'title': str(notice.get('title') or 'Scheduled maintenance')[:160],
+        'message': str(notice.get('message') or '')[:1500],
+        'maintenance_at': str(notice.get('maintenance_at') or '')[:80],
+        'release_at': str(notice.get('release_at') or '')[:80],
+        'email_users': bool(notice.get('email_users'))
+    }
+    return current
 
 def get_profile_view_data(user_id):
     profile = load_profile_store().get(str(user_id), {})
@@ -2139,7 +2407,19 @@ def logout():
 @app.route('/maintenance')
 def maintenance_page():
     session.clear()
-    return render_template('maintenance.html')
+    return render_template('maintenance.html', site_content=get_site_content())
+
+@app.route('/about')
+def about_page():
+    return render_template('site_page.html', page_key='about', site_content=get_site_content())
+
+@app.route('/support')
+def support_page():
+    return render_template('site_page.html', page_key='support', site_content=get_site_content())
+
+@app.route('/terms')
+def terms_page():
+    return render_template('site_page.html', page_key='terms', site_content=get_site_content())
 
 # ========== DASHBOARD ==========
 @app.route('/dashboard')
@@ -2245,8 +2525,43 @@ def admin_panel():
                          moderation_mentions_count=moderation_mentions_count,
                          tournaments=tournaments,
                          completed_tournaments=completed_tournaments,
+                         site_content=get_site_content(),
                          certificate_template=get_certificate_template_settings(),
                          tournament_sizes=sorted(TOURNAMENT_SIZES))
+
+@app.route('/admin/site-content', methods=['GET', 'POST'])
+@admin_required
+def admin_site_content():
+    if request.method == 'GET':
+        return jsonify({'success': True, 'site_content': get_site_content()})
+
+    data = request.get_json(silent=True) or {}
+    content = normalize_site_content_payload(data)
+    save_site_content(content)
+
+    notice = content.get('maintenance_notice', {})
+    if notice.get('enabled'):
+        payload = {
+            'title': notice.get('title') or 'Scheduled maintenance',
+            'message': notice.get('message') or '',
+            'maintenance_at': notice.get('maintenance_at') or '',
+            'release_at': notice.get('release_at') or ''
+        }
+        socketio.emit('maintenance_notice', payload)
+        if notice.get('email_users') and email_configured():
+            recipients = User.query.filter(User.email.isnot(None), User.email != '').all()
+            notify_users_by_email(
+                recipients,
+                payload['title'],
+                (
+                    f"{payload['message']}\n\n"
+                    f"Maintenance: {payload['maintenance_at'] or 'To be announced'}\n"
+                    f"Update release: {payload['release_at'] or 'To be announced'}\n\n"
+                    "Please download any assets you need before the maintenance window."
+                ),
+                only_verified=False
+            )
+    return jsonify({'success': True, 'site_content': content})
 
 @app.route('/admin/certificate-template', methods=['GET', 'POST'])
 @admin_required
@@ -3276,6 +3591,8 @@ def arena(room_id):
     player1_username = room.player1.username if room.player1 else None
     player2_username = room.player2.username if room.player2 else None
     admin_user = User.query.filter_by(role='admin').first()
+    p1_sub = get_best_room_submission(room.id, room.player1_id) if room.player1_id else None
+    p2_sub = get_best_room_submission(room.id, room.player2_id) if room.player2_id else None
     
     user_role = 'spectator'
     if room.player1_id == user.id:
@@ -3292,7 +3609,9 @@ def arena(room_id):
                          user_role=user_role,
                          player1_username=player1_username,
                          player2_username=player2_username,
-                         admin_username=admin_user.username if admin_user else 'Admin')
+                         admin_username=admin_user.username if admin_user else 'Admin',
+                         p1_accuracy=round(float(p1_sub.accuracy or 0), 1) if p1_sub else 0,
+                         p2_accuracy=round(float(p2_sub.accuracy or 0), 1) if p2_sub else 0)
 
 @app.route('/results/<int:room_id>')
 @login_required
@@ -3304,41 +3623,19 @@ def results(room_id):
     if not room:
         return redirect(url_for('dashboard'))
     
-    final_subs = Submission.query.filter_by(room_id=room_id, is_final=True).all()
+    p1_sub = get_best_room_submission(room.id, room.player1_id) if room.player1_id else None
+    p2_sub = get_best_room_submission(room.id, room.player2_id) if room.player2_id else None
+    best_submissions = [sub for sub in [p1_sub, p2_sub] if sub]
+    result_rows = sorted(best_submissions, key=lambda sub: submission_rank_tuple(sub, room.challenge), reverse=True)
     
-    p1_sub = None
-    p2_sub = None
-    
-    if not final_subs:
-        final_subs = Submission.query.filter_by(room_id=room_id).all()
-    
-    best_submissions = {}
-    player_ids = {room.player1_id, room.player2_id}
-    for sub in final_subs:
-        if sub.user_id not in player_ids:
-            continue
-        current = best_submissions.get(sub.user_id)
-        if not current or sub.accuracy > current.accuracy or (sub.is_final and not current.is_final):
-            best_submissions[sub.user_id] = sub
-        if sub.user_id == room.player1_id:
-            p1_sub = sub if not p1_sub or sub.accuracy >= p1_sub.accuracy else p1_sub
-        elif sub.user_id == room.player2_id:
-            p2_sub = sub if not p2_sub or sub.accuracy >= p2_sub.accuracy else p2_sub
-
-    result_rows = sorted(
-        best_submissions.values(),
-        key=lambda sub: (sub.accuracy or 0, datetime_sort_value(sub.submitted_at)),
-        reverse=True
-    )
-    
-    winner = None
-    if p1_sub and p2_sub:
-        if p1_sub.accuracy > p2_sub.accuracy:
-            winner = p1_sub.user.username if p1_sub.user else 'Player 1'
-        elif p2_sub.accuracy > p1_sub.accuracy:
-            winner = p2_sub.user.username if p2_sub.user else 'Player 2'
-        else:
-            winner = 'DRAW'
+    winner_id = get_room_winner_id(room)
+    if winner_id:
+        winner_user = db.session.get(User, winner_id)
+        winner = winner_user.username if winner_user else 'Winner'
+    elif p1_sub or p2_sub:
+        winner = 'DRAW'
+    else:
+        winner = None
     
     if room.player1_id:
         update_user_stats(room.player1_id)
@@ -3346,6 +3643,10 @@ def results(room_id):
         update_user_stats(room.player2_id)
     finalize_room_results(room)
     db.session.commit()
+    result_analysis = {
+        room.player1_id: build_submission_analysis(p1_sub, room.challenge) if room.player1_id else None,
+        room.player2_id: build_submission_analysis(p2_sub, room.challenge) if room.player2_id else None
+    }
     
     return render_template('results.html',
                          room=room,
@@ -3353,6 +3654,7 @@ def results(room_id):
                          p2_sub=p2_sub,
                          result_rows=result_rows,
                          winner=winner,
+                         result_analysis=result_analysis,
                          user=user)
 
 @app.route('/tournament')
@@ -3466,7 +3768,7 @@ def verify_certificate(certificate_id):
 @app.route('/submission/save', methods=['POST'])
 @login_required
 def save_submission():
-    data = request.json
+    data = request.json or {}
     user = get_current_user()
     room = db.session.get(Room, data.get('room_id'))
 
@@ -3476,6 +3778,18 @@ def save_submission():
         return jsonify({'success': False, 'error': 'Only active players can submit scores'}), 403
     if room.status == 'ended':
         return jsonify({'success': False, 'error': 'Match has ended'}), 403
+
+    html_code = data.get('html_code', '')
+    css_code = data.get('css_code', '')
+    js_code = data.get('js_code', '')
+    challenge = room.challenge or db.session.get(Challenge, data.get('challenge_id'))
+    accuracy, score_details = deterministic_submission_score(
+        challenge,
+        html_code,
+        css_code,
+        js_code,
+        data.get('accuracy')
+    )
     
     existing = Submission.query.filter_by(
         user_id=user.id,
@@ -3484,20 +3798,21 @@ def save_submission():
     ).first()
     
     if existing:
-        existing.html_code = data.get('html_code', '')
-        existing.css_code = data.get('css_code', '')
-        existing.js_code = data.get('js_code', '')
-        existing.accuracy = data['accuracy']
+        existing.html_code = html_code
+        existing.css_code = css_code
+        existing.js_code = js_code
+        existing.challenge_id = challenge.id if challenge else data.get('challenge_id')
+        existing.accuracy = accuracy
         existing.submitted_at = datetime.now(timezone.utc)
     else:
         submission = Submission(
             user_id=user.id,
             room_id=room.id,
-            challenge_id=data.get('challenge_id'),
-            html_code=data.get('html_code', ''),
-            css_code=data.get('css_code', ''),
-            js_code=data.get('js_code', ''),
-            accuracy=data['accuracy']
+            challenge_id=challenge.id if challenge else data.get('challenge_id'),
+            html_code=html_code,
+            css_code=css_code,
+            js_code=js_code,
+            accuracy=accuracy
         )
         db.session.add(submission)
     
@@ -3510,7 +3825,7 @@ def save_submission():
             'match': serialize_tournament_match(tournament_match)
         }, room=f"tournament_{tournament_match.tournament_id}")
     
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'accuracy': accuracy, 'score_details': score_details})
 
 
 @app.route('/room/invite/<room_code>')
@@ -4180,6 +4495,16 @@ def handle_join_room(data):
             ]
         }, room=request.sid)
 
+    scores = room_score_payload(room)
+    emit('score_state', {'room_id': room_id, 'scores': scores}, room=request.sid)
+    for score in scores:
+        emit('progress_update', {
+            'room_id': room_id,
+            'username': score['username'],
+            'accuracy': score['accuracy'],
+            'score_details': score.get('score_details') or {}
+        }, room=request.sid)
+
     emit_presence(room_id)
     socketio.emit('media_peer_ready', {
         'room_id': room_id,
@@ -4243,12 +4568,14 @@ def handle_progress_update(data):
     user, room, _role = socket_room_context(data)
     if not is_room_player(user, room):
         return
-    accuracy = (data or {}).get('accuracy')
+    sub = get_best_room_submission(room.id, user.id)
+    accuracy, details = submission_score_analysis(sub, room.challenge) if sub else (0.0, {})
 
     socketio.emit('progress_update', {
         'room_id': room.id,
         'username': user.username,
-        'accuracy': accuracy
+        'accuracy': accuracy,
+        'score_details': details
     }, room=str(room.id), include_self=False)
 
     broadcast_leaderboard(room.id)

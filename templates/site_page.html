@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% set page = site_content.get(page_key, {}) %}
+<main class="site-content-page">
+    <section class="site-hero">
+        <div>
+            <span class="site-kicker">UI Battle Arena</span>
+            <h1 class="text-effect-{{ page.get('text_effect', 'fade') }}">{{ page.get('hero_title', 'UI Battle Arena') }}</h1>
+            <p>{{ page.get('hero_subtitle', '') }}</p>
+        </div>
+    </section>
+
+    {% if page_key == 'about' and (page.get('images') or page.get('videos')) %}
+    <section class="site-media-band media-mode-{{ page.get('carousel_mode', 'infinite') }} {% for effect in page.get('media_effects', []) %}media-effect-{{ effect }} {% endfor %}">
+        <div class="site-media-track">
+            {% for image in page.get('images', []) %}
+            <figure class="site-media-item effect-{{ image.get('effect') or 'hover' }}">
+                <img src="{{ image.url }}" alt="{{ image.caption or 'About UI Battle Arena' }}">
+                {% if image.caption %}<figcaption>{{ image.caption }}</figcaption>{% endif %}
+            </figure>
+            {% endfor %}
+            {% for video in page.get('videos', []) %}
+            <figure class="site-media-item effect-{{ video.get('effect') or 'hover' }}">
+                <video src="{{ video.url }}" {% if 'autoplay' in page.get('media_effects', []) %}autoplay muted loop{% endif %} controls playsinline data-start="{{ video.get('start_time', '') }}" data-duration="{{ video.get('duration', '') }}"></video>
+                {% if video.caption %}<figcaption>{{ video.caption }}</figcaption>{% endif %}
+            </figure>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="site-copy-section">
+        <article>
+            {{ page.get('body', '')|replace('\n', '<br>')|safe }}
+        </article>
+        {% if page.get('contact_email') %}
+        <a class="btn-primary" href="mailto:{{ page.get('contact_email') }}"><i class="fas fa-envelope"></i> Contact Support</a>
+        {% endif %}
+    </section>
+
+    <nav class="site-footer-links">
+        <a href="{{ url_for('about_page') }}">About</a>
+        <a href="{{ url_for('support_page') }}">Support</a>
+        <a href="{{ url_for('terms_page') }}">Terms</a>
+        <a href="{{ url_for('login_page') }}">Arena Login</a>
+    </nav>
+</main>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.querySelectorAll('.site-media-item video').forEach((video) => {
+    const start = Number(video.dataset.start || 0);
+    const duration = Number(video.dataset.duration || 0);
+    const applyStart = () => {
+        if (Number.isFinite(start) && start > 0 && Math.abs(video.currentTime - start) > 0.5) {
+            video.currentTime = start;
+        }
+    };
+    video.addEventListener('loadedmetadata', applyStart, { once: true });
+    video.addEventListener('timeupdate', () => {
+        if (duration > 0 && video.currentTime >= start + duration) {
+            video.currentTime = Math.max(0, start);
+            if (video.autoplay || video.loop) video.play().catch(() => {});
+        }
+    });
+});
+
+const mediaBand = document.querySelector('.site-media-band.media-effect-scroll, .site-media-band.media-effect-parallax');
+if (mediaBand) {
+    const updateMediaMotion = () => {
+        const rect = mediaBand.getBoundingClientRect();
+        const progress = Math.max(-1, Math.min(1, (window.innerHeight / 2 - rect.top) / Math.max(rect.height, 1)));
+        mediaBand.style.setProperty('--site-scroll-shift', `${progress * 18}px`);
+    };
+    updateMediaMotion();
+    window.addEventListener('scroll', updateMediaMotion, { passive: true });
+}
+</script>
+{% endblock %}

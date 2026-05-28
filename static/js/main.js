@@ -90,6 +90,11 @@ function initRoomInviteNotifications() {
                 toast.addEventListener('click', () => { window.location.href = data.invite_url; }, {once: true});
             }
         });
+        window.roomInviteSocket.on('maintenance_notice', (data) => {
+            const when = data?.maintenance_at ? ` Maintenance: ${data.maintenance_at}.` : '';
+            const release = data?.release_at ? ` Release: ${data.release_at}.` : '';
+            showToast(`${data?.title || 'Scheduled maintenance'}: ${data?.message || ''}${when}${release}`, 'warning');
+        });
     } catch (e) {}
 }
 

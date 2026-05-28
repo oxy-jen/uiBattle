@@ -23,7 +23,11 @@
             player2Username: "{{ player2_username or '' }}",
             adminName: "{{ admin_username }}",
             challengeTitle: "{{ challenge.title }}",
-            challengeDifficulty: "{{ challenge.difficulty }}"
+            challengeDifficulty: "{{ challenge.difficulty }}",
+            initialScores: {
+                "{{ player1_username or 'player1' }}": {{ p1_accuracy|default(0) }},
+                "{{ player2_username or 'player2' }}": {{ p2_accuracy|default(0) }}
+            }
         };
     </script>
     <input type="hidden" id="room-id" value="{{ room.id }}">
@@ -79,10 +83,10 @@
                     <span class="player-name" id="p1-username">{{ player1_username or 'Waiting...' }}</span>
                 </div>
                 <div class="progress-container">
-                    <div class="progress-fill" id="p1-progress-fill" style="width:0%"></div>
+                    <div class="progress-fill" id="p1-progress-fill" style="width:{{ p1_accuracy|default(0) }}%"></div>
                 </div>
                 <div class="player-stats">
-                    <span class="player-accuracy" id="p1-accuracy-label">0%</span>
+                    <span class="player-accuracy" id="p1-accuracy-label">{{ "%.1f"|format(p1_accuracy|default(0)) }}%</span>
                     <span class="player-status online" id="p1-status">â— Online</span>
                 </div>
             </div>
@@ -103,11 +107,11 @@
                     <span class="player-name" id="p2-username">{{ player2_username or 'Waiting...' }}</span>
                 </div>
                 <div class="progress-container">
-                    <div class="progress-fill" id="p2-progress-fill" style="width:0%"></div>
+                    <div class="progress-fill" id="p2-progress-fill" style="width:{{ p2_accuracy|default(0) }}%"></div>
                 </div>
                 <div class="player-stats right">
                     <span class="player-status online" id="p2-status">â— Online</span>
-                    <span class="player-accuracy" id="p2-accuracy-label">0%</span>
+                    <span class="player-accuracy" id="p2-accuracy-label">{{ "%.1f"|format(p2_accuracy|default(0)) }}%</span>
                 </div>
             </div>
             <div class="player-avatar">

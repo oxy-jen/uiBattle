@@ -69,6 +69,13 @@
         <i class="fas fa-moon"></i>
         <span>Dark</span>
     </button>
+    {% if request.endpoint in ['login_page', 'about_page', 'support_page', 'terms_page', 'maintenance_page'] %}
+    <nav class="public-site-nav" aria-label="Public site links">
+        <a href="{{ url_for('about_page') }}">About</a>
+        <a href="{{ url_for('support_page') }}">Support</a>
+        <a href="{{ url_for('terms_page') }}">Terms</a>
+    </nav>
+    {% endif %}
 
     {% block content %}{% endblock %}
 

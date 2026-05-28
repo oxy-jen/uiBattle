@@ -232,9 +232,6 @@ socket.on('challenge_started', function(data) {
 // Progress update - opponent only
 socket.on('progress_update', (data) => {
     console.log('ðŸ“Š progress_update:', data);
-    const currentUser = document.getElementById('current-username')?.value || window.ARENA_CONFIG?.currentUsername;
-    if (data.username === currentUser) return;
-    
     const p1Name = document.getElementById('p1-username-data')?.value || window.ARENA_CONFIG?.player1Username;
     const p2Name = document.getElementById('p2-username-data')?.value || window.ARENA_CONFIG?.player2Username;
     
@@ -252,12 +249,29 @@ socket.on('progress_update', (data) => {
     const bar = document.getElementById(barId);
     const label = document.getElementById(labelId);
     
-    if (bar) bar.style.width = data.accuracy + '%';
+    const accuracy = Math.max(0, Math.min(100, Number(data.accuracy) || 0));
+    if (bar) bar.style.width = accuracy + '%';
     if (label) {
-        label.textContent = data.accuracy + '%';
+        label.textContent = accuracy.toFixed(1) + '%';
         label.classList.add('flash-update');
         setTimeout(() => label.classList.remove('flash-update'), 600);
     }
+});
+
+socket.on('score_state', (data) => {
+    (data?.scores || []).forEach((score) => {
+        const event = new CustomEvent('arena-score-state', { detail: score });
+        window.dispatchEvent(event);
+        const p1Name = document.getElementById('p1-username-data')?.value || window.ARENA_CONFIG?.player1Username;
+        const p2Name = document.getElementById('p2-username-data')?.value || window.ARENA_CONFIG?.player2Username;
+        const barId = score.username === p1Name ? 'p1-progress-fill' : score.username === p2Name ? 'p2-progress-fill' : '';
+        const labelId = score.username === p1Name ? 'p1-accuracy-label' : score.username === p2Name ? 'p2-accuracy-label' : '';
+        const accuracy = Math.max(0, Math.min(100, Number(score.accuracy) || 0));
+        const bar = document.getElementById(barId);
+        const label = document.getElementById(labelId);
+        if (bar) bar.style.width = `${accuracy}%`;
+        if (label) label.textContent = `${accuracy.toFixed(1)}%`;
+    });
 });
 
 // Leaderboard update
@@ -563,6 +577,12 @@ socket.on('system_announcement', (data) => {
     console.log('ðŸ“¢ system_announcement:', data);
     showToast(`ðŸ“¢ ${data.message}`, 'info');
     appendChatMessage('ADMIN', data.message, true);
+});
+
+socket.on('maintenance_notice', (data) => {
+    const when = data?.maintenance_at ? ` Maintenance: ${data.maintenance_at}.` : '';
+    const release = data?.release_at ? ` Release: ${data.release_at}.` : '';
+    showToast(`${data?.title || 'Scheduled maintenance'}: ${data?.message || ''}${when}${release}`, 'warning');
 });
 
 const voiceBroadcastQueue = [];
