@@ -5281,6 +5281,65 @@ li.CodeMirror-hint-active {
     background: rgba(255,255,255,0.08);
 }
 
+.site-nav-links,
+.profile-site-links,
+.site-sidebar-links {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.site-nav-links a,
+.profile-site-links a,
+.site-sidebar-links a,
+.site-icon-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.045);
+    font-weight: 800;
+}
+
+.site-nav-links a {
+    padding: 8px 10px;
+    font-size: 12px;
+}
+
+.profile-site-links {
+    padding-top: 12px;
+    border-top: 1px solid var(--border-default);
+}
+
+.profile-site-links a,
+.site-sidebar-links a {
+    padding: 9px 10px;
+    font-size: 12px;
+}
+
+.site-sidebar-links {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.site-nav-links a:hover,
+.profile-site-links a:hover,
+.site-sidebar-links a:hover,
+.site-icon-link:hover {
+    color: var(--text-primary);
+    border-color: rgba(34,211,238,0.45);
+    background: rgba(34,211,238,0.09);
+}
+
+@media (max-width: 980px) {
+    .site-nav-links {
+        order: 3;
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
+
 .site-content-page {
     min-height: 100vh;
     background: linear-gradient(135deg, #080b12 0%, #131826 55%, #111827 100%);

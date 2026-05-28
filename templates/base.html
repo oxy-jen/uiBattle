@@ -74,6 +74,7 @@
         <a href="{{ url_for('about_page') }}">About</a>
         <a href="{{ url_for('support_page') }}">Support</a>
         <a href="{{ url_for('terms_page') }}">Terms</a>
+        <a href="{{ url_for('maintenance_page') }}">Maintenance</a>
     </nav>
     {% endif %}
 
@@ -182,6 +183,12 @@
                 <a class="profile-menu-link" href="{{ url_for('my_awards') }}"><i class="fas fa-id-card-clip"></i> My cards</a>
                 {% endif %}
                 <button class="profile-menu-save" type="submit"><i class="fas fa-save"></i> Save</button>
+            </div>
+            <div class="profile-site-links" aria-label="Site pages">
+                <a href="{{ url_for('about_page') }}"><i class="fas fa-circle-info"></i> About</a>
+                <a href="{{ url_for('support_page') }}"><i class="fas fa-life-ring"></i> Support</a>
+                <a href="{{ url_for('terms_page') }}"><i class="fas fa-file-contract"></i> Terms</a>
+                <a href="{{ url_for('maintenance_page') }}"><i class="fas fa-calendar-days"></i> Maintenance</a>
             </div>
         </form>
 

@@ -8,6 +8,12 @@
             <span>UI BATTLE ARENA</span>
         </div>
         <div class="nav-right">
+            <div class="site-nav-links" aria-label="Site pages">
+                <a href="{{ url_for('about_page') }}"><i class="fas fa-circle-info"></i> About</a>
+                <a href="{{ url_for('support_page') }}"><i class="fas fa-life-ring"></i> Support</a>
+                <a href="{{ url_for('terms_page') }}"><i class="fas fa-file-contract"></i> Terms</a>
+                <a href="{{ url_for('maintenance_page') }}"><i class="fas fa-calendar-days"></i> Maintenance</a>
+            </div>
             <button class="user-menu profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">
                 <div class="avatar" data-profile-avatar>
                     {% if current_profile is defined and current_profile.avatar_url %}

@@ -2406,7 +2406,6 @@ def logout():
 
 @app.route('/maintenance')
 def maintenance_page():
-    session.clear()
     return render_template('maintenance.html', site_content=get_site_content())
 
 @app.route('/about')
