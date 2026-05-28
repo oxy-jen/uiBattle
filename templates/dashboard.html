@@ -9,9 +9,9 @@
         </div>
         <div class="nav-right">
             <div class="site-nav-links" aria-label="Site pages">
-                <a href="{{ url_for('about_page') }}"><i class="fas fa-circle-info"></i> About</a>
-                <a href="{{ url_for('support_page') }}"><i class="fas fa-life-ring"></i> Support</a>
-                <a href="{{ url_for('terms_page') }}"><i class="fas fa-file-contract"></i> Terms</a>
+                {% for item in visible_site_pages('dashboard') %}
+                <a href="{{ item.url }}"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
+                {% endfor %}
                 <a href="{{ url_for('maintenance_page') }}"><i class="fas fa-calendar-days"></i> Maintenance</a>
             </div>
             <button class="user-menu profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">

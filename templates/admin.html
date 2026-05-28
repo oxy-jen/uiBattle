@@ -1011,20 +1011,48 @@
                 <div class="maintenance-head">
                     <div>
                         <h3><i class="fas fa-pen-to-square"></i> Site Content</h3>
-                        <p>Edit About, Support, Terms, public media, and scheduled maintenance notices.</p>
+                        <p>Page lab for public pages, footer links, support contacts, feedback, and maintenance notices.</p>
                     </div>
                     <button type="button" class="btn-primary" onclick="saveSiteContent(this)"><i class="fas fa-save"></i> Save Site Content</button>
                 </div>
+                <div class="site-lab-preview">
+                    <div>
+                        <h4>Live page preview</h4>
+                        <iframe id="site-live-preview" src="{{ url_for('about_page') }}"></iframe>
+                    </div>
+                    <div>
+                        <h4>Draft design preview</h4>
+                        <iframe id="site-draft-preview" src="{{ url_for('about_page') }}"></iframe>
+                    </div>
+                </div>
                 <div class="site-content-grid">
-                    {% for key, label in [('about', 'About Page'), ('support', 'Support Page'), ('terms', 'Terms and Conditions')] %}
+                    {% for key, label in [('about', 'About Page'), ('support', 'Support Page'), ('terms', 'Terms and Conditions'), ('contact', 'Contact and Hotlines'), ('help', 'Help Center'), ('feedback', 'Feedback Page')] %}
                     {% set page = site_content.get(key, {}) %}
                     <div class="content-editor-card" data-content-section="{{ key }}">
-                        <h4>{{ label }}</h4>
+                        <div class="content-editor-head">
+                            <h4>{{ label }}</h4>
+                            <button type="button" class="btn-secondary mini-preview-btn" onclick="previewSiteSection('{{ key }}')"><i class="fas fa-eye"></i> Preview</button>
+                        </div>
+                        <label class="checkbox-label"><input data-field="visible" type="checkbox" {% if page.get('visible', true) %}checked{% endif %}> Visible to players</label>
+                        <label>Navigation label <input data-field="nav_label" value="{{ page.get('nav_label', label.split(' ')[0]) }}"></label>
                         <label>Hero title <input data-field="hero_title" value="{{ page.get('hero_title', '') }}"></label>
                         <label>Hero subtitle <input data-field="hero_subtitle" value="{{ page.get('hero_subtitle', '') }}"></label>
                         <label>Body <textarea data-field="body" rows="7">{{ page.get('body', '') }}</textarea></label>
                         <label>Contact email <input data-field="contact_email" value="{{ page.get('contact_email', '') }}"></label>
-                        {% if key == 'about' %}
+                        <label>Show link in
+                            <select data-field="placements" multiple size="6">
+                                {% for placement, label_text in [('public', 'Public nav'), ('dashboard', 'Dashboard'), ('arena', 'Arena'), ('profile', 'Profile'), ('footer', 'Footer'), ('all', 'All surfaces')] %}
+                                <option value="{{ placement }}" {% if placement in page.get('placements', []) %}selected{% endif %}>{{ label_text }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>Layout style
+                            <select data-field="layout_style">
+                                {% for mode in ['standard', 'document', 'contact', 'help', 'feedback'] %}
+                                <option value="{{ mode }}" {% if page.get('layout_style') == mode %}selected{% endif %}>{{ mode }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
                         <label>Carousel mode
                             <select data-field="carousel_mode">
                                 {% for mode in ['infinite', 'rotating', 'scroll-snap', 'static'] %}
@@ -1046,11 +1074,26 @@
                                 {% endfor %}
                             </select>
                         </label>
+                        <label>Contacts JSON <textarea data-field="contact_items_json" rows="5" placeholder='[{"label":"WhatsApp hotline","kind":"whatsapp","value":"+1...","url":"https://wa.me/..."}]'>{{ page.get('contact_items', [])|tojson }}</textarea></label>
+                        <label>Links JSON <textarea data-field="links_json" rows="5" placeholder='[{"label":"External docs","url":"https://..."}]'>{{ page.get('links', [])|tojson }}</textarea></label>
                         <label>Images JSON <textarea data-field="images_json" rows="5" placeholder='[{"url": "...", "caption": "...", "effect": "hover"}]'>{{ page.get('images', [])|tojson }}</textarea></label>
                         <label>Videos JSON <textarea data-field="videos_json" rows="5" placeholder='[{"url": "...", "caption": "...", "start_time": "0", "duration": "12"}]'>{{ page.get('videos', [])|tojson }}</textarea></label>
-                        {% endif %}
                     </div>
                     {% endfor %}
+                    <div class="content-editor-card feedback-inbox-card">
+                        <h4>Latest Feedback</h4>
+                        {% for item in feedback_messages|default([]) %}
+                        <div class="feedback-inbox-item">
+                            <strong>{{ item.name }}</strong>
+                            <span>{{ item.created_at }}</span>
+                            {% if item.email %}<a href="mailto:{{ item.email }}">{{ item.email }}</a>{% endif %}
+                            {% if item.room_code %}<small>Room: {{ item.room_code }}</small>{% endif %}
+                            <p>{{ item.message }}</p>
+                        </div>
+                        {% else %}
+                        <p class="muted">No feedback yet.</p>
+                        {% endfor %}
+                    </div>
                     {% set notice = site_content.get('maintenance_notice', {}) %}
                     <div class="content-editor-card" data-content-section="maintenance_notice">
                         <h4>Maintenance and Update Notice</h4>
@@ -1128,6 +1171,28 @@
     margin-top: 4px;
     font-size: 14px;
 }
+.site-lab-preview {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 18px;
+}
+.site-lab-preview > div {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+.site-lab-preview h4 {
+    margin: 0;
+    color: var(--text-primary);
+}
+.site-lab-preview iframe {
+    width: 100%;
+    min-height: 360px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: #fff;
+}
 .site-content-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -1141,9 +1206,23 @@
     border-radius: 8px;
     background: rgba(255,255,255,0.04);
 }
+.content-editor-card.is-previewing {
+    border-color: var(--neon-cyan);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.14);
+}
 .content-editor-card h4 {
     margin: 0;
     color: var(--text-primary);
+}
+.content-editor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.mini-preview-btn {
+    padding: 7px 10px !important;
+    font-size: 12px !important;
 }
 .content-editor-card label {
     display: grid;
@@ -1161,6 +1240,37 @@
     background: var(--bg-panel);
     color: var(--text-primary);
     padding: 10px 12px;
+}
+.content-editor-card select[multiple] {
+    min-height: 132px;
+}
+.content-editor-card textarea {
+    resize: vertical;
+}
+.feedback-inbox-card {
+    align-content: start;
+}
+.feedback-inbox-item {
+    display: grid;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel);
+}
+.feedback-inbox-item span,
+.feedback-inbox-item small {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.feedback-inbox-item p {
+    margin: 0;
+    color: var(--text-secondary);
+}
+@media (max-width: 900px) {
+    .site-lab-preview {
+        grid-template-columns: 1fr;
+    }
 }
 
 .search-input, .filter-select {
@@ -3743,7 +3853,7 @@ function readContentSection(section) {
             data[key] = field.checked;
         } else if (field.multiple) {
             data[key] = Array.from(field.selectedOptions).map((option) => option.value);
-        } else if (key === 'images_json' || key === 'videos_json') {
+        } else if (['images_json', 'videos_json', 'links_json', 'contact_items_json'].includes(key)) {
             try {
                 data[key.replace('_json', '')] = JSON.parse(field.value || '[]');
             } catch (error) {
@@ -3767,6 +3877,9 @@ window.saveSiteContent = async (button) => {
             about: readContentSection('about'),
             support: readContentSection('support'),
             terms: readContentSection('terms'),
+            contact: readContentSection('contact'),
+            help: readContentSection('help'),
+            feedback: readContentSection('feedback'),
             maintenance_notice: readContentSection('maintenance_notice')
         };
         const res = await fetch('/admin/site-content', {
@@ -3786,6 +3899,72 @@ window.saveSiteContent = async (button) => {
         }
     }
 };
+
+let activeSitePreviewSection = 'about';
+
+function renderDraftPreview(section) {
+    const draft = document.getElementById('site-draft-preview');
+    if (!draft) return;
+    let data = {};
+    try {
+        data = readContentSection(section);
+    } catch (error) {
+        draft.srcdoc = `<!doctype html><html><body style="margin:0;padding:28px;font-family:Arial,sans-serif;background:#fff4f4;color:#991b1b"><h2>Draft needs attention</h2><p>${escapeHtml(error.message)}</p></body></html>`;
+        return;
+    }
+    const live = document.getElementById('site-live-preview');
+    const urlBySection = {
+        about: '/about',
+        support: '/support',
+        terms: '/terms',
+        contact: '/contact',
+        help: '/help',
+        feedback: '/feedback'
+    };
+    const contacts = (data.contact_items || []).map((item) => `
+        <a class="site-contact-item" href="${escapeHtml(item.url || '#')}">
+            <small>${escapeHtml(item.kind || 'contact')}</small>
+            <span>${escapeHtml(item.label || item.kind || 'Contact')}</span>
+            <strong>${escapeHtml(item.value || item.url || '')}</strong>
+        </a>
+    `).join('');
+    const links = (data.links || []).map((item) => `<a href="${escapeHtml(item.url || '#')}">${escapeHtml(item.label || item.url || 'Link')}</a>`).join('');
+    const placements = (data.placements || []).map((item) => `<span>${escapeHtml(item)}</span>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+        body{margin:0;font-family:Arial,sans-serif;background:#0f172a;color:#f8fafc}
+        main{padding:48px 36px}.hero{min-height:220px;display:grid;align-items:end;border-bottom:1px solid rgba(255,255,255,.15)}
+        h1{font-size:56px;margin:0 0 12px}p{color:#cbd5e1;line-height:1.6}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:22px}
+        a{color:#38bdf8}.site-contact-item{display:grid;gap:6px;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:8px;text-decoration:none;background:rgba(255,255,255,.06)}
+        small,.placements span{color:#93c5fd;text-transform:uppercase;font-size:11px;font-weight:700}.placements{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.placements span{border:1px solid rgba(147,197,253,.35);border-radius:999px;padding:5px 9px}
+        footer{margin-top:28px;padding-top:18px;border-top:1px solid rgba(255,255,255,.12);display:flex;gap:12px;flex-wrap:wrap}
+    </style></head><body><main><section class="hero"><div><small>${escapeHtml(data.nav_label || section)} · ${escapeHtml(data.layout_style || 'standard')}</small><h1>${escapeHtml(data.hero_title || section)}</h1><p>${escapeHtml(data.hero_subtitle || '')}</p><div class="placements">${placements}</div></div></section><article><p>${escapeHtml(data.body || '').replace(/\n/g, '<br>')}</p></article><div class="grid">${contacts}</div><footer>${links}</footer></main></body></html>`;
+    if (draft) draft.srcdoc = html;
+}
+
+window.previewSiteSection = (section) => {
+    activeSitePreviewSection = section;
+    const live = document.getElementById('site-live-preview');
+    const urlBySection = {
+        about: '/about',
+        support: '/support',
+        terms: '/terms',
+        contact: '/contact',
+        help: '/help',
+        feedback: '/feedback'
+    };
+    document.querySelectorAll('[data-content-section]').forEach((card) => {
+        card.classList.toggle('is-previewing', card.dataset.contentSection === section);
+    });
+    if (live) live.src = urlBySection[section] || '/about';
+    renderDraftPreview(section);
+};
+
+document.querySelectorAll('[data-content-section] [data-field]').forEach((field) => {
+    field.addEventListener('input', () => renderDraftPreview(activeSitePreviewSection));
+    field.addEventListener('change', () => renderDraftPreview(activeSitePreviewSection));
+});
+
+previewSiteSection('about');
 
 // Export data
 window.exportData = async () => {

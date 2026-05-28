@@ -69,11 +69,11 @@
         <i class="fas fa-moon"></i>
         <span>Dark</span>
     </button>
-    {% if request.endpoint in ['login_page', 'about_page', 'support_page', 'terms_page', 'maintenance_page'] %}
+    {% if request.endpoint in ['login_page', 'about_page', 'support_page', 'terms_page', 'contact_page', 'help_page', 'feedback_page', 'maintenance_page'] %}
     <nav class="public-site-nav" aria-label="Public site links">
-        <a href="{{ url_for('about_page') }}">About</a>
-        <a href="{{ url_for('support_page') }}">Support</a>
-        <a href="{{ url_for('terms_page') }}">Terms</a>
+        {% for item in visible_site_pages('public') %}
+        <a href="{{ item.url }}">{{ item.label }}</a>
+        {% endfor %}
         <a href="{{ url_for('maintenance_page') }}">Maintenance</a>
     </nav>
     {% endif %}
@@ -185,9 +185,9 @@
                 <button class="profile-menu-save" type="submit"><i class="fas fa-save"></i> Save</button>
             </div>
             <div class="profile-site-links" aria-label="Site pages">
-                <a href="{{ url_for('about_page') }}"><i class="fas fa-circle-info"></i> About</a>
-                <a href="{{ url_for('support_page') }}"><i class="fas fa-life-ring"></i> Support</a>
-                <a href="{{ url_for('terms_page') }}"><i class="fas fa-file-contract"></i> Terms</a>
+                {% for item in visible_site_pages('profile') %}
+                <a href="{{ item.url }}"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
+                {% endfor %}
                 <a href="{{ url_for('maintenance_page') }}"><i class="fas fa-calendar-days"></i> Maintenance</a>
             </div>
         </form>

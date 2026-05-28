@@ -1808,9 +1808,15 @@ DEFAULT_SITE_CONTENT = {
         'hero_subtitle': 'A live coding arena for fair UI challenges, spectators, tournaments, and player growth.',
         'body': 'Compete by recreating target interfaces, learn from deterministic score analysis, and follow live matches in a production-ready arena.',
         'contact_email': '',
+        'nav_label': 'About',
+        'visible': True,
+        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'layout_style': 'standard',
         'carousel_mode': 'infinite',
         'media_effects': ['scroll', 'hover'],
         'text_effect': 'fade',
+        'contact_items': [],
+        'links': [],
         'images': [],
         'videos': []
     },
@@ -1818,12 +1824,87 @@ DEFAULT_SITE_CONTENT = {
         'hero_title': 'Support',
         'hero_subtitle': 'Get help with accounts, match access, scoring, certificates, or arena setup.',
         'body': 'Contact the organizer if you cannot join a room, need an email reset, or want a result reviewed.',
-        'contact_email': ''
+        'contact_email': '',
+        'nav_label': 'Support',
+        'visible': True,
+        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'layout_style': 'contact',
+        'text_effect': 'fade',
+        'contact_items': [
+            {'label': 'Organizer email', 'value': 'support@example.com', 'kind': 'email', 'url': 'mailto:support@example.com'}
+        ],
+        'links': [
+            {'label': 'Dashboard', 'url': '/dashboard'}
+        ],
+        'images': [],
+        'videos': []
     },
     'terms': {
         'hero_title': 'Terms and Conditions',
         'hero_subtitle': 'Fair play, respectful chat, and responsible use keep the arena trustworthy.',
-        'body': 'Do not cheat, harass other users, abuse platform features, or submit harmful code. Admins may moderate rooms, remove players, and reset testing data when needed.'
+        'body': 'Do not cheat, harass other users, abuse platform features, or submit harmful code. Admins may moderate rooms, remove players, and reset testing data when needed.',
+        'contact_email': '',
+        'nav_label': 'Terms',
+        'visible': True,
+        'placements': ['public', 'dashboard', 'profile', 'footer'],
+        'layout_style': 'document',
+        'text_effect': 'fade',
+        'contact_items': [],
+        'links': [],
+        'images': [],
+        'videos': []
+    },
+    'contact': {
+        'hero_title': 'Contact',
+        'hero_subtitle': 'Reach the people running the arena.',
+        'body': 'Use the contacts below for account access, tournament questions, score reviews, and urgent match support.',
+        'contact_email': '',
+        'nav_label': 'Contact',
+        'visible': True,
+        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'layout_style': 'contact',
+        'text_effect': 'slide',
+        'contact_items': [
+            {'label': 'General support', 'value': 'support@example.com', 'kind': 'email', 'url': 'mailto:support@example.com'},
+            {'label': 'WhatsApp hotline', 'value': '+1 000 000 0000', 'kind': 'whatsapp', 'url': 'https://wa.me/10000000000'}
+        ],
+        'links': [],
+        'images': [],
+        'videos': []
+    },
+    'help': {
+        'hero_title': 'Help Center',
+        'hero_subtitle': 'Quick guidance for joining rooms, submitting code, and understanding results.',
+        'body': 'Join an active room from the dashboard, allow camera and microphone when needed, write your HTML/CSS/JS, and submit before time ends. Scores are calculated from the admin target, style properties, visual/code similarity, and clean-code quality. If something looks wrong, contact support with the room code and your username.',
+        'contact_email': '',
+        'nav_label': 'Help',
+        'visible': True,
+        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'layout_style': 'help',
+        'text_effect': 'fade',
+        'contact_items': [],
+        'links': [
+            {'label': 'Dashboard', 'url': '/dashboard'},
+            {'label': 'Leaderboard', 'url': '/leaderboard'},
+            {'label': 'Support', 'url': '/support'}
+        ],
+        'images': [],
+        'videos': []
+    },
+    'feedback': {
+        'hero_title': 'Feedback',
+        'hero_subtitle': 'Tell the organizers what is broken, confusing, or worth improving.',
+        'body': 'Send match issues, UI suggestions, scoring concerns, or support requests. Include a room code when your message is about a specific battle.',
+        'contact_email': '',
+        'nav_label': 'Feedback',
+        'visible': True,
+        'placements': ['dashboard', 'profile', 'footer'],
+        'layout_style': 'feedback',
+        'text_effect': 'scale',
+        'contact_items': [],
+        'links': [],
+        'images': [],
+        'videos': []
     },
     'maintenance_notice': {
         'enabled': False,
@@ -1852,29 +1933,66 @@ def save_site_content(content):
     profiles['__site_content__'] = content
     save_profile_store(profiles)
 
+SITE_PAGE_KEYS = ['about', 'support', 'terms', 'contact', 'help', 'feedback']
+SITE_PAGE_PLACEMENTS = ['public', 'dashboard', 'arena', 'profile', 'footer']
+
+def site_page_url(page_key):
+    endpoint = {
+        'about': 'about_page',
+        'support': 'support_page',
+        'terms': 'terms_page',
+        'contact': 'contact_page',
+        'help': 'help_page',
+        'feedback': 'feedback_page'
+    }.get(page_key)
+    return url_for(endpoint) if endpoint else '#'
+
+def visible_site_pages(surface='footer'):
+    content = get_site_content()
+    rows = []
+    for key in SITE_PAGE_KEYS:
+        page = content.get(key, {})
+        placements = page.get('placements') if isinstance(page.get('placements'), list) else []
+        if page.get('visible', True) and (surface in placements or 'all' in placements):
+            rows.append({
+                'key': key,
+                'label': page.get('nav_label') or page.get('hero_title') or key.title(),
+                'url': site_page_url(key)
+            })
+    return rows
+
 def normalize_site_content_payload(data):
     current = get_site_content()
-    for section in ['about', 'support', 'terms']:
+    for section in SITE_PAGE_KEYS:
         source = data.get(section) if isinstance(data.get(section), dict) else {}
         target = current.setdefault(section, {})
-        for key in ['hero_title', 'hero_subtitle', 'body', 'contact_email', 'carousel_mode', 'text_effect']:
+        for key in ['hero_title', 'hero_subtitle', 'body', 'contact_email', 'carousel_mode', 'text_effect', 'nav_label', 'layout_style']:
             if key in source:
                 target[key] = str(source.get(key) or '')[:5000]
+        if 'visible' in source:
+            target['visible'] = bool(source.get('visible'))
+        placements = source.get('placements')
+        if isinstance(placements, list):
+            allowed = set(SITE_PAGE_PLACEMENTS + ['all'])
+            target['placements'] = [str(item) for item in placements if str(item) in allowed][:8]
         effects = source.get('media_effects')
         if isinstance(effects, list):
             target['media_effects'] = [str(item)[:40] for item in effects if str(item).strip()][:8]
-        for media_key in ['images', 'videos']:
+        for media_key in ['images', 'videos', 'links', 'contact_items']:
             items = source.get(media_key)
             if isinstance(items, list):
                 target[media_key] = [
                     {
+                        'label': str(item.get('label') or '')[:120],
+                        'value': str(item.get('value') or '')[:240],
+                        'kind': str(item.get('kind') or '')[:40],
                         'url': str(item.get('url') or '')[:1000],
                         'caption': str(item.get('caption') or '')[:240],
                         'effect': str(item.get('effect') or '')[:40],
                         'start_time': str(item.get('start_time') or '')[:40],
                         'duration': str(item.get('duration') or '')[:40]
                     }
-                    for item in items if isinstance(item, dict) and str(item.get('url') or '').strip()
+                    for item in items if isinstance(item, dict) and (str(item.get('url') or '').strip() or str(item.get('value') or '').strip())
                 ][:12]
     notice = data.get('maintenance_notice') if isinstance(data.get('maintenance_notice'), dict) else {}
     current['maintenance_notice'] = {
@@ -1995,7 +2113,10 @@ def delete_room_data(room):
 
 @app.context_processor
 def inject_current_profile():
-    context = {'csrf_token': get_csrf_token()}
+    context = {
+        'csrf_token': get_csrf_token(),
+        'visible_site_pages': visible_site_pages
+    }
     user_id = session.get('user_id')
     if not user_id:
         return context
@@ -2420,6 +2541,39 @@ def support_page():
 def terms_page():
     return render_template('site_page.html', page_key='terms', site_content=get_site_content())
 
+@app.route('/contact')
+def contact_page():
+    return render_template('site_page.html', page_key='contact', site_content=get_site_content())
+
+@app.route('/help')
+def help_page():
+    return render_template('site_page.html', page_key='help', site_content=get_site_content())
+
+@app.route('/helpline')
+def helpline_page():
+    return redirect(url_for('contact_page'))
+
+@app.route('/feedback', methods=['GET', 'POST'])
+def feedback_page():
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or request.form or {}
+        message = str(data.get('message') or '').strip()
+        if not message:
+            return jsonify({'success': False, 'error': 'Feedback message is required'}), 400
+        profiles = load_profile_store()
+        feedback_rows = profiles.setdefault('__feedback_messages__', [])
+        feedback_rows.insert(0, {
+            'name': str(data.get('name') or session.get('username') or 'Visitor')[:120],
+            'email': str(data.get('email') or '')[:180],
+            'message': message[:2000],
+            'room_code': str(data.get('room_code') or '')[:80],
+            'created_at': datetime.now(timezone.utc).isoformat()
+        })
+        profiles['__feedback_messages__'] = feedback_rows[:100]
+        save_profile_store(profiles)
+        return jsonify({'success': True, 'message': 'Feedback sent'})
+    return render_template('site_page.html', page_key='feedback', site_content=get_site_content())
+
 # ========== DASHBOARD ==========
 @app.route('/dashboard')
 @login_required
@@ -2502,6 +2656,7 @@ def admin_panel():
         room.id: sorted(list(room_spectators.get(room.id, set())))
         for room in rooms
     }
+    feedback_messages = load_profile_store().get('__feedback_messages__', [])[:20]
     
     return render_template('admin.html',
                          user=user, 
@@ -2522,6 +2677,7 @@ def admin_panel():
                          moderation_messages=moderation_messages,
                          moderation_flagged_count=moderation_flagged_count,
                          moderation_mentions_count=moderation_mentions_count,
+                         feedback_messages=feedback_messages,
                          tournaments=tournaments,
                          completed_tournaments=completed_tournaments,
                          site_content=get_site_content(),

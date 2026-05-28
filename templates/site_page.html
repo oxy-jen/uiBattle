@@ -2,7 +2,7 @@
 
 {% block content %}
 {% set page = site_content.get(page_key, {}) %}
-<main class="site-content-page">
+<main class="site-content-page site-layout-{{ page.get('layout_style', 'standard') }}">
     <section class="site-hero">
         <div>
             <span class="site-kicker">UI Battle Arena</span>
@@ -34,15 +34,42 @@
         <article>
             {{ page.get('body', '')|replace('\n', '<br>')|safe }}
         </article>
+        {% if page.get('contact_items') %}
+        <div class="site-contact-grid">
+            {% for item in page.get('contact_items', []) %}
+            <a class="site-contact-item" href="{{ item.url or '#' }}">
+                <i class="{% if item.kind == 'whatsapp' %}fab fa-whatsapp{% else %}fas {% if item.kind == 'phone' %}fa-phone{% elif item.kind == 'email' %}fa-envelope{% else %}fa-link{% endif %}{% endif %}"></i>
+                <span>{{ item.label or item.kind|title }}</span>
+                <strong>{{ item.value or item.url }}</strong>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if page.get('links') %}
+        <div class="site-resource-links">
+            {% for link in page.get('links', []) %}
+            <a href="{{ link.url }}"><i class="fas fa-up-right-from-square"></i> {{ link.label or link.url }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if page_key == 'feedback' %}
+        <form class="feedback-form" id="feedback-form">
+            <label>Name <input name="name" maxlength="120" placeholder="Your name"></label>
+            <label>Email <input name="email" type="email" maxlength="180" placeholder="you@example.com"></label>
+            <label>Room code <input name="room_code" maxlength="80" placeholder="Optional"></label>
+            <label>Message <textarea name="message" rows="6" maxlength="2000" required placeholder="What should the organizers know?"></textarea></label>
+            <button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send Feedback</button>
+        </form>
+        {% endif %}
         {% if page.get('contact_email') %}
         <a class="btn-primary" href="mailto:{{ page.get('contact_email') }}"><i class="fas fa-envelope"></i> Contact Support</a>
         {% endif %}
     </section>
 
     <nav class="site-footer-links">
-        <a href="{{ url_for('about_page') }}">About</a>
-        <a href="{{ url_for('support_page') }}">Support</a>
-        <a href="{{ url_for('terms_page') }}">Terms</a>
+        {% for item in visible_site_pages('footer') %}
+        <a href="{{ item.url }}">{{ item.label }}</a>
+        {% endfor %}
         <a href="{{ url_for('maintenance_page') }}">Maintenance</a>
         <a href="{{ url_for('login_page') }}">Arena Login</a>
     </nav>
@@ -79,5 +106,23 @@ if (mediaBand) {
     updateMediaMotion();
     window.addEventListener('scroll', updateMediaMotion, { passive: true });
 }
+
+document.getElementById('feedback-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const res = await fetch('{{ url_for("feedback_page") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+        showToast(data.message || 'Feedback sent', 'success');
+        form.reset();
+    } else {
+        showToast(data.error || 'Could not send feedback', 'error');
+    }
+});
 </script>
 {% endblock %}
