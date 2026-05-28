@@ -732,16 +732,16 @@ def send_admin_login_otp(user, code):
     )
 
 
-def begin_admin_email_otp_login(user, csrf_token=None):
+def start_admin_email_otp_session(user, csrf_token=None):
     if not user or user.role != 'admin':
-        return None
+        return None, 400
     if not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return {'success': False, 'error': smtp_configuration_error()}, 400
     target_email = valid_email(user.email) or configured_admin_email()
     if not target_email:
-        return jsonify({'success': False, 'error': 'Admin email is missing or invalid.'}), 400
+        return {'success': False, 'error': 'Admin email is missing or invalid.'}, 400
     if rate_limited('admin-email-otp-send', str(user.id), limit=10, window_seconds=15 * 60):
-        return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
+        return {'success': False, 'error': 'Too many admin login code requests. Wait a few minutes and try again.'}, 429
     csrf_token = csrf_token or session.get('csrf_token')
     session.clear()
     session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
@@ -754,14 +754,21 @@ def begin_admin_email_otp_login(user, csrf_token=None):
     if not sent:
         session.clear()
         session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
-        return jsonify({'success': False, 'error': 'Could not send admin login code. Check Mailjet/SMTP settings and try again.'}), 500
-    return jsonify({
+        return {'success': False, 'error': 'Could not send admin login code. Check Mailjet/SMTP settings and try again.'}, 500
+    return {
         'success': False,
         'requires_2fa': True,
         'email_otp': True,
         'can_use_qr_setup': True,
         'message': 'Admin login code sent to the admin email. You can also use authenticator QR setup as a backup option.'
-    })
+    }, 200
+
+
+def begin_admin_email_otp_login(user, csrf_token=None):
+    payload, status = start_admin_email_otp_session(user, csrf_token)
+    if payload is None:
+        return None
+    return jsonify(payload), status
 
 
 def room_invite_url(room):
@@ -2570,6 +2577,13 @@ def google_callback():
     profile.pop('email_verification_hash', None)
     profile.pop('email_verification_expires_at', None)
     save_profile_store(profiles)
+
+    if user.role == 'admin':
+        payload, status = start_admin_email_otp_session(user)
+        if payload and status == 200:
+            return redirect(url_for('login_page', two_factor='1', admin_email_code='1'))
+        app.logger.warning('Admin Google login email verification could not start for user %s: %s', user.id, payload)
+        return redirect(url_for('login_page'))
 
     if user.two_factor_enabled:
         session.clear()
