@@ -90,6 +90,76 @@ function showEditorHint(editor) {
     });
 }
 
+function currentWordRange(editor) {
+    const cursor = editor.getCursor();
+    const line = editor.getLine(cursor.line) || '';
+    let start = cursor.ch;
+    while (start > 0 && /[A-Za-z0-9_!#.\-:*]/.test(line.charAt(start - 1))) start -= 1;
+    return {
+        from: { line: cursor.line, ch: start },
+        to: cursor,
+        word: line.slice(start, cursor.ch)
+    };
+}
+
+function htmlBoilerplate() {
+    return [
+        '<!DOCTYPE html>',
+        '<html lang="en">',
+        '<head>',
+        '  <meta charset="UTF-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        '  <title>UI Battle</title>',
+        '</head>',
+        '<body>',
+        '  ',
+        '</body>',
+        '</html>'
+    ].join('\n');
+}
+
+function expandSimpleHtmlAbbreviation(editor) {
+    if (!editor || editor.getOption('mode') !== 'htmlmixed' || editor.getOption('readOnly')) return false;
+    const range = currentWordRange(editor);
+    const abbr = range.word.trim();
+    if (!abbr) return false;
+
+    const snippets = {
+        '!': htmlBoilerplate(),
+        'html:5': htmlBoilerplate(),
+        'link:css': '<link rel="stylesheet" href="style.css">',
+        'script:src': '<script src="script.js"></script>',
+        'img': '<img src="" alt="">',
+        'btn': '<button type="button"></button>',
+        'input': '<input type="text" name="" placeholder="">',
+        'form': '<form action="" method="post">\n  \n</form>',
+        'lorem': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.'
+    };
+
+    let output = snippets[abbr];
+    if (!output) {
+        const match = abbr.match(/^([a-z][a-z0-9-]*)?(#[A-Za-z][\w-]*)?((?:\.[A-Za-z][\w-]*)+)?(?:\*(\d{1,2}))?$/i);
+        if (!match || (!match[1] && !match[2] && !match[3])) return false;
+        const tag = match[1] || 'div';
+        const id = match[2] ? ` id="${match[2].slice(1)}"` : '';
+        const classes = match[3] ? ` class="${match[3].split('.').filter(Boolean).join(' ')}"` : '';
+        const count = Math.max(1, Math.min(12, Number(match[4]) || 1));
+        output = Array.from({ length: count }, () => `<${tag}${id}${classes}></${tag}>`).join('\n');
+    }
+
+    editor.replaceRange(output, range.from, range.to);
+    if (output.includes('  \n')) {
+        const before = output.slice(0, output.indexOf('  \n'));
+        const lines = before.split('\n');
+        editor.setCursor({ line: range.from.line + lines.length - 1, ch: lines[lines.length - 1].length + 2 });
+    } else if (output.includes('></')) {
+        const before = output.slice(0, output.indexOf('></') + 1);
+        const lines = before.split('\n');
+        editor.setCursor({ line: range.from.line + lines.length - 1, ch: lines[lines.length - 1].length });
+    }
+    return true;
+}
+
 function maybeShowEditorHint(editor, change) {
     if (!editor || editor.getOption('readOnly') || !editor.showHint || editor.state.completionActive) return;
     if (!change.origin || !change.origin.startsWith('+input')) return;
@@ -188,7 +258,12 @@ function getEditorExtraKeys() {
         'Cmd-1': () => switchTab('html'),
         'Cmd-2': () => switchTab('css'),
         'Cmd-3': () => switchTab('js'),
-        'Tab': (editor) => editor.somethingSelected() ? editor.execCommand('indentMore') : editor.replaceSelection('  ', 'end'),
+        'Ctrl-E': (editor) => expandSimpleHtmlAbbreviation(editor) || showEditorHint(editor),
+        'Cmd-E': (editor) => expandSimpleHtmlAbbreviation(editor) || showEditorHint(editor),
+        'Tab': (editor) => {
+            if (!editor.somethingSelected() && expandSimpleHtmlAbbreviation(editor)) return;
+            editor.somethingSelected() ? editor.execCommand('indentMore') : editor.replaceSelection('  ', 'end');
+        },
         'Shift-Tab': (editor) => editor.execCommand('indentLess')
     };
 }

@@ -1648,7 +1648,7 @@ input:checked + .slider:before { transform: translateX(30px); }
   height: 100%;
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.35;
 }
 
 .CodeMirror-activeline-background {
@@ -5717,4 +5717,44 @@ li.CodeMirror-hint-active {
     .site-copy-section article {
         font-size: 16px;
     }
+}
+
+:root[data-theme="light"] .dashboard-card,
+:root[data-theme="light"] .room-card,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .sidebar-card,
+:root[data-theme="light"] .editor-panel,
+:root[data-theme="light"] .preview-panel,
+:root[data-theme="light"] .right-sidebar,
+:root[data-theme="light"] .admin-container,
+:root[data-theme="light"] .admin-container *,
+:root[data-theme="light"] .profile-page,
+:root[data-theme="light"] .profile-page *,
+:root[data-theme="light"] .site-content-page,
+:root[data-theme="light"] .site-content-page * {
+    color: var(--text-primary);
+}
+
+:root[data-theme="light"] .muted,
+:root[data-theme="light"] small,
+:root[data-theme="light"] .stat-label,
+:root[data-theme="light"] .brand-subtitle,
+:root[data-theme="light"] .room-players,
+:root[data-theme="light"] .match-date,
+:root[data-theme="light"] .site-hero p,
+:root[data-theme="light"] .site-copy-section article,
+:root[data-theme="light"] .site-footer-links a,
+:root[data-theme="light"] .site-contact-item span,
+:root[data-theme="light"] .site-resource-links a,
+:root[data-theme="light"] .profile-meta,
+:root[data-theme="light"] .profile-bio,
+:root[data-theme="light"] .profile-section p {
+    color: var(--text-secondary) !important;
+}
+
+:root[data-theme="light"] .btn-primary,
+:root[data-theme="light"] .btn-danger,
+:root[data-theme="light"] .action-btn.end,
+:root[data-theme="light"] .action-btn.kick {
+    color: #ffffff !important;
 }

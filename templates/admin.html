@@ -1074,10 +1074,38 @@
                                 {% endfor %}
                             </select>
                         </label>
-                        <label>Contacts JSON <textarea data-field="contact_items_json" rows="5" placeholder='[{"label":"WhatsApp hotline","kind":"whatsapp","value":"+1...","url":"https://wa.me/..."}]'>{{ page.get('contact_items', [])|tojson }}</textarea></label>
-                        <label>Links JSON <textarea data-field="links_json" rows="5" placeholder='[{"label":"External docs","url":"https://..."}]'>{{ page.get('links', [])|tojson }}</textarea></label>
-                        <label>Images JSON <textarea data-field="images_json" rows="5" placeholder='[{"url": "...", "caption": "...", "effect": "hover"}]'>{{ page.get('images', [])|tojson }}</textarea></label>
-                        <label>Videos JSON <textarea data-field="videos_json" rows="5" placeholder='[{"url": "...", "caption": "...", "start_time": "0", "duration": "12"}]'>{{ page.get('videos', [])|tojson }}</textarea></label>
+                        <div class="site-array-editor" data-array-editor="contact_items">
+                            <div class="site-array-head"><strong>Contact methods</strong><button type="button" class="btn-secondary" data-add-array-item="contact_items"><i class="fas fa-plus"></i> Add contact</button></div>
+                            <div class="site-array-list" data-array-list="contact_items"></div>
+                            <textarea data-field="contact_items_json" hidden>{{ page.get('contact_items', [])|tojson }}</textarea>
+                        </div>
+                        <div class="site-array-editor" data-array-editor="links">
+                            <div class="site-array-head"><strong>External links</strong><button type="button" class="btn-secondary" data-add-array-item="links"><i class="fas fa-plus"></i> Add link</button></div>
+                            <div class="site-array-list" data-array-list="links"></div>
+                            <textarea data-field="links_json" hidden>{{ page.get('links', [])|tojson }}</textarea>
+                        </div>
+                        <div class="site-array-editor" data-array-editor="images">
+                            <div class="site-array-head">
+                                <strong>Carousel images</strong>
+                                <span>
+                                    <label class="btn-secondary site-file-picker"><i class="fas fa-images"></i> Select files<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple data-upload-media="images"></label>
+                                    <button type="button" class="btn-secondary" data-add-array-item="images"><i class="fas fa-link"></i> Add URL</button>
+                                </span>
+                            </div>
+                            <div class="site-array-list" data-array-list="images"></div>
+                            <textarea data-field="images_json" hidden>{{ page.get('images', [])|tojson }}</textarea>
+                        </div>
+                        <div class="site-array-editor" data-array-editor="videos">
+                            <div class="site-array-head">
+                                <strong>Videos</strong>
+                                <span>
+                                    <label class="btn-secondary site-file-picker"><i class="fas fa-video"></i> Select files<input type="file" accept="video/mp4,video/webm,video/quicktime" multiple data-upload-media="videos"></label>
+                                    <button type="button" class="btn-secondary" data-add-array-item="videos"><i class="fas fa-link"></i> Add URL</button>
+                                </span>
+                            </div>
+                            <div class="site-array-list" data-array-list="videos"></div>
+                            <textarea data-field="videos_json" hidden>{{ page.get('videos', [])|tojson }}</textarea>
+                        </div>
                     </div>
                     {% endfor %}
                     <div class="content-editor-card feedback-inbox-card">
@@ -1176,6 +1204,62 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
     margin-bottom: 18px;
+}
+
+.site-array-editor {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel-alt);
+}
+
+.site-array-head,
+.site-array-head span {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.site-array-list {
+    display: grid;
+    gap: 8px;
+}
+
+.site-array-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel);
+}
+
+.site-array-row input,
+.site-array-row select {
+    width: 100%;
+}
+
+.site-array-row .site-array-wide {
+    grid-column: 1 / -2;
+}
+
+.site-file-picker {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.site-file-picker input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
 }
 .site-lab-preview > div {
     display: grid;
@@ -3866,6 +3950,150 @@ function readContentSection(section) {
     return data;
 }
 
+function parseSiteArray(textarea) {
+    try {
+        const parsed = JSON.parse(textarea?.value || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function escapeAttr(text) {
+    return escapeHtml(text || '').replace(/"/g, '&quot;');
+}
+
+function writeSiteArray(card, key, items) {
+    const textarea = card.querySelector(`[data-field="${key}_json"]`);
+    if (textarea) {
+        textarea.value = JSON.stringify(items.filter(Boolean));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+}
+
+function siteArrayItemTemplate(key, item = {}) {
+    const remove = '<button type="button" class="btn-danger" data-remove-array-item title="Remove"><i class="fas fa-trash"></i></button>';
+    if (key === 'contact_items') {
+        return `
+            <select data-item-field="kind">
+                ${['email', 'phone', 'whatsapp', 'link'].map(kind => `<option value="${kind}" ${item.kind === kind ? 'selected' : ''}>${kind}</option>`).join('')}
+            </select>
+            <input data-item-field="label" value="${escapeAttr(item.label || '')}" placeholder="Label, e.g. WhatsApp hotline">
+            <input data-item-field="value" value="${escapeAttr(item.value || '')}" placeholder="Number, email, or display text">
+            <input data-item-field="url" value="${escapeAttr(item.url || '')}" placeholder="mailto:, tel:, https://wa.me/... or website URL">
+            ${remove}
+        `;
+    }
+    if (key === 'links') {
+        return `
+            <input data-item-field="label" value="${escapeAttr(item.label || '')}" placeholder="Link label">
+            <input data-item-field="url" value="${escapeAttr(item.url || '')}" placeholder="https://example.com">
+            ${remove}
+        `;
+    }
+    if (key === 'videos') {
+        return `
+            <input data-item-field="url" class="site-array-wide" value="${escapeAttr(item.url || '')}" placeholder="Video URL or uploaded file">
+            ${remove}
+            <input data-item-field="caption" value="${escapeAttr(item.caption || '')}" placeholder="Caption">
+            <input data-item-field="start_time" value="${escapeAttr(item.start_time || '')}" placeholder="Start time, seconds">
+            <input data-item-field="duration" value="${escapeAttr(item.duration || '')}" placeholder="Duration, seconds">
+        `;
+    }
+    return `
+        <input data-item-field="url" class="site-array-wide" value="${escapeAttr(item.url || '')}" placeholder="Image URL or uploaded file">
+        ${remove}
+        <input data-item-field="caption" value="${escapeAttr(item.caption || '')}" placeholder="Caption">
+        <select data-item-field="effect">
+            ${['hover', 'scroll', 'parallax'].map(effect => `<option value="${effect}" ${item.effect === effect ? 'selected' : ''}>${effect}</option>`).join('')}
+        </select>
+    `;
+}
+
+function collectSiteArray(card, key) {
+    return Array.from(card.querySelectorAll(`[data-array-list="${key}"] .site-array-row`)).map((row) => {
+        const item = {};
+        row.querySelectorAll('[data-item-field]').forEach((field) => {
+            item[field.dataset.itemField] = field.value.trim();
+        });
+        return item;
+    }).filter((item) => item.url || item.label || item.value);
+}
+
+function syncSiteArray(card, key) {
+    writeSiteArray(card, key, collectSiteArray(card, key));
+}
+
+function addSiteArrayRow(card, key, item = {}) {
+    const list = card.querySelector(`[data-array-list="${key}"]`);
+    if (!list) return;
+    const row = document.createElement('div');
+    row.className = 'site-array-row';
+    row.innerHTML = siteArrayItemTemplate(key, item);
+    row.querySelectorAll('input, select').forEach((field) => {
+        field.addEventListener('input', () => {
+            syncSiteArray(card, key);
+            renderDraftPreview(activeSitePreviewSection);
+        });
+        field.addEventListener('change', () => {
+            syncSiteArray(card, key);
+            renderDraftPreview(activeSitePreviewSection);
+        });
+    });
+    row.querySelector('[data-remove-array-item]')?.addEventListener('click', () => {
+        row.remove();
+        syncSiteArray(card, key);
+        renderDraftPreview(activeSitePreviewSection);
+    });
+    list.appendChild(row);
+    syncSiteArray(card, key);
+}
+
+async function uploadSiteMedia(input, key) {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    const card = input.closest('[data-content-section]');
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    input.disabled = true;
+    try {
+        const res = await fetch('/admin/site-content/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Upload failed');
+        (data.files || []).forEach((file) => {
+            addSiteArrayRow(card, key, {
+                url: file.url,
+                caption: file.filename || '',
+                effect: 'hover'
+            });
+        });
+        showToast(`${data.files.length} media file(s) added`, 'success');
+    } catch (error) {
+        showToast(error.message || 'Could not upload media', 'error');
+    } finally {
+        input.disabled = false;
+        input.value = '';
+    }
+}
+
+function initSiteArrayEditors() {
+    document.querySelectorAll('[data-content-section]').forEach((card) => {
+        ['contact_items', 'links', 'images', 'videos'].forEach((key) => {
+            const textarea = card.querySelector(`[data-field="${key}_json"]`);
+            const list = card.querySelector(`[data-array-list="${key}"]`);
+            if (!textarea || !list) return;
+            list.innerHTML = '';
+            parseSiteArray(textarea).forEach((item) => addSiteArrayRow(card, key, item));
+        });
+    });
+    document.querySelectorAll('[data-add-array-item]').forEach((button) => {
+        button.addEventListener('click', () => addSiteArrayRow(button.closest('[data-content-section]'), button.dataset.addArrayItem, {}));
+    });
+    document.querySelectorAll('[data-upload-media]').forEach((input) => {
+        input.addEventListener('change', () => uploadSiteMedia(input, input.dataset.uploadMedia));
+    });
+}
+
 window.saveSiteContent = async (button) => {
     const original = button?.innerHTML;
     try {
@@ -3891,6 +4119,8 @@ window.saveSiteContent = async (button) => {
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || 'Could not save site content');
         showToast('Site content saved', 'success');
+        const live = document.getElementById('site-live-preview');
+        if (live?.src) live.src = live.src;
     } catch (err) {
         showToast(err.message || 'Could not save site content', 'error');
     } finally {
@@ -3931,15 +4161,18 @@ function renderDraftPreview(section) {
         </a>
     `).join('');
     const links = (data.links || []).map((item) => `<a href="${escapeHtml(item.url || '#')}">${escapeHtml(item.label || item.url || 'Link')}</a>`).join('');
+    const images = (data.images || []).map((item) => `<figure><img src="${escapeHtml(item.url || '')}" alt=""><figcaption>${escapeHtml(item.caption || '')}</figcaption></figure>`).join('');
+    const videos = (data.videos || []).map((item) => `<figure><video src="${escapeHtml(item.url || '')}" controls></video><figcaption>${escapeHtml(item.caption || '')}</figcaption></figure>`).join('');
     const placements = (data.placements || []).map((item) => `<span>${escapeHtml(item)}</span>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><style>
         body{margin:0;font-family:Arial,sans-serif;background:#0f172a;color:#f8fafc}
         main{padding:48px 36px}.hero{min-height:220px;display:grid;align-items:end;border-bottom:1px solid rgba(255,255,255,.15)}
         h1{font-size:56px;margin:0 0 12px}p{color:#cbd5e1;line-height:1.6}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:22px}
+        .media{display:flex;gap:12px;overflow:auto;margin:22px 0}.media figure{min-width:220px;margin:0;border:1px solid rgba(255,255,255,.18);border-radius:8px;overflow:hidden}.media img,.media video{width:100%;aspect-ratio:16/9;object-fit:cover;background:#020617}.media figcaption{padding:8px;color:#cbd5e1}
         a{color:#38bdf8}.site-contact-item{display:grid;gap:6px;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:8px;text-decoration:none;background:rgba(255,255,255,.06)}
         small,.placements span{color:#93c5fd;text-transform:uppercase;font-size:11px;font-weight:700}.placements{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.placements span{border:1px solid rgba(147,197,253,.35);border-radius:999px;padding:5px 9px}
         footer{margin-top:28px;padding-top:18px;border-top:1px solid rgba(255,255,255,.12);display:flex;gap:12px;flex-wrap:wrap}
-    </style></head><body><main><section class="hero"><div><small>${escapeHtml(data.nav_label || section)} · ${escapeHtml(data.layout_style || 'standard')}</small><h1>${escapeHtml(data.hero_title || section)}</h1><p>${escapeHtml(data.hero_subtitle || '')}</p><div class="placements">${placements}</div></div></section><article><p>${escapeHtml(data.body || '').replace(/\n/g, '<br>')}</p></article><div class="grid">${contacts}</div><footer>${links}</footer></main></body></html>`;
+    </style></head><body><main><section class="hero"><div><small>${escapeHtml(data.nav_label || section)} · ${escapeHtml(data.layout_style || 'standard')}</small><h1>${escapeHtml(data.hero_title || section)}</h1><p>${escapeHtml(data.hero_subtitle || '')}</p><div class="placements">${placements}</div></div></section><div class="media">${images}${videos}</div><article><p>${escapeHtml(data.body || '').replace(/\n/g, '<br>')}</p></article><div class="grid">${contacts}</div><footer>${links}</footer></main></body></html>`;
     if (draft) draft.srcdoc = html;
 }
 
@@ -3967,6 +4200,7 @@ document.querySelectorAll('[data-content-section] [data-field]').forEach((field)
     field.addEventListener('change', () => renderDraftPreview(activeSitePreviewSection));
 });
 
+initSiteArrayEditors();
 previewSiteSection('about');
 
 // Export data

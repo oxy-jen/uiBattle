@@ -11,7 +11,7 @@
         </div>
     </section>
 
-    {% if page_key == 'about' and (page.get('images') or page.get('videos')) %}
+    {% if page.get('images') or page.get('videos') %}
     <section class="site-media-band media-mode-{{ page.get('carousel_mode', 'infinite') }} {% for effect in page.get('media_effects', []) %}media-effect-{{ effect }} {% endfor %}">
         <div class="site-media-track">
             {% for image in page.get('images', []) %}

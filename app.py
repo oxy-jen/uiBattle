@@ -45,7 +45,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', '0').strip() == '1'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=int(os.environ.get('SESSION_LIFETIME_HOURS', '8') or 8))
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
 app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
 app.config['GOOGLE_DISCOVERY_AUTH_URL'] = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -63,6 +63,7 @@ app.config['MAILJET_SECRET_KEY'] = os.environ.get('MAILJET_SECRET_KEY', app.conf
 app.config['MAILJET_API_URL'] = os.environ.get('MAILJET_API_URL', 'https://api.mailjet.com/v3.1/send').strip()
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_SITE_MEDIA_EXTENSIONS = ALLOWED_EXTENSIONS | {'webp', 'mp4', 'webm', 'mov'}
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -151,6 +152,9 @@ LEET_TRANSLATION = str.maketrans({'0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': '
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def allowed_site_media_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_SITE_MEDIA_EXTENSIONS
 
 def generate_room_code():
     import random
@@ -1845,7 +1849,7 @@ DEFAULT_SITE_CONTENT = {
         'contact_email': '',
         'nav_label': 'About',
         'visible': True,
-        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'placements': ['footer'],
         'layout_style': 'standard',
         'carousel_mode': 'infinite',
         'media_effects': ['scroll', 'hover'],
@@ -1862,7 +1866,7 @@ DEFAULT_SITE_CONTENT = {
         'contact_email': '',
         'nav_label': 'Support',
         'visible': True,
-        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'placements': ['footer'],
         'layout_style': 'contact',
         'text_effect': 'fade',
         'contact_items': [
@@ -1881,7 +1885,7 @@ DEFAULT_SITE_CONTENT = {
         'contact_email': '',
         'nav_label': 'Terms',
         'visible': True,
-        'placements': ['public', 'dashboard', 'profile', 'footer'],
+        'placements': ['footer'],
         'layout_style': 'document',
         'text_effect': 'fade',
         'contact_items': [],
@@ -1896,7 +1900,7 @@ DEFAULT_SITE_CONTENT = {
         'contact_email': '',
         'nav_label': 'Contact',
         'visible': True,
-        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'placements': ['footer'],
         'layout_style': 'contact',
         'text_effect': 'slide',
         'contact_items': [
@@ -1914,7 +1918,7 @@ DEFAULT_SITE_CONTENT = {
         'contact_email': '',
         'nav_label': 'Help',
         'visible': True,
-        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'placements': ['footer'],
         'layout_style': 'help',
         'text_effect': 'fade',
         'contact_items': [],
@@ -1933,7 +1937,7 @@ DEFAULT_SITE_CONTENT = {
         'contact_email': '',
         'nav_label': 'Feedback',
         'visible': True,
-        'placements': ['dashboard', 'profile', 'footer'],
+        'placements': ['footer'],
         'layout_style': 'feedback',
         'text_effect': 'scale',
         'contact_items': [],
@@ -1948,7 +1952,7 @@ DEFAULT_SITE_CONTENT = {
         'contact_email': '',
         'nav_label': 'Report',
         'visible': True,
-        'placements': ['dashboard', 'arena', 'profile', 'footer'],
+        'placements': ['footer'],
         'layout_style': 'feedback',
         'text_effect': 'slide',
         'contact_items': [],
@@ -2794,6 +2798,34 @@ def admin_site_content():
                 only_verified=False
             )
     return jsonify({'success': True, 'site_content': content})
+
+@app.route('/admin/site-content/upload', methods=['POST'])
+@admin_required
+def admin_site_content_upload():
+    files = request.files.getlist('files')
+    if not files:
+        return jsonify({'success': False, 'error': 'Choose one or more media files'}), 400
+
+    upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'site_content')
+    os.makedirs(upload_dir, exist_ok=True)
+    saved = []
+    for media_file in files:
+        if not media_file or not media_file.filename:
+            continue
+        if not allowed_site_media_file(media_file.filename):
+            return jsonify({'success': False, 'error': f'Unsupported media file: {media_file.filename}'}), 400
+        ext = secure_filename(media_file.filename).rsplit('.', 1)[1].lower()
+        filename = f"site_{uuid.uuid4().hex}.{ext}"
+        media_file.save(os.path.join(upload_dir, filename))
+        saved.append({
+            'url': url_for('static', filename=f'uploads/site_content/{filename}'),
+            'filename': filename,
+            'type': 'video' if ext in {'mp4', 'webm', 'mov'} else 'image'
+        })
+
+    if not saved:
+        return jsonify({'success': False, 'error': 'No valid files were uploaded'}), 400
+    return jsonify({'success': True, 'files': saved})
 
 @app.route('/admin/certificate-template', methods=['GET', 'POST'])
 @admin_required
