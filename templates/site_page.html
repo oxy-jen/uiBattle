@@ -13,7 +13,8 @@
 
     {% if page.get('images') or page.get('videos') %}
     <section class="site-media-band media-mode-{{ page.get('carousel_mode', 'infinite') }} {% for effect in page.get('media_effects', []) %}media-effect-{{ effect }} {% endfor %}">
-        <div class="site-media-track">
+        <div class="site-media-viewport">
+            <div class="site-media-track">
             {% for image in page.get('images', []) %}
             <figure class="site-media-item effect-{{ image.get('effect') or 'hover' }}">
                 <img src="{{ image.url }}" alt="{{ image.caption or 'About UI Battle Arena' }}">
@@ -26,7 +27,9 @@
                 {% if video.caption %}<figcaption>{{ video.caption }}</figcaption>{% endif %}
             </figure>
             {% endfor %}
+            </div>
         </div>
+        <div class="site-media-dots" aria-label="Media carousel slides"></div>
     </section>
     {% endif %}
 
@@ -106,6 +109,65 @@ if (mediaBand) {
     updateMediaMotion();
     window.addEventListener('scroll', updateMediaMotion, { passive: true });
 }
+
+document.querySelectorAll('.site-media-band').forEach((band) => {
+    const track = band.querySelector('.site-media-track');
+    const slides = Array.from(band.querySelectorAll('.site-media-item'));
+    const dotsWrap = band.querySelector('.site-media-dots');
+    if (!track || !slides.length || !dotsWrap) return;
+
+    let activeIndex = 0;
+    let timer = null;
+    const shouldRotate = !band.classList.contains('media-mode-static') && slides.length > 1;
+    const interval = band.classList.contains('media-mode-rotating') ? 5200 : 4200;
+
+    slides.forEach((slide, index) => {
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'site-media-dot';
+        dot.setAttribute('aria-label', `Show media item ${index + 1}`);
+        dot.addEventListener('click', () => {
+            setActiveSlide(index, true);
+        });
+        dotsWrap.appendChild(dot);
+    });
+    const dots = Array.from(dotsWrap.querySelectorAll('.site-media-dot'));
+
+    function setActiveSlide(index, userAction = false) {
+        activeIndex = (index + slides.length) % slides.length;
+        track.style.transform = `translateX(-${activeIndex * 100}%)`;
+        slides.forEach((slide, slideIndex) => {
+            const distance = Math.abs(slideIndex - activeIndex);
+            const wrappedDistance = Math.min(distance, slides.length - distance);
+            slide.classList.toggle('is-active', slideIndex === activeIndex);
+            slide.classList.toggle('is-near', wrappedDistance === 1);
+        });
+        dots.forEach((dot, dotIndex) => {
+            const active = dotIndex === activeIndex;
+            dot.classList.toggle('is-active', active);
+            dot.setAttribute('aria-current', active ? 'true' : 'false');
+        });
+        if (userAction) restartRotation();
+    }
+
+    function restartRotation() {
+        if (timer) clearInterval(timer);
+        if (!shouldRotate) return;
+        timer = setInterval(() => setActiveSlide(activeIndex + 1), interval);
+    }
+
+    band.addEventListener('mouseenter', () => {
+        if (timer) clearInterval(timer);
+    });
+    band.addEventListener('mouseleave', restartRotation);
+    band.addEventListener('focusin', () => {
+        if (timer) clearInterval(timer);
+    });
+    band.addEventListener('focusout', restartRotation);
+
+    setActiveSlide(0);
+    restartRotation();
+});
 
 document.getElementById('feedback-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
