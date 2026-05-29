@@ -1200,29 +1200,138 @@ def deterministic_submission_score(challenge, html_code, css_code, js_code='', v
     }
     return round(max(0, min(100, score)), 1), details
 
-def build_submission_analysis(submission, challenge):
+def analysis_number(value, default=0.0):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return default
+
+def analysis_metric_plan(details):
+    mode = (details or {}).get('scoring_mode') or ''
+    if mode == 'visual-output-target':
+        return [
+            ('visual_match', 'Rendered output', 52, 'The final preview did not visually match the target closely enough. Re-check overall layout, sizing, spacing, colors, borders, shadows, and responsive positioning.'),
+            ('style_property_match', 'CSS details', 25, 'Important CSS properties were different from the target. Small details such as border width, border radius, gaps, padding, font weight, and shadows can move the score.'),
+            ('html_similarity', 'HTML structure', 10, 'The structure differed from the reference. Use clearer sections, headings, wrappers, and element hierarchy that support the target layout.'),
+            ('css_similarity', 'CSS selector/tokens', 5, 'The CSS used a different set of selectors or tokens from the target. This is less important than output, but it can still cost marks.'),
+            ('code_quality', 'Clean code', 8, 'Repeated code, unbalanced CSS, very long lines, unnecessary inline styles, console logs, or too much !important reduced the clean-code portion.')
+        ]
+    if mode == 'target-code':
+        return [
+            ('style_property_match', 'CSS details', 45, 'Most lost marks came from CSS properties not matching the target closely enough. Tune dimensions, spacing, borders, radius, colors, alignment, and typography.'),
+            ('html_similarity', 'HTML structure', 18, 'The HTML hierarchy did not follow the target closely. Match the important sections and semantic structure.'),
+            ('css_similarity', 'CSS selector/tokens', 17, 'The CSS tokens differed from the target. Align key selectors and style values where they affect the same visible pieces.'),
+            ('code_quality', 'Clean code', 20, 'Cleaner, balanced, less repetitive code would protect this part of the score.')
+        ]
+    return [
+        ('visual_match', 'Rendered output', 65, 'The output did not visually line up with the target. Focus first on what the viewer sees.'),
+        ('style_property_match', 'CSS details', 14, 'Add and tune the missing visual CSS details.'),
+        ('html_similarity', 'HTML structure', 8, 'Use enough structure to reproduce the target reliably.'),
+        ('code_quality', 'Clean code', 13, 'Cleaner code would recover part of the score.')
+    ]
+
+def build_submission_analysis(submission, challenge, opponent_submission=None):
     if not submission:
         return None
     accuracy, details = submission_score_analysis(submission, challenge)
+    plan = analysis_metric_plan(details)
+    score_cards = []
+    for key, label, weight, issue in plan:
+        value = analysis_number(details.get(key))
+        lost = round(max(0, (100 - value) / 100 * weight), 1)
+        if lost <= 0.2:
+            status = 'Strong'
+            coaching = f'{label} was close to the target, so this area did not cost many marks.'
+        elif value < 55:
+            status = 'Needs work'
+            coaching = issue
+        else:
+            status = 'Close'
+            coaching = f'{label} was partly correct. Tightening this area could add about {lost}% to the score line.'
+        score_cards.append({
+            'key': key,
+            'label': label,
+            'value': round(value, 1),
+            'weight': weight,
+            'lost': lost,
+            'status': status,
+            'coaching': coaching
+        })
+    score_cards = sorted(score_cards, key=lambda item: item['lost'], reverse=True)
+
     suggestions = []
-    if details['html_similarity'] < 65:
-        suggestions.append('Match the target HTML structure more closely: headings, sections, wrappers, and class names are part of the comparison.')
-    if details['style_property_match'] < 70:
-        suggestions.append('Tune visual CSS properties such as font size, font family, spacing, dimensions, borders, colors, alignment, and layout.')
+    for card in score_cards[:3]:
+        if card['lost'] > 0.5:
+            suggestions.append(f"{card['label']}: {card['coaching']} This part carried about {card['weight']}% in this match and you left roughly {card['lost']}% there.")
     groups = details.get('style_groups') or {}
-    weak_groups = [label.replace('_', ' ') for label, value in groups.items() if float(value or 0) < 70]
-    if weak_groups:
-        suggestions.append('The weakest style categories are: ' + ', '.join(weak_groups[:4]) + '.')
-    if details['css_similarity'] < 60:
-        suggestions.append('Your CSS uses a different set of selectors or style tokens than the target. Re-check the admin reference styling.')
-    if details['code_quality'] < 80:
-        suggestions.append('Clean up repeated code, very long lines, unbalanced braces, unnecessary inline styles, console logs, and overuse of !important.')
+    weak_groups = sorted(
+        [(label.replace('_', ' '), analysis_number(value)) for label, value in groups.items()],
+        key=lambda item: item[1]
+    )
+    if weak_groups and weak_groups[0][1] < 75:
+        readable = ', '.join(f'{label} ({round(value, 1)}%)' for label, value in weak_groups[:3])
+        suggestions.append(f'Your weakest visual categories were {readable}. Fixing these usually means checking spacing, dimensions, alignment, borders, and typography against the target one piece at a time.')
     if not suggestions:
-        suggestions.append('Strong submission. Remaining differences are likely fine visual details or small spacing/style mismatches.')
+        suggestions.append('Strong submission. The remaining marks were likely small visual differences such as tiny spacing, sizing, or polish details.')
+
+    comparison = None
+    if opponent_submission:
+        opponent_accuracy, opponent_details = submission_score_analysis(opponent_submission, challenge)
+        margin = round(opponent_accuracy - accuracy, 1)
+        deltas = []
+        for key, label, weight, _issue in plan:
+            own_value = analysis_number(details.get(key))
+            opponent_value = analysis_number(opponent_details.get(key))
+            diff = round(opponent_value - own_value, 1)
+            impact = round(max(0, diff) / 100 * weight, 1)
+            if abs(diff) >= 1:
+                deltas.append({
+                    'label': label,
+                    'diff': diff,
+                    'impact': impact,
+                    'opponent_value': round(opponent_value, 1),
+                    'own_value': round(own_value, 1)
+                })
+        deltas = sorted(deltas, key=lambda item: item['impact'], reverse=True)
+        opponent_name = opponent_submission.user.username if opponent_submission.user else 'the other player'
+        if margin > 0:
+            lead_reasons = [item for item in deltas if item['impact'] > 0][:3]
+            if lead_reasons:
+                reason_text = '; '.join(
+                    f"{item['label']} was {item['opponent_value']}% vs your {item['own_value']}%, worth about {item['impact']}% of the gap"
+                    for item in lead_reasons
+                )
+                summary = f'{opponent_name} finished {margin}% ahead. The biggest differences were: {reason_text}.'
+            else:
+                summary = f'{opponent_name} finished {margin}% ahead mainly through small combined differences across the rubric.'
+        elif margin < 0:
+            summary = f'You finished {abs(margin)}% ahead of {opponent_name}. Your stronger areas protected the lead, but the weak areas below are still where extra marks were available.'
+        else:
+            summary = f'You tied with {opponent_name}. The next match may swing on small details because each challenge can weight output and style details differently.'
+        comparison = {
+            'opponent_name': opponent_name,
+            'margin': margin,
+            'summary': summary,
+            'deltas': deltas[:4]
+        }
+
+    total_lost_estimate = round(sum(card['lost'] for card in score_cards), 1)
+    top_gain = score_cards[0]['lost'] if score_cards else 0
+    summary = (
+        f'You scored {accuracy}%. The clearest next improvement is {score_cards[0]["label"].lower()}, '
+        f'where about {top_gain}% was still available in this match.'
+        if score_cards and top_gain > 0.5
+        else f'You scored {accuracy}%. This was a strong attempt; remaining marks were mostly fine details.'
+    )
     return {
         'accuracy': accuracy,
         'details': details,
-        'suggestions': suggestions
+        'suggestions': suggestions,
+        'score_cards': score_cards,
+        'comparison': comparison,
+        'summary': summary,
+        'total_lost_estimate': total_lost_estimate,
+        'scoring_note': 'These percentages explain this match only. Admin targets and challenge types can change how marks are distributed next time.'
     }
 
 def get_submission_quality(submission):
@@ -4112,8 +4221,8 @@ def results(room_id):
     finalize_room_results(room)
     db.session.commit()
     result_analysis = {
-        room.player1_id: build_submission_analysis(p1_sub, room.challenge) if room.player1_id else None,
-        room.player2_id: build_submission_analysis(p2_sub, room.challenge) if room.player2_id else None
+        room.player1_id: build_submission_analysis(p1_sub, room.challenge, p2_sub) if room.player1_id else None,
+        room.player2_id: build_submission_analysis(p2_sub, room.challenge, p1_sub) if room.player2_id else None
     }
     
     return render_template('results.html',
