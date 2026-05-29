@@ -49,10 +49,10 @@ const COLOR_PROPERTY_RE = /(^|[-\s])(color|background|background-color|border|bo
 const EDITOR_SHORTCUT_GROUPS = [
     ['Boilerplate and snippets', [
         ['! or html:5 + Enter/Tab', 'Insert a full HTML5 page'],
-        ['div.card + Enter/Tab', 'Create tags with class/id abbreviations'],
-        ['ul>li*3 + Enter/Tab', 'Create simple nested lists'],
-        ['btn, form, img, nav, card, grid', 'Insert common HTML snippets'],
-        ['m10, p16, w100p, flex, grid2', 'Insert quick CSS snippets']
+        ['div.card, #app, a.btn + Enter/Tab', 'Create tags with class/id abbreviations'],
+        ['ul>li*3 or div.card>h2 + Enter/Tab', 'Create simple nested structures'],
+        ['btn, form, img, nav, card, grid, hero, table, video', 'Insert common HTML snippets'],
+        ['m10, p16, w100p, flex, grid2, pos:a, d:f', 'Insert quick CSS snippets']
     ]],
     ['Editing', [
         ['Ctrl+Space', 'Autocomplete'],
@@ -121,7 +121,7 @@ function currentWordRange(editor) {
     const cursor = editor.getCursor();
     const line = editor.getLine(cursor.line) || '';
     let start = cursor.ch;
-    while (start > 0 && /[A-Za-z0-9_!#.\-:*]/.test(line.charAt(start - 1))) start -= 1;
+    while (start > 0 && /[A-Za-z0-9_!#.\-:*>+$[\]{}=@]/.test(line.charAt(start - 1))) start -= 1;
     return {
         from: { line: cursor.line, ch: start },
         to: cursor,
@@ -161,21 +161,51 @@ function expandSimpleHtmlAbbreviation(editor) {
         'link:css': '<link rel="stylesheet" href="style.css">',
         'script:src': '<script src="script.js"></script>',
         'img': '<img src="" alt="">',
+        'picture': '<picture>\n  <source srcset="" media="(min-width: 768px)">\n  <img src="" alt="">\n</picture>',
+        'video': '<video controls>\n  <source src="" type="video/mp4">\n</video>',
+        'audio': '<audio controls>\n  <source src="" type="audio/mpeg">\n</audio>',
+        'a': '<a href=""></a>',
         'btn': '<button type="button"></button>',
+        'button': '<button type="button"></button>',
         'input': '<input type="text" name="" placeholder="">',
+        'input:email': '<input type="email" name="email" placeholder="Email">',
+        'input:password': '<input type="password" name="password" placeholder="Password">',
+        'input:checkbox': '<input type="checkbox" name="" id="">',
+        'label': '<label for=""></label>',
         'form': '<form action="" method="post">\n  \n</form>',
+        'select': '<select name="">\n  <option value=""></option>\n</select>',
+        'textarea': '<textarea name="" rows="4"></textarea>',
         'nav': '<nav class="nav">\n  <a href="#">Home</a>\n  <a href="#">About</a>\n  <a href="#">Contact</a>\n</nav>',
+        'header': '<header>\n  \n</header>',
+        'footer': '<footer>\n  \n</footer>',
         'main': '<main>\n  \n</main>',
+        'aside': '<aside>\n  \n</aside>',
         'section': '<section>\n  <h2></h2>\n  <p></p>\n</section>',
         'card': '<article class="card">\n  <h2></h2>\n  <p></p>\n</article>',
+        'cards': '<section class="cards">\n  <article class="card"></article>\n  <article class="card"></article>\n  <article class="card"></article>\n</section>',
         'grid': '<div class="grid">\n  <div></div>\n  <div></div>\n  <div></div>\n</div>',
         'hero': '<section class="hero">\n  <h1></h1>\n  <p></p>\n  <button type="button"></button>\n</section>',
+        'modal': '<div class="modal" role="dialog" aria-modal="true">\n  <div class="modal-content">\n    \n  </div>\n</div>',
+        'list': '<ul>\n  <li></li>\n  <li></li>\n  <li></li>\n</ul>',
         'ul>li*3': '<ul>\n  <li></li>\n  <li></li>\n  <li></li>\n</ul>',
+        'ol>li*3': '<ol>\n  <li></li>\n  <li></li>\n  <li></li>\n</ol>',
         'table': '<table>\n  <thead>\n    <tr><th></th><th></th></tr>\n  </thead>\n  <tbody>\n    <tr><td></td><td></td></tr>\n  </tbody>\n</table>',
         'lorem': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.'
     };
 
     let output = snippets[abbr];
+    if (!output) {
+        const nested = abbr.match(/^([a-z][\w-]*)?(#[A-Za-z][\w-]*)?((?:\.[A-Za-z][\w-]*)*)>([a-z][\w-]*)(?:\*(\d{1,2}))?$/i);
+        if (nested) {
+            const parent = nested[1] || 'div';
+            const id = nested[2] ? ` id="${nested[2].slice(1)}"` : '';
+            const classes = nested[3] ? ` class="${nested[3].split('.').filter(Boolean).join(' ')}"` : '';
+            const child = nested[4];
+            const count = Math.max(1, Math.min(12, Number(nested[5]) || 1));
+            const children = Array.from({ length: count }, () => `  <${child}></${child}>`).join('\n');
+            output = `<${parent}${id}${classes}>\n${children}\n</${parent}>`;
+        }
+    }
     if (!output) {
         const match = abbr.match(/^([a-z][a-z0-9-]*)?(#[A-Za-z][\w-]*)?((?:\.[A-Za-z][\w-]*)+)?(?:\*(\d{1,2}))?$/i);
         if (!match || (!match[1] && !match[2] && !match[3])) return false;
@@ -207,27 +237,63 @@ function expandSimpleCssAbbreviation(editor) {
 
     const snippets = {
         'm0': 'margin: 0;',
+        'ma': 'margin: auto;',
         'm10': 'margin: 10px;',
+        'mt10': 'margin-top: 10px;',
+        'mr10': 'margin-right: 10px;',
+        'mb10': 'margin-bottom: 10px;',
+        'ml10': 'margin-left: 10px;',
         'p0': 'padding: 0;',
         'p10': 'padding: 10px;',
         'p16': 'padding: 16px;',
+        'pt10': 'padding-top: 10px;',
+        'pr10': 'padding-right: 10px;',
+        'pb10': 'padding-bottom: 10px;',
+        'pl10': 'padding-left: 10px;',
         'w100': 'width: 100%;',
         'w100p': 'width: 100%;',
+        'w50p': 'width: 50%;',
+        'mw1200': 'max-width: 1200px;',
         'h100': 'height: 100%;',
+        'mih100vh': 'min-height: 100vh;',
         'br8': 'border-radius: 8px;',
         'b1': 'border: 1px solid #e5e7eb;',
         'c': 'color: #111827;',
         'bg': 'background: #ffffff;',
         'bgc': 'background-color: #ffffff;',
+        'd:f': 'display: flex;',
+        'd:g': 'display: grid;',
+        'd:b': 'display: block;',
+        'd:n': 'display: none;',
         'flex': 'display: flex;\nalign-items: center;\ngap: 12px;',
+        'fxdc': 'display: flex;\nflex-direction: column;',
+        'fxw': 'flex-wrap: wrap;',
         'jcc': 'justify-content: center;',
+        'jcsb': 'justify-content: space-between;',
         'aic': 'align-items: center;',
         'grid': 'display: grid;\ngap: 16px;',
         'grid2': 'display: grid;\ngrid-template-columns: repeat(2, minmax(0, 1fr));\ngap: 16px;',
+        'grid3': 'display: grid;\ngrid-template-columns: repeat(3, minmax(0, 1fr));\ngap: 16px;',
         'abs': 'position: absolute;\ntop: 0;\nleft: 0;',
         'rel': 'position: relative;',
+        'pos:a': 'position: absolute;',
+        'pos:r': 'position: relative;',
+        'pos:f': 'position: fixed;',
+        't0': 'top: 0;',
+        'r0': 'right: 0;',
+        'b0': 'bottom: 0;',
+        'l0': 'left: 0;',
         'shadow': 'box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);',
-        'trans': 'transition: all 160ms ease;'
+        'trans': 'transition: all 160ms ease;',
+        'fs16': 'font-size: 16px;',
+        'fw700': 'font-weight: 700;',
+        'lh1.5': 'line-height: 1.5;',
+        'ta:c': 'text-align: center;',
+        'ov:h': 'overflow: hidden;',
+        'cur:p': 'cursor: pointer;',
+        'media': '@media (max-width: 768px) {\n  \n}',
+        'keyframes': '@keyframes name {\n  from { opacity: 0; }\n  to { opacity: 1; }\n}',
+        'root': ':root {\n  --color: #22d3ee;\n}'
     };
     const output = snippets[abbr];
     if (!output) return false;

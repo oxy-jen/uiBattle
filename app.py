@@ -146,9 +146,15 @@ SENSITIVE_LANGUAGE_TERMS = {
     'harassed', 'harassment', 'hate', 'immoral', 'kill', 'killed', 'killing',
     'kills', 'molest', 'molested', 'molesting', 'murder', 'naked', 'nude',
     'porn', 'rape', 'raped', 'raping', 'sex', 'sexual', 'sexy', 'shoot',
-    'suicide', 'terror', 'threat', 'violence', 'violent', 'weapon'
+    'suicide', 'terror', 'threat', 'violence', 'violent', 'weapon',
+    'fck', 'fckoff', 'fuckoff', 'foff', 'stfu', 'kys', 'kms', 'gtfo',
+    'idiot', 'moron', 'loser', 'trash', 'garbage', 'worthless', 'ugly',
+    'dumb', 'stupid', 'retard', 'retarded', 'clown', 'psycho', 'lunatic',
+    'shetani', 'mashetani', 'shenzi', 'mshenzi', 'washenzi', 'ushenzi',
+    'mbwa', 'umbwa', 'pumbavu', 'mpumbavu', 'wapumbavu', 'mjinga', 'wajinga',
+    'fala', 'mafalla', 'takataka', 'mavi', 'malaya', 'kahaba'
 }
-LEET_TRANSLATION = str.maketrans({'0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's'})
+LEET_TRANSLATION = str.maketrans({'0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '*': '', '!': 'i', '+': 't'})
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
