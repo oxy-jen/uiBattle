@@ -40,7 +40,7 @@
         {% if page.get('contact_items') %}
         <div class="site-contact-grid">
             {% for item in page.get('contact_items', []) %}
-            <a class="site-contact-item" href="{{ item.url or '#' }}">
+            <a class="site-contact-item" href="{{ contact_href(item) }}">
                 <i class="{% if item.kind == 'whatsapp' %}fab fa-whatsapp{% else %}fas {% if item.kind == 'phone' %}fa-phone{% elif item.kind == 'email' %}fa-envelope{% else %}fa-link{% endif %}{% endif %}"></i>
                 <span>{{ item.label or item.kind|title }}</span>
                 <strong>{{ item.value or item.url }}</strong>
@@ -65,7 +65,7 @@
         </form>
         {% endif %}
         {% if page.get('contact_email') %}
-        <a class="btn-primary" href="mailto:{{ page.get('contact_email') }}"><i class="fas fa-envelope"></i> Contact Support</a>
+        <a class="btn-primary" href="{{ email_href(page.get('contact_email')) }}"><i class="fas fa-envelope"></i> Contact Support</a>
         {% endif %}
     </section>
 

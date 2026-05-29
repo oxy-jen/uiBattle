@@ -2156,6 +2156,29 @@ def site_page_url(page_key):
     }.get(page_key)
     return url_for(endpoint) if endpoint else '#'
 
+def contact_href(item):
+    item = item if isinstance(item, dict) else {}
+    url = str(item.get('url') or '').strip()
+    value = str(item.get('value') or '').strip()
+    kind = str(item.get('kind') or '').strip().lower()
+    target = url or value
+    if not target:
+        return '#'
+    if re.match(r'^(mailto:|tel:|https?://|/)', target, re.I):
+        return target
+    if kind == 'email' or valid_email(target):
+        return f'mailto:{target}'
+    phone_digits = re.sub(r'\D+', '', target)
+    if kind in {'phone', 'whatsapp'} and phone_digits:
+        return f'https://wa.me/{phone_digits}' if kind == 'whatsapp' else f'tel:+{phone_digits}'
+    return target
+
+def email_href(value):
+    email = str(value or '').strip()
+    if not email:
+        return '#'
+    return email if email.lower().startswith('mailto:') else f'mailto:{email}'
+
 def visible_site_pages(surface='footer'):
     content = get_site_content()
     rows = []
@@ -2324,7 +2347,9 @@ def delete_room_data(room):
 def inject_current_profile():
     context = {
         'csrf_token': get_csrf_token(),
-        'visible_site_pages': visible_site_pages
+        'visible_site_pages': visible_site_pages,
+        'contact_href': contact_href,
+        'email_href': email_href
     }
     user_id = session.get('user_id')
     if not user_id:
