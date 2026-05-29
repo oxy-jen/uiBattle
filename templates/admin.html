@@ -1109,17 +1109,17 @@
                     </div>
                     {% endfor %}
                     <div class="content-editor-card feedback-inbox-card">
-                        <h4>Latest Feedback</h4>
+                        <h4>Feedback and Reports Inbox</h4>
                         {% for item in feedback_messages|default([]) %}
                         <div class="feedback-inbox-item">
-                            <strong>{{ item.name }}</strong>
+                            <strong>{{ item.name }} <em>{{ item.type|default('feedback')|title }}</em></strong>
                             <span>{{ item.created_at }}</span>
                             {% if item.email %}<a href="mailto:{{ item.email }}">{{ item.email }}</a>{% endif %}
                             {% if item.room_code %}<small>Room: {{ item.room_code }}</small>{% endif %}
                             <p>{{ item.message }}</p>
                         </div>
                         {% else %}
-                        <p class="muted">No feedback yet.</p>
+                        <p class="muted">No feedback or reports yet.</p>
                         {% endfor %}
                     </div>
                     {% set notice = site_content.get('maintenance_notice', {}) %}
@@ -1346,6 +1346,18 @@
 .feedback-inbox-item small {
     color: var(--text-muted);
     font-size: 12px;
+}
+.feedback-inbox-item em {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    padding: 2px 7px;
+    border: 1px solid var(--border-default);
+    border-radius: 999px;
+    color: var(--accent-primary);
+    font-size: 11px;
+    font-style: normal;
+    text-transform: uppercase;
 }
 .feedback-inbox-item p {
     margin: 0;

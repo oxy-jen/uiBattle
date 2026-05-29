@@ -1908,12 +1908,19 @@ def get_profile_record(user_id):
     profiles = load_profile_store()
     return profiles, profiles.setdefault(str(user_id), {'bio': '', 'avatar_filename': None})
 
+ARENA_CONTACT_PHONE = '+254791305329'
+ARENA_CONTACT_EMAILS = ['uibattlearena@gmail.com', 'oxygenvessels@gmail.com']
+
 DEFAULT_SITE_CONTENT = {
     'about': {
         'hero_title': 'UI Battle Arena',
-        'hero_subtitle': 'A live coding arena for fair UI challenges, spectators, tournaments, and player growth.',
-        'body': 'Compete by recreating target interfaces, learn from deterministic score analysis, and follow live matches in a production-ready arena.',
-        'contact_email': '',
+        'hero_subtitle': 'A live coding arena where students recreate real interfaces, compete fairly, and improve through output-based scoring.',
+        'body': (
+            'UI Battle Arena is built for practical frontend practice. Students join live rooms, rebuild a target interface with HTML, CSS, and JavaScript, and receive a score based on the rendered output, visual closeness, CSS details, and clean implementation.\n\n'
+            'The arena supports one-on-one battles, spectators, tournaments, certificates, profile awards, admin moderation, room chat, camera checks, and live scoreboards. The goal is not to force every student to write the same code. A student can use Bootstrap, custom CSS, or another reasonable approach as long as the final output matches the target.\n\n'
+            'Admins can create challenges, monitor rooms, review messages, manage tournaments, publish public site pages, send maintenance notices, and keep student progress visible and reliable.'
+        ),
+        'contact_email': ARENA_CONTACT_EMAILS[0],
         'nav_label': 'About',
         'visible': True,
         'placements': ['footer'],
@@ -1928,18 +1935,26 @@ DEFAULT_SITE_CONTENT = {
     },
     'support': {
         'hero_title': 'Support',
-        'hero_subtitle': 'Get help with accounts, match access, scoring, certificates, or arena setup.',
-        'body': 'Contact the organizer if you cannot join a room, need an email reset, or want a result reviewed.',
-        'contact_email': '',
+        'hero_subtitle': 'Get help with login access, match rooms, scoring reviews, certificates, media permissions, and tournament setup.',
+        'body': (
+            'Use support when something blocks your participation or needs organizer attention. Helpful details include your username, room code, opponent name, browser, device, and a short explanation of what happened.\n\n'
+            'Common support cases include account login trouble, email verification, camera or microphone permissions, joining a match, a score that does not look correct, missing certificates, tournament placement questions, and broken page content.\n\n'
+            'For urgent arena issues, use the Report page. For suggestions or general improvements, use Feedback.'
+        ),
+        'contact_email': ARENA_CONTACT_EMAILS[0],
         'nav_label': 'Support',
         'visible': True,
         'placements': ['footer'],
         'layout_style': 'contact',
         'text_effect': 'fade',
         'contact_items': [
-            {'label': 'Organizer email', 'value': 'support@example.com', 'kind': 'email', 'url': 'mailto:support@example.com'}
+            {'label': 'UI Battle Arena email', 'value': ARENA_CONTACT_EMAILS[0], 'kind': 'email', 'url': f'mailto:{ARENA_CONTACT_EMAILS[0]}'},
+            {'label': 'Oxygen Vessels email', 'value': ARENA_CONTACT_EMAILS[1], 'kind': 'email', 'url': f'mailto:{ARENA_CONTACT_EMAILS[1]}'},
+            {'label': 'WhatsApp / phone support', 'value': ARENA_CONTACT_PHONE, 'kind': 'whatsapp', 'url': 'https://wa.me/254791305329'}
         ],
         'links': [
+            {'label': 'Feedback', 'url': '/feedback'},
+            {'label': 'Report a problem', 'url': '/report'},
             {'label': 'Dashboard', 'url': '/dashboard'}
         ],
         'images': [],
@@ -1948,8 +1963,14 @@ DEFAULT_SITE_CONTENT = {
     'terms': {
         'hero_title': 'Terms and Conditions',
         'hero_subtitle': 'Fair play, respectful chat, and responsible use keep the arena trustworthy.',
-        'body': 'Do not cheat, harass other users, abuse platform features, or submit harmful code. Admins may moderate rooms, remove players, and reset testing data when needed.',
-        'contact_email': '',
+        'body': (
+            'By using UI Battle Arena, you agree to compete honestly, respect other users, and follow admin instructions during rooms, tournaments, and public chat.\n\n'
+            'Fair play means submitting your own work, avoiding harmful scripts, not attacking the platform, and not trying to manipulate score storage, timers, camera checks, chat, or leaderboard data. You may use normal frontend tools and frameworks when a challenge allows it, but your marks come from how closely the final output matches the target and how cleanly the submission behaves.\n\n'
+            'Respectful conduct is required. Harassment, threats, abusive language, impersonation, spam, cheating, and unsafe content may lead to warnings, room removal, disqualification, account restrictions, or data reset by an admin.\n\n'
+            'Admins may review feedback, reports, match records, submissions, scores, certificates, media settings, and chat messages to operate the arena. Maintenance may temporarily interrupt access when updates or resets are needed.\n\n'
+            'For questions about these terms, contact the arena team.'
+        ),
+        'contact_email': ARENA_CONTACT_EMAILS[0],
         'nav_label': 'Terms',
         'visible': True,
         'placements': ['footer'],
@@ -1962,27 +1983,41 @@ DEFAULT_SITE_CONTENT = {
     },
     'contact': {
         'hero_title': 'Contact',
-        'hero_subtitle': 'Reach the people running the arena.',
-        'body': 'Use the contacts below for account access, tournament questions, score reviews, and urgent match support.',
-        'contact_email': '',
+        'hero_subtitle': 'Reach the UI Battle Arena team for support, tournaments, scoring reviews, and urgent room issues.',
+        'body': (
+            'Use these contacts for account access, match support, score reviews, tournament coordination, certificates, site content, sponsorship, or partnership questions.\n\n'
+            'When reporting a live match issue, include the room code, your username, the opponent username, and what you expected to happen.'
+        ),
+        'contact_email': ARENA_CONTACT_EMAILS[0],
         'nav_label': 'Contact',
         'visible': True,
         'placements': ['footer'],
         'layout_style': 'contact',
         'text_effect': 'slide',
         'contact_items': [
-            {'label': 'General support', 'value': 'support@example.com', 'kind': 'email', 'url': 'mailto:support@example.com'},
-            {'label': 'WhatsApp hotline', 'value': '+1 000 000 0000', 'kind': 'whatsapp', 'url': 'https://wa.me/10000000000'}
+            {'label': 'UI Battle Arena', 'value': ARENA_CONTACT_EMAILS[0], 'kind': 'email', 'url': f'mailto:{ARENA_CONTACT_EMAILS[0]}'},
+            {'label': 'Oxygen Vessels', 'value': ARENA_CONTACT_EMAILS[1], 'kind': 'email', 'url': f'mailto:{ARENA_CONTACT_EMAILS[1]}'},
+            {'label': 'Phone / WhatsApp', 'value': ARENA_CONTACT_PHONE, 'kind': 'whatsapp', 'url': 'https://wa.me/254791305329'}
         ],
-        'links': [],
+        'links': [
+            {'label': 'Feedback', 'url': '/feedback'},
+            {'label': 'Report a problem', 'url': '/report'},
+            {'label': 'Help Center', 'url': '/help'}
+        ],
         'images': [],
         'videos': []
     },
     'help': {
         'hero_title': 'Help Center',
         'hero_subtitle': 'Quick guidance for joining rooms, submitting code, and understanding results.',
-        'body': 'Join an active room from the dashboard, allow camera and microphone when needed, write your HTML/CSS/JS, and submit before time ends. Scores are calculated from the admin target, style properties, visual/code similarity, and clean-code quality. If something looks wrong, contact support with the room code and your username.',
-        'contact_email': '',
+        'body': (
+            'Joining a match: log in, open the dashboard, join an available room or invite link, and wait for the admin or room state to start the challenge. Allow camera and microphone when required by your organizer.\n\n'
+            'Building your answer: use the editor to write HTML, CSS, and JavaScript. Your code does not need to be identical to another student or to the admin source. What matters is the final rendered output, including layout, spacing, colors, typography, borders, radius, and interaction behavior.\n\n'
+            'Submitting: use Submit & Check before time runs out. The arena saves your trusted score and score details so progress remains stable after refresh. If your screen freezes or you lose connection, rejoin the room and submit again if the match is still active.\n\n'
+            'Understanding scores: the score compares the output against the target and also checks important CSS groups such as typography, color, layout, spacing, shape, and alignment. Small details like borders, shadows, and radius can move your percentage.\n\n'
+            'Need help: send Feedback for suggestions and non-urgent issues. Use Report for urgent scoring, safety, access, or tournament problems.'
+        ),
+        'contact_email': ARENA_CONTACT_EMAILS[0],
         'nav_label': 'Help',
         'visible': True,
         'placements': ['footer'],
@@ -2000,8 +2035,11 @@ DEFAULT_SITE_CONTENT = {
     'feedback': {
         'hero_title': 'Feedback',
         'hero_subtitle': 'Tell the organizers what is broken, confusing, or worth improving.',
-        'body': 'Send match issues, UI suggestions, scoring concerns, or support requests. Include a room code when your message is about a specific battle.',
-        'contact_email': '',
+        'body': (
+            'Use this form for suggestions, confusing workflows, page content corrections, scoring concerns, or ideas that would make the arena better for students.\n\n'
+            'Every feedback message is saved in the admin panel and emailed to the arena team. Include a room code when your feedback is about a specific match.'
+        ),
+        'contact_email': ARENA_CONTACT_EMAILS[0],
         'nav_label': 'Feedback',
         'visible': True,
         'placements': ['footer'],
@@ -2015,8 +2053,11 @@ DEFAULT_SITE_CONTENT = {
     'report': {
         'hero_title': 'Report a Problem',
         'hero_subtitle': 'Send urgent match, scoring, safety, or access issues to the arena admins.',
-        'body': 'Use this page for problems that need admin review: unfair scores, room access issues, harassment, broken pages, or tournament mistakes. Include the room code, usernames, and what happened.',
-        'contact_email': '',
+        'body': (
+            'Use this page for problems that need admin review: unfair scores, room access issues, harassment, harmful chat, broken pages, missing tournament results, certificate mistakes, or suspicious behavior.\n\n'
+            'Reports are saved in the admin panel and emailed to the arena team. Include the room code, usernames, time of the issue, and what happened.'
+        ),
+        'contact_email': ARENA_CONTACT_EMAILS[0],
         'nav_label': 'Report',
         'visible': True,
         'placements': ['footer'],
@@ -2033,7 +2074,7 @@ DEFAULT_SITE_CONTENT = {
     'maintenance_notice': {
         'enabled': False,
         'title': 'Scheduled maintenance',
-        'message': 'The arena will be updated soon. Download anything you need before the maintenance window.',
+        'message': 'UI Battle Arena may be paused for updates, score improvements, content changes, or database maintenance. Save any work you need before the maintenance window and return after the release time.',
         'maintenance_at': '',
         'release_at': '',
         'email_users': False
@@ -2056,6 +2097,49 @@ def save_site_content(content):
     profiles = load_profile_store()
     profiles['__site_content__'] = content
     save_profile_store(profiles)
+
+def refresh_builtin_site_content():
+    profiles = load_profile_store()
+    saved = profiles.get('__site_content__')
+    if not isinstance(saved, dict):
+        return
+    changed = False
+    old_fragments = (
+        'support@example.com',
+        '+1 000 000 0000',
+        'A live coding arena for fair UI challenges',
+        'Contact the organizer if you cannot join a room',
+        'Do not cheat, harass other users',
+        'Use the contacts below for account access',
+        'Join an active room from the dashboard',
+        'Send match issues, UI suggestions',
+        'Use this page for problems that need admin review'
+    )
+    for section in SITE_PAGE_KEYS:
+        current = saved.get(section)
+        default = DEFAULT_SITE_CONTENT.get(section)
+        if not isinstance(current, dict) or not isinstance(default, dict):
+            continue
+        current_text = json.dumps(current, sort_keys=True)
+        should_refresh = any(fragment in current_text for fragment in old_fragments)
+        should_refresh = should_refresh or not str(current.get('body') or '').strip()
+        if should_refresh:
+            merged = json.loads(json.dumps(default))
+            for media_key in ['images', 'videos']:
+                if current.get(media_key):
+                    merged[media_key] = current.get(media_key)
+            saved[section] = merged
+            changed = True
+    notice = saved.get('maintenance_notice')
+    if isinstance(notice, dict) and (
+        not str(notice.get('message') or '').strip()
+        or 'The arena will be updated soon' in str(notice.get('message') or '')
+    ):
+        saved['maintenance_notice'] = json.loads(json.dumps(DEFAULT_SITE_CONTENT['maintenance_notice']))
+        changed = True
+    if changed:
+        profiles['__site_content__'] = saved
+        save_profile_store(profiles)
 
 SITE_PAGE_KEYS = ['about', 'support', 'terms', 'contact', 'help', 'feedback', 'report']
 SITE_PAGE_PLACEMENTS = ['public', 'dashboard', 'arena', 'profile', 'footer']
@@ -2685,25 +2769,60 @@ def help_page():
 def helpline_page():
     return redirect(url_for('contact_page'))
 
+def store_and_notify_site_message(kind, data):
+    kind = 'report' if kind == 'report' else 'feedback'
+    message = str(data.get('message') or '').strip()
+    if not message:
+        return {'success': False, 'error': f'{kind.title()} message is required'}, 400
+
+    row = {
+        'type': kind,
+        'name': str(data.get('name') or session.get('username') or 'Visitor')[:120],
+        'email': str(data.get('email') or '')[:180],
+        'message': message[:2000],
+        'room_code': str(data.get('room_code') or '')[:80],
+        'created_at': datetime.now(timezone.utc).isoformat()
+    }
+    profiles = load_profile_store()
+    feedback_rows = profiles.setdefault('__feedback_messages__', [])
+    feedback_rows.insert(0, row)
+    profiles['__feedback_messages__'] = feedback_rows[:250]
+    save_profile_store(profiles)
+
+    subject = f"UI Battle Arena {kind}: {row['name']}"
+    body = (
+        f"Type: {kind.title()}\n"
+        f"Name: {row['name']}\n"
+        f"Email: {row['email'] or 'Not provided'}\n"
+        f"Room code: {row['room_code'] or 'Not provided'}\n"
+        f"Sent at: {row['created_at']}\n\n"
+        f"Message:\n{row['message']}"
+    )
+    recipients = []
+    for email in ARENA_CONTACT_EMAILS + [configured_admin_email()]:
+        clean = valid_email(email)
+        if clean and clean not in recipients:
+            recipients.append(clean)
+    email_sent = 0
+    if recipients and email_configured():
+        email_sent = notify_users_by_email(
+            [type('Recipient', (), {'id': index, 'email': email})() for index, email in enumerate(recipients, start=1)],
+            subject,
+            body,
+            only_verified=False
+        )
+    return {
+        'success': True,
+        'message': f"{kind.title()} sent to admins",
+        'email_sent': email_sent
+    }, 200
+
 @app.route('/feedback', methods=['GET', 'POST'])
 def feedback_page():
     if request.method == 'POST':
         data = request.get_json(silent=True) or request.form or {}
-        message = str(data.get('message') or '').strip()
-        if not message:
-            return jsonify({'success': False, 'error': 'Feedback message is required'}), 400
-        profiles = load_profile_store()
-        feedback_rows = profiles.setdefault('__feedback_messages__', [])
-        feedback_rows.insert(0, {
-            'name': str(data.get('name') or session.get('username') or 'Visitor')[:120],
-            'email': str(data.get('email') or '')[:180],
-            'message': message[:2000],
-            'room_code': str(data.get('room_code') or '')[:80],
-            'created_at': datetime.now(timezone.utc).isoformat()
-        })
-        profiles['__feedback_messages__'] = feedback_rows[:100]
-        save_profile_store(profiles)
-        return jsonify({'success': True, 'message': 'Feedback sent'})
+        payload, status = store_and_notify_site_message('feedback', data)
+        return jsonify(payload), status
     return render_template('site_page.html', page_key='feedback', site_content=get_site_content())
 
 @app.route('/report', methods=['GET', 'POST'])
@@ -2711,22 +2830,8 @@ def report_page():
     if request.method == 'POST':
         data = request.get_json(silent=True) or request.form or {}
         data = dict(data)
-        data['message'] = f"[REPORT] {data.get('message') or ''}"
-        profiles = load_profile_store()
-        message = str(data.get('message') or '').strip()
-        if not message or message == '[REPORT]':
-            return jsonify({'success': False, 'error': 'Report message is required'}), 400
-        feedback_rows = profiles.setdefault('__feedback_messages__', [])
-        feedback_rows.insert(0, {
-            'name': str(data.get('name') or session.get('username') or 'Visitor')[:120],
-            'email': str(data.get('email') or '')[:180],
-            'message': message[:2000],
-            'room_code': str(data.get('room_code') or '')[:80],
-            'created_at': datetime.now(timezone.utc).isoformat()
-        })
-        profiles['__feedback_messages__'] = feedback_rows[:100]
-        save_profile_store(profiles)
-        return jsonify({'success': True, 'message': 'Report sent'})
+        payload, status = store_and_notify_site_message('report', data)
+        return jsonify(payload), status
     return render_template('site_page.html', page_key='report', site_content=get_site_content())
 
 # ========== DASHBOARD ==========
@@ -2811,7 +2916,7 @@ def admin_panel():
         room.id: sorted(list(room_spectators.get(room.id, set())))
         for room in rooms
     }
-    feedback_messages = load_profile_store().get('__feedback_messages__', [])[:20]
+    feedback_messages = load_profile_store().get('__feedback_messages__', [])[:250]
     
     return render_template('admin.html',
                          user=user, 
@@ -5411,6 +5516,7 @@ def initialize_runtime_database(create_dev_admin=False):
     with app.app_context():
         db.create_all()
         ensure_schema_upgrades()
+        refresh_builtin_site_content()
 
         admin = User.query.filter_by(role='admin').first()
         admin_email = configured_admin_email()

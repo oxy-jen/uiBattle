@@ -4,9 +4,9 @@
 {% set notice = (site_content.get('maintenance_notice') if site_content is defined else {}) or {} %}
 <main class="maintenance-page">
     <section class="maintenance-card">
-        <span><i class="fas fa-screwdriver-wrench"></i> Arena reset</span>
+        <span><i class="fas fa-screwdriver-wrench"></i> Arena maintenance</span>
         <h1>{{ notice.get('title') or 'Maintenance completed' }}</h1>
-        <p>{{ notice.get('message') or 'The admin cleared arena data. Please log in again so your session starts cleanly.' }}</p>
+        <p>{{ notice.get('message') or 'UI Battle Arena may be paused for updates, score improvements, content changes, or database maintenance. Please return after the release time.' }}</p>
         {% if notice.get('maintenance_at') or notice.get('release_at') %}
         <div class="maintenance-schedule">
             {% if notice.get('maintenance_at') %}<strong>Maintenance: {{ notice.get('maintenance_at') }}</strong>{% endif %}
