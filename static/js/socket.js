@@ -338,6 +338,12 @@ socket.on('chat_warning', (data) => {
     showToast(message, 'warning');
 });
 
+socket.on('admin_player_warning', (data) => {
+    const message = data?.message || 'Admin warning: follow arena rules.';
+    appendChatWarning(message);
+    showToast(message, 'warning');
+});
+
 socket.on('chat_message_flagged', (data) => {
     markChatMessageFlagged(data?.id, data?.flag_reason || 'Flagged for admin review');
     const isAdmin = (document.getElementById('user-role')?.value || window.ARENA_CONFIG?.userRole) === 'admin';
@@ -645,6 +651,10 @@ socket.on('tournament_kick', (data) => {
 socket.on('player_forfeit', (data) => {
     console.log('ðŸ³ï¸ player_forfeit:', data);
     showToast(`${data.username} forfeited!`, 'warning');
+});
+
+socket.on('player_disqualified', (data) => {
+    showToast(`${data?.username || 'A player'} was disqualified.`, 'error');
 });
 
 // Camera frame

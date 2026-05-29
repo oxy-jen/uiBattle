@@ -188,7 +188,8 @@
                 <span class="separator">|</span>
                 <span id="editor-mode">HTML</span>
                 <span class="separator">|</span>
-                <span class="editor-shortcuts">Tab expands !/html:5 snippets · Ctrl+Space autocomplete · Ctrl+/ comment · Shift+Alt+F format</span>
+                <button type="button" id="editor-shortcuts-btn" class="editor-shortcuts-btn"><i class="fas fa-keyboard"></i> Shortcuts</button>
+                <span class="editor-shortcuts">!/html:5 + Enter · Ctrl+Space autocomplete · Ctrl+/ comment · Shift+Alt+F format</span>
             </div>
         </div>
         
@@ -339,6 +340,16 @@
                 </div>
                 <div id="spectator-preview-list" class="spectator-preview-list">
                     <div class="spectator-placeholder">Player previews will appear when competitors start coding.</div>
+                </div>
+            </div>
+            {% endif %}
+            {% if user_role == 'admin' %}
+            <div class="sidebar-card admin-incident-card">
+                <div class="sidebar-card-header">
+                    <i class="fas fa-triangle-exclamation"></i> RIGHT-CLICK INCIDENTS
+                </div>
+                <div id="admin-incident-list" class="admin-incident-list">
+                    <div class="spectator-placeholder">No player right-click attempts reported.</div>
                 </div>
             </div>
             {% endif %}

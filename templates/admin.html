@@ -2866,6 +2866,45 @@ textarea {
     min-width: 0;
 }
 
+.admin-live-incidents {
+    display: grid;
+    gap: 8px;
+    padding: 0 14px 14px;
+}
+
+.admin-live-incident {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
+    border: 1px solid rgba(239,68,68,0.35);
+    border-radius: 8px;
+    background: rgba(239,68,68,0.1);
+    padding: 10px;
+}
+
+.admin-live-incident span {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.admin-live-incident button {
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-panel-alt);
+    color: var(--text-primary);
+    padding: 8px 10px;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.admin-live-incident [data-action="dq"] {
+    border-color: rgba(239,68,68,0.5);
+    background: rgba(239,68,68,0.18);
+}
+
 .admin-live-player-head {
     display: flex;
     justify-content: space-between;
@@ -4605,6 +4644,10 @@ function getAdminLiveSocket() {
         const head = slot ? card.querySelector(`[data-slot="${slot}"] .admin-live-player-head span`) : null;
         if (head) head.textContent = `${data.username} · ${data.accuracy}%`;
     });
+    adminLiveSocket.on('admin_right_click_attempt', renderAdminRightClickIncident);
+    adminLiveSocket.on('admin_right_click_action_result', (data) => {
+        showToast(data?.message || 'Admin action completed.', data?.success === false ? 'error' : 'success');
+    });
     return adminLiveSocket;
 }
 
@@ -4640,6 +4683,55 @@ function slotForAdminLiveUsername(card, username) {
 
 function findAdminLiveCardForUsername(username) {
     return Array.from(document.querySelectorAll('.admin-live-room-card')).find(card => slotForAdminLiveUsername(card, username));
+}
+
+function renderAdminRightClickIncident(data = {}) {
+    const card = data.room_id
+        ? document.getElementById(`admin-live-room-${data.room_id}`)
+        : findAdminLiveCardForUsername(data.username);
+    showToast(data.message || 'Player right-click attempt reported. It was blocked.', 'warning');
+    if (!card) return;
+    let list = card.querySelector('.admin-live-incidents');
+    if (!list) {
+        list = document.createElement('div');
+        list.className = 'admin-live-incidents';
+        card.appendChild(list);
+    }
+    const username = data.username || 'Player';
+    const defaultWarning = `${username}, warning: right-clicking, Inspect, View Source, or developer-tool shortcuts are prohibited. A repeat attempt can lead to disqualification.`;
+    const item = document.createElement('div');
+    item.className = 'admin-live-incident';
+    item.innerHTML = `
+        <div>
+            <strong>${escapeHtml(username)} tried to right-click</strong>
+            <span>Blocked: ${data.blocked === false ? 'no' : 'yes'} · Worked: ${data.worked ? 'yes' : 'no'} · Source: ${escapeHtml(data.source || 'arena')}</span>
+        </div>
+        <button type="button" data-action="warn">Warn</button>
+        <button type="button" data-action="dq">Disqualify</button>
+    `;
+    list.prepend(item);
+    item.querySelector('[data-action="warn"]').addEventListener('click', async () => {
+        const message = await showPrompt({
+            title: 'Warn player',
+            label: 'Warning message',
+            value: defaultWarning,
+            multiline: true,
+            required: true,
+            confirmText: 'Send Warning'
+        });
+        if (message) getAdminLiveSocket()?.emit('admin_warn_player', {room_id: data.room_id, username, message});
+    });
+    item.querySelector('[data-action="dq"]').addEventListener('click', async () => {
+        const reason = await showPrompt({
+            title: 'Disqualify player',
+            label: 'Reason',
+            value: `Disqualified: ${username} tried to right-click during the match.`,
+            multiline: true,
+            required: true,
+            confirmText: 'Disqualify'
+        });
+        if (reason) getAdminLiveSocket()?.emit('admin_disqualify_player', {room_id: data.room_id, username, reason});
+    });
 }
 
 function renderAdminLivePreview(data = {}) {

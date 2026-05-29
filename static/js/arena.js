@@ -13,6 +13,7 @@ let lastLiveSaveAt = 0;
 let previewBroadcastTimer = null;
 let lastSavedCodeHash = null;
 let lastSavedScore = null;
+let lastRightClickReportAt = 0;
 
 const LIVE_DIFF_DELAY = 180;
 const LIVE_SAVE_INTERVAL = 1000;
@@ -44,6 +45,31 @@ const CAN_PUBLISH_MEDIA = IS_PLAYER_ROLE || USER_ROLE === 'admin';
 const INITIAL_SCORES = arenaConfig.initialScores || {};
 const SCORE_CACHE_KEY = `arena_${ROOM_ID}_${CURRENT_USERNAME}_score_cache`;
 const PLAYER_INSPECT_WARNING = 'Players MUST NOT RIGHT CLICK OR THEY ARE DISQUALIFIED. Inspect and source shortcuts are prohibited during arena matches.';
+const COLOR_PROPERTY_RE = /(^|[-\s])(color|background|background-color|border|border-color|box-shadow|text-shadow|outline|fill|stroke)$/i;
+const EDITOR_SHORTCUT_GROUPS = [
+    ['Boilerplate and snippets', [
+        ['! or html:5 + Enter/Tab', 'Insert a full HTML5 page'],
+        ['div.card + Enter/Tab', 'Create tags with class/id abbreviations'],
+        ['ul>li*3 + Enter/Tab', 'Create simple nested lists'],
+        ['btn, form, img, nav, card, grid', 'Insert common HTML snippets'],
+        ['m10, p16, w100p, flex, grid2', 'Insert quick CSS snippets']
+    ]],
+    ['Editing', [
+        ['Ctrl+Space', 'Autocomplete'],
+        ['Ctrl+/', 'Toggle comment'],
+        ['Alt+Up / Alt+Down', 'Move line'],
+        ['Shift+Alt+Up / Down', 'Duplicate line'],
+        ['Ctrl+Shift+K', 'Delete line'],
+        ['Ctrl+D', 'Select next match'],
+        ['Shift+Alt+F', 'Format indentation']
+    ]],
+    ['Arena', [
+        ['Ctrl+1 / Ctrl+2 / Ctrl+3', 'Switch HTML, CSS, JS tabs'],
+        ['Ctrl+S', 'Save locally and refresh preview'],
+        ['Ctrl+Enter', 'Submit and check score'],
+        ['Alt+C in CSS', 'Open color picker']
+    ]]
+];
 
 // Parse target HTML/CSS (handle JSON escaping)
 let TARGET_HTML = TARGET_HTML_RAW;
@@ -119,6 +145,10 @@ function htmlBoilerplate() {
     ].join('\n');
 }
 
+function snippetWithCursor(text, cursorToken = '__CURSOR__') {
+    return { text, cursorToken };
+}
+
 function expandSimpleHtmlAbbreviation(editor) {
     if (!editor || editor.getOption('mode') !== 'htmlmixed' || editor.getOption('readOnly')) return false;
     const range = currentWordRange(editor);
@@ -134,6 +164,14 @@ function expandSimpleHtmlAbbreviation(editor) {
         'btn': '<button type="button"></button>',
         'input': '<input type="text" name="" placeholder="">',
         'form': '<form action="" method="post">\n  \n</form>',
+        'nav': '<nav class="nav">\n  <a href="#">Home</a>\n  <a href="#">About</a>\n  <a href="#">Contact</a>\n</nav>',
+        'main': '<main>\n  \n</main>',
+        'section': '<section>\n  <h2></h2>\n  <p></p>\n</section>',
+        'card': '<article class="card">\n  <h2></h2>\n  <p></p>\n</article>',
+        'grid': '<div class="grid">\n  <div></div>\n  <div></div>\n  <div></div>\n</div>',
+        'hero': '<section class="hero">\n  <h1></h1>\n  <p></p>\n  <button type="button"></button>\n</section>',
+        'ul>li*3': '<ul>\n  <li></li>\n  <li></li>\n  <li></li>\n</ul>',
+        'table': '<table>\n  <thead>\n    <tr><th></th><th></th></tr>\n  </thead>\n  <tbody>\n    <tr><td></td><td></td></tr>\n  </tbody>\n</table>',
         'lorem': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.'
     };
 
@@ -161,10 +199,54 @@ function expandSimpleHtmlAbbreviation(editor) {
     return true;
 }
 
+function expandSimpleCssAbbreviation(editor) {
+    if (!editor || editor.getOption('mode') !== 'css' || editor.getOption('readOnly')) return false;
+    const range = currentWordRange(editor);
+    const abbr = range.word.trim();
+    if (!abbr) return false;
+
+    const snippets = {
+        'm0': 'margin: 0;',
+        'm10': 'margin: 10px;',
+        'p0': 'padding: 0;',
+        'p10': 'padding: 10px;',
+        'p16': 'padding: 16px;',
+        'w100': 'width: 100%;',
+        'w100p': 'width: 100%;',
+        'h100': 'height: 100%;',
+        'br8': 'border-radius: 8px;',
+        'b1': 'border: 1px solid #e5e7eb;',
+        'c': 'color: #111827;',
+        'bg': 'background: #ffffff;',
+        'bgc': 'background-color: #ffffff;',
+        'flex': 'display: flex;\nalign-items: center;\ngap: 12px;',
+        'jcc': 'justify-content: center;',
+        'aic': 'align-items: center;',
+        'grid': 'display: grid;\ngap: 16px;',
+        'grid2': 'display: grid;\ngrid-template-columns: repeat(2, minmax(0, 1fr));\ngap: 16px;',
+        'abs': 'position: absolute;\ntop: 0;\nleft: 0;',
+        'rel': 'position: relative;',
+        'shadow': 'box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);',
+        'trans': 'transition: all 160ms ease;'
+    };
+    const output = snippets[abbr];
+    if (!output) return false;
+    editor.replaceRange(output, range.from, range.to);
+    return true;
+}
+
+function expandEditorAbbreviation(editor) {
+    return expandSimpleHtmlAbbreviation(editor) || expandSimpleCssAbbreviation(editor);
+}
+
 function maybeShowEditorHint(editor, change) {
     if (!editor || editor.getOption('readOnly') || !editor.showHint || editor.state.completionActive) return;
     if (!change.origin || !change.origin.startsWith('+input')) return;
     const typed = change.text?.join('') || '';
+    if ((typed === ':' || typed === '#') && cursorLooksLikeCssColorValue(editor)) {
+        setTimeout(() => openCssColorPicker(editor), 80);
+        return;
+    }
     if (!/^[\w.#:<-]$/.test(typed)) return;
     showEditorHint(editor);
 }
@@ -224,6 +306,52 @@ function selectNextOccurrence(editor) {
     }
 }
 
+function cursorLooksLikeCssColorValue(editor) {
+    if (!editor || editor.getOption('mode') !== 'css') return false;
+    const cursor = editor.getCursor();
+    const lineBefore = (editor.getLine(cursor.line) || '').slice(0, cursor.ch);
+    const property = lineBefore.split('{').pop().split(';').pop().split(':')[0]?.trim();
+    return Boolean(property && COLOR_PROPERTY_RE.test(property));
+}
+
+function insertCssColor(editor, value) {
+    if (!editor || !value) return;
+    const cursor = editor.getCursor();
+    const token = editor.getTokenAt(cursor);
+    const line = editor.getLine(cursor.line) || '';
+    const from = token && /^(#[0-9a-fA-F]{0,8}|rgba?\([^)]*|hsla?\([^)]*)$/.test(token.string || '')
+        ? { line: cursor.line, ch: token.start }
+        : cursor;
+    const to = token && from !== cursor ? { line: cursor.line, ch: token.end } : cursor;
+    const suffix = line.slice(to.ch).trimStart().startsWith(';') ? '' : ';';
+    editor.replaceRange(`${value}${suffix}`, from, to);
+    editor.focus();
+}
+
+function openCssColorPicker(editor) {
+    if (!editor || editor.getOption('readOnly')) return;
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = '#22d3ee';
+    input.className = 'arena-css-color-picker';
+    document.body.appendChild(input);
+    const coords = editor.cursorCoords(null, 'page');
+    input.style.left = `${coords.left}px`;
+    input.style.top = `${coords.bottom + 6}px`;
+    input.addEventListener('input', () => insertCssColor(editor, input.value));
+    input.addEventListener('change', () => {
+        insertCssColor(editor, input.value);
+        input.remove();
+    });
+    input.addEventListener('blur', () => setTimeout(() => input.remove(), 120));
+    input.click();
+}
+
+function handleEditorEnter(editor) {
+    if (expandEditorAbbreviation(editor)) return;
+    editor.execCommand('newlineAndIndent');
+}
+
 function getEditorExtraKeys() {
     return {
         'Ctrl-Space': showEditorHint,
@@ -259,10 +387,12 @@ function getEditorExtraKeys() {
         'Cmd-1': () => switchTab('html'),
         'Cmd-2': () => switchTab('css'),
         'Cmd-3': () => switchTab('js'),
-        'Ctrl-E': (editor) => expandSimpleHtmlAbbreviation(editor) || showEditorHint(editor),
-        'Cmd-E': (editor) => expandSimpleHtmlAbbreviation(editor) || showEditorHint(editor),
+        'Ctrl-E': (editor) => expandEditorAbbreviation(editor) || showEditorHint(editor),
+        'Cmd-E': (editor) => expandEditorAbbreviation(editor) || showEditorHint(editor),
+        'Alt-C': openCssColorPicker,
+        'Enter': handleEditorEnter,
         'Tab': (editor) => {
-            if (!editor.somethingSelected() && expandSimpleHtmlAbbreviation(editor)) return;
+            if (!editor.somethingSelected() && expandEditorAbbreviation(editor)) return;
             editor.somethingSelected() ? editor.execCommand('indentMore') : editor.replaceSelection('  ', 'end');
         },
         'Shift-Tab': (editor) => editor.execCommand('indentLess')
@@ -430,19 +560,25 @@ function getPlayerInspectGuardScript() {
     return `<script>
         (() => {
             const warning = ${JSON.stringify(PLAYER_INSPECT_WARNING)};
-            const block = (event) => {
+            const report = (source) => {
+                try {
+                    window.parent?.postMessage({ type: 'arena-right-click-attempt', source }, '*');
+                } catch (error) {}
+            };
+            const block = (event, source = 'embedded frame') => {
                 event.preventDefault();
                 event.stopPropagation();
+                report(source);
                 return false;
             };
-            document.addEventListener('contextmenu', block, true);
+            document.addEventListener('contextmenu', (event) => block(event, document.title || 'embedded frame'), true);
             document.addEventListener('keydown', (event) => {
                 const key = String(event.key || '').toLowerCase();
                 const blocked =
                     key === 'f12' ||
                     ((event.ctrlKey || event.metaKey) && event.shiftKey && ['i', 'j', 'c'].includes(key)) ||
                     ((event.ctrlKey || event.metaKey) && ['u', 's'].includes(key));
-                if (blocked) block(event);
+                if (blocked) block(event, 'embedded frame shortcut');
             }, true);
             document.documentElement.setAttribute('data-player-inspect-warning', warning);
         })();
@@ -1019,9 +1155,23 @@ function initRefreshGuard() {
 
 function initArenaInspectGuards() {
     if (!document.querySelector('.arena-root') || !IS_PLAYER_ROLE) return;
+    const reportAttempt = (source = 'arena page') => {
+        const now = Date.now();
+        if (now - lastRightClickReportAt < 1500) return;
+        lastRightClickReportAt = now;
+        if (window.socket) {
+            window.socket.emit('right_click_attempt', {
+                room_id: ROOM_ID,
+                username: CURRENT_USERNAME,
+                source,
+                blocked: true
+            });
+        }
+    };
     document.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
+        reportAttempt('arena page');
         showToast(PLAYER_INSPECT_WARNING, 'warning');
     });
     document.addEventListener('keydown', (event) => {
@@ -1033,9 +1183,15 @@ function initArenaInspectGuards() {
         if (blocked) {
             event.preventDefault();
             event.stopPropagation();
+            reportAttempt('inspect/source shortcut');
             showToast(PLAYER_INSPECT_WARNING, 'warning');
         }
     }, true);
+    window.addEventListener('message', (event) => {
+        if (event?.data?.type !== 'arena-right-click-attempt') return;
+        reportAttempt(event.data.source || 'embedded frame');
+        showToast(PLAYER_INSPECT_WARNING, 'warning');
+    });
 }
 
 function clearDiffViews() {
@@ -2422,6 +2578,118 @@ function initLiveScoringObservers() {
     }
 }
 
+function showEditorShortcutsMenu() {
+    const overlay = document.createElement('div');
+    overlay.className = 'shortcuts-overlay';
+    overlay.innerHTML = `
+        <div class="shortcuts-dialog">
+            <header>
+                <h3><i class="fas fa-keyboard"></i> Editor Shortcuts</h3>
+                <button type="button" aria-label="Close shortcuts"><i class="fas fa-times"></i></button>
+            </header>
+            <div class="shortcuts-grid">
+                ${EDITOR_SHORTCUT_GROUPS.map(([title, rows]) => `
+                    <section>
+                        <h4>${escapeHtml(title)}</h4>
+                        ${rows.map(([keys, detail]) => `
+                            <div class="shortcut-row">
+                                <kbd>${escapeHtml(keys)}</kbd>
+                                <span>${escapeHtml(detail)}</span>
+                            </div>
+                        `).join('')}
+                    </section>
+                `).join('')}
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('button')?.addEventListener('click', close);
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) close();
+    });
+    window.addEventListener('keydown', function onKey(event) {
+        if (event.key === 'Escape') {
+            close();
+            window.removeEventListener('keydown', onKey);
+        }
+    });
+}
+
+function renderAdminIncident(data = {}) {
+    if (USER_ROLE !== 'admin') return;
+    const list = getElement('admin-incident-list');
+    if (!list) return;
+    list.querySelector('.spectator-placeholder')?.remove();
+    const username = data.username || data.player_name || 'Player';
+    const blocked = data.blocked !== false;
+    const source = data.source || 'arena';
+    const defaultWarning = `${username}, warning: right-clicking, Inspect, View Source, or developer-tool shortcuts are prohibited. A repeat attempt can lead to disqualification.`;
+    const card = document.createElement('div');
+    card.className = 'admin-incident-item';
+    card.innerHTML = `
+        <div>
+            <strong>${escapeHtml(username)}</strong>
+            <span>${escapeHtml(data.message || `Player ${username} tried to right-click.`)}</span>
+            <small>Source: ${escapeHtml(source)} · Blocked: ${blocked ? 'yes' : 'no'} · Worked: ${data.worked ? 'yes' : 'no'}</small>
+        </div>
+        <div class="admin-incident-actions">
+            <button type="button" data-incident-action="warn"><i class="fas fa-triangle-exclamation"></i> Warn</button>
+            <button type="button" data-incident-action="dq"><i class="fas fa-ban"></i> Disqualify</button>
+        </div>
+    `;
+    list.prepend(card);
+    card.querySelector('[data-incident-action="warn"]')?.addEventListener('click', async () => {
+        const message = await showPrompt({
+            title: 'Warn player',
+            message: `Send a warning to ${username}.`,
+            label: 'Warning message',
+            value: defaultWarning,
+            multiline: true,
+            required: true,
+            confirmText: 'Send Warning'
+        });
+        if (!message) return;
+        window.socket?.emit('admin_warn_player', {
+            room_id: ROOM_ID,
+            username,
+            message
+        });
+    });
+    card.querySelector('[data-incident-action="dq"]')?.addEventListener('click', async () => {
+        const reason = await showPrompt({
+            title: 'Disqualify player',
+            message: `${username} will be removed from active play and receive a zero/forfeit score.`,
+            label: 'Reason',
+            value: `Disqualified: ${username} tried to right-click during the match.`,
+            multiline: true,
+            required: true,
+            confirmText: 'Disqualify'
+        });
+        if (!reason) return;
+        window.socket?.emit('admin_disqualify_player', {
+            room_id: ROOM_ID,
+            username,
+            reason
+        });
+    });
+}
+
+function initEditorShortcutsMenu() {
+    getElement('editor-shortcuts-btn')?.addEventListener('click', showEditorShortcutsMenu);
+}
+
+function initAdminIncidentControls() {
+    if (USER_ROLE !== 'admin' || !window.socket) return;
+    window.socket.on('admin_right_click_attempt', (data) => {
+        renderAdminIncident(data);
+        showToast(data?.message || 'Player right-click attempt reported. It was blocked.', 'warning');
+    });
+    window.socket.on('admin_right_click_action_result', (data) => {
+        showToast(data?.message || 'Admin action completed.', data?.success === false ? 'error' : 'success');
+    });
+}
+
 // Admin controls
 function initAdminControls() {
     if (USER_ROLE !== 'admin') return;
@@ -2477,6 +2745,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initSpectatorMode();
     initAdminObserverWorkspace();
     initAdminControls();
+    initAdminIncidentControls();
+    initEditorShortcutsMenu();
     initRefreshGuard();
     applyInitialScoreState();
     startCodePreview();

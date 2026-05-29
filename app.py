@@ -5495,6 +5495,106 @@ def handle_forfeit(data):
     socketio.emit('player_forfeit', {'username': user.username}, room=str(room.id))
 
 
+@socketio.on('right_click_attempt')
+def handle_right_click_attempt(data):
+    user, room, role = socket_room_context(data)
+    if not is_room_player(user, room):
+        return
+    source = str((data or {}).get('source') or 'arena').strip()[:40]
+    payload = {
+        'room_id': room.id,
+        'username': user.username,
+        'player_name': user.username,
+        'role': role,
+        'source': source,
+        'blocked': True,
+        'worked': False,
+        'message': f'Player {user.username} tried to right-click in {source}. The attempt was blocked.'
+    }
+    socketio.emit('admin_right_click_attempt', payload, room=str(room.id))
+
+
+@socketio.on('admin_warn_player')
+def handle_admin_warn_player(data):
+    admin, room, role = socket_room_context(data)
+    if not admin or admin.role != 'admin' or role != 'admin' or not room:
+        return
+    target = str((data or {}).get('username') or '').strip()[:80]
+    message = str((data or {}).get('message') or '').strip()[:500]
+    if not target or not message:
+        return
+    socketio.emit('admin_player_warning', {
+        'room_id': room.id,
+        'username': target,
+        'message': message,
+        'admin': admin.username
+    }, room=f"user_{target}")
+    socketio.emit('chat_message', {
+        'username': 'SYSTEM',
+        'message': f'Admin warned {target}: {message}',
+        'is_system': True,
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }, room=str(room.id))
+    emit('admin_right_click_action_result', {
+        'success': True,
+        'message': f'Warning sent to {target}.'
+    }, room=request.sid)
+
+
+@socketio.on('admin_disqualify_player')
+def handle_admin_disqualify_player(data):
+    admin, room, role = socket_room_context(data)
+    if not admin or admin.role != 'admin' or role != 'admin' or not room:
+        return
+    target = str((data or {}).get('username') or '').strip()[:80]
+    reason = str((data or {}).get('reason') or 'Right-click attempt during arena match.').strip()[:500]
+    player = None
+    if room.player1 and room.player1.username == target:
+        player = room.player1
+    elif room.player2 and room.player2.username == target:
+        player = room.player2
+    if not player:
+        emit('admin_right_click_action_result', {
+            'success': False,
+            'message': f'{target or "Player"} is not an active player in this room.'
+        }, room=request.sid)
+        return
+
+    submission = Submission(
+        user_id=player.id,
+        room_id=room.id,
+        challenge_id=room.challenge_id,
+        is_forfeit=True,
+        accuracy=0,
+        score_details=json.dumps({
+            'scoring_mode': 'disqualified',
+            'reason': reason,
+            'admin': admin.username
+        })
+    )
+    db.session.add(submission)
+    db.session.commit()
+    socketio.emit('kicked', {
+        'message': f'You were disqualified by admin. Reason: {reason}'
+    }, room=f"user_{target}")
+    socketio.emit('player_disqualified', {
+        'username': target,
+        'reason': reason,
+        'admin': admin.username
+    }, room=str(room.id))
+    socketio.emit('chat_message', {
+        'username': 'SYSTEM',
+        'message': f'{target} was disqualified. Reason: {reason}',
+        'is_system': True,
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }, room=str(room.id))
+    broadcast_leaderboard(room.id)
+    emit('admin_right_click_action_result', {
+        'success': True,
+        'message': f'{target} was disqualified.'
+    }, room=request.sid)
+
+
 @socketio.on('start_challenge')
 def on_start(data):
     admin = socket_current_user()

@@ -42,6 +42,33 @@
             </div>
         </div>
         
+        <section class="dashboard-shortcuts-panel" aria-labelledby="dashboard-shortcuts-title">
+            <div class="dashboard-shortcuts-head">
+                <div>
+                    <h2 id="dashboard-shortcuts-title"><i class="fas fa-keyboard"></i> Coding Shortcuts</h2>
+                    <p>Use these in the arena editor to build faster without opening developer tools.</p>
+                </div>
+                <a href="{{ url_for('help_page') }}"><i class="fas fa-circle-info"></i> Rules</a>
+            </div>
+            <div class="dashboard-shortcuts-grid">
+                <div>
+                    <strong>HTML snippets</strong>
+                    <span><kbd>!</kbd> or <kbd>html:5</kbd> then Enter/Tab for boilerplate.</span>
+                    <span><kbd>div.card</kbd>, <kbd>#app</kbd>, <kbd>ul>li*3</kbd>, <kbd>card</kbd>, <kbd>hero</kbd>, <kbd>form</kbd>.</span>
+                </div>
+                <div>
+                    <strong>CSS helpers</strong>
+                    <span><kbd>bg</kbd>, <kbd>c</kbd>, <kbd>p16</kbd>, <kbd>m10</kbd>, <kbd>flex</kbd>, <kbd>grid2</kbd>, <kbd>shadow</kbd>.</span>
+                    <span>Type a color property like <kbd>background:</kbd> or press <kbd>Alt+C</kbd> to open the color picker.</span>
+                </div>
+                <div>
+                    <strong>Editor keys</strong>
+                    <span><kbd>Ctrl+Space</kbd> autocomplete, <kbd>Ctrl+/</kbd> comment, <kbd>Shift+Alt+F</kbd> format.</span>
+                    <span><kbd>Alt+Up/Down</kbd> move line, <kbd>Ctrl+Enter</kbd> submit, <kbd>Ctrl+1/2/3</kbd> switch tabs.</span>
+                </div>
+            </div>
+        </section>
+
         <div class="dashboard-grid">
             <div class="panel">
                 <div class="panel-header">
@@ -124,6 +151,68 @@
     gap: 10px;
     margin-top: 14px;
 }
+.dashboard-shortcuts-panel {
+    margin-bottom: 28px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel);
+    padding: 18px;
+}
+.dashboard-shortcuts-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+.dashboard-shortcuts-head h2 {
+    margin: 0 0 4px;
+    font-size: 24px;
+}
+.dashboard-shortcuts-head p {
+    margin: 0;
+    color: var(--text-secondary);
+}
+.dashboard-shortcuts-head a {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-primary);
+    text-decoration: none;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    padding: 9px 11px;
+    background: var(--bg-panel-alt);
+    font-weight: 800;
+}
+.dashboard-shortcuts-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.dashboard-shortcuts-grid div {
+    display: grid;
+    gap: 8px;
+    align-content: start;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel-alt);
+    padding: 12px;
+}
+.dashboard-shortcuts-grid span {
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+.dashboard-shortcuts-grid kbd {
+    display: inline-block;
+    border: 1px solid var(--border-default);
+    border-radius: 5px;
+    background: rgba(15,23,42,0.5);
+    color: var(--text-primary);
+    padding: 2px 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+}
 .room-choice-actions .btn-join,
 .room-choice-actions .btn-spectate {
     width: 100%;
@@ -168,6 +257,8 @@
 }
 @media (max-width: 640px) {
     .room-choice-actions { grid-template-columns: 1fr; }
+    .dashboard-shortcuts-head { align-items: flex-start; flex-direction: column; }
+    .dashboard-shortcuts-grid { grid-template-columns: 1fr; }
 }
 </style>
 
