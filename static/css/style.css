@@ -5421,6 +5421,20 @@ li.CodeMirror-hint-active {
     text-shadow: 0 0 24px rgba(34,211,238,0.42);
 }
 
+.text-effect-typing::after {
+    content: '|';
+    display: inline-block;
+    margin-left: 3px;
+    color: var(--accent-primary);
+    animation: siteTypingCaret .8s steps(1) infinite;
+}
+
+.text-effect-react-scroll {
+    transform: translateY(var(--site-text-shift, 18px)) scale(var(--site-text-scale, .96));
+    opacity: var(--site-text-opacity, .62);
+    transition: transform .18s ease, opacity .18s ease;
+}
+
 .site-media-band {
     overflow: hidden;
     padding: 30px clamp(16px, 5vw, 64px) 34px;
@@ -5446,6 +5460,54 @@ li.CodeMirror-hint-active {
     flex-wrap: wrap;
     justify-content: center;
     gap: 16px;
+}
+
+.media-mode-scroll-snap .site-media-viewport,
+.media-effect-infinite-scroll .site-media-viewport {
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+}
+
+.media-mode-scroll-snap .site-media-track,
+.media-effect-infinite-scroll .site-media-track {
+    transform: none !important;
+    gap: 16px;
+}
+
+.media-mode-scroll-snap .site-media-item,
+.media-effect-infinite-scroll .site-media-item {
+    flex-basis: min(88vw, 760px);
+    scroll-snap-align: center;
+}
+
+.media-mode-circular .site-media-viewport {
+    min-height: min(70vh, 620px);
+    overflow: hidden;
+}
+
+.media-mode-circular .site-media-track {
+    position: relative;
+    min-height: min(70vh, 620px);
+    transform: none !important;
+    perspective: 1200px;
+}
+
+.media-mode-circular .site-media-item {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: min(72vw, 620px);
+    flex-basis: auto;
+    transform: translate(-50%, -50%) rotateY(var(--slot-angle, 0deg)) translateZ(min(32vw, 360px)) scale(.82);
+    opacity: .45;
+    pointer-events: none;
+}
+
+.media-mode-circular .site-media-item.is-active {
+    transform: translate(-50%, -50%) rotateY(0deg) translateZ(min(32vw, 360px)) scale(1);
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .media-effect-scroll .site-media-item,
@@ -5481,6 +5543,10 @@ li.CodeMirror-hint-active {
 .media-effect-hover .site-media-item:hover,
 .site-media-item.effect-hover:hover {
     border-color: rgba(34,211,238,0.45);
+}
+
+.site-media-item.effect-rotate:hover {
+    transform: rotate(.6deg) scale(1.01);
 }
 
 .site-media-item.is-active.effect-hover:hover {
@@ -5751,6 +5817,11 @@ li.CodeMirror-hint-active {
 @keyframes siteTextScale {
     from { opacity: 0; transform: scale(.96); }
     to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes siteTypingCaret {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
 }
 
 @media (max-width: 720px) {

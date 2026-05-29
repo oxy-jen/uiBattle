@@ -957,6 +957,14 @@ def ensure_schema_upgrades():
         if column not in room_columns:
             db.session.execute(text(ddl))
 
+    submission_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(submissions)")).fetchall()}
+    submission_additions = {
+        'score_details': 'ALTER TABLE submissions ADD COLUMN score_details TEXT'
+    }
+    for column, ddl in submission_additions.items():
+        if column not in submission_columns:
+            db.session.execute(text(ddl))
+
     tournament_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(tournaments)")).fetchall()}
     tournament_additions = {
         'certificate_settings': 'ALTER TABLE tournaments ADD COLUMN certificate_settings TEXT'
@@ -984,6 +992,14 @@ def submission_score_analysis(submission, challenge=None):
             'code_quality': 0.0,
             'scoring_mode': 'forfeit'
         }
+    stored_accuracy = max(0.0, min(100.0, float(submission.accuracy or 0)))
+    if getattr(submission, 'score_details', None):
+        try:
+            details = json.loads(submission.score_details)
+            if isinstance(details, dict):
+                return round(stored_accuracy, 1), details
+        except (TypeError, ValueError):
+            pass
     challenge = challenge or getattr(submission, 'challenge', None)
     accuracy, details = deterministic_submission_score(
         challenge,
@@ -991,6 +1007,9 @@ def submission_score_analysis(submission, challenge=None):
         submission.css_code,
         submission.js_code
     )
+    if stored_accuracy and not getattr(submission, 'score_details', None):
+        details['scoring_mode'] = 'stored-legacy'
+        return round(stored_accuracy, 1), details
     return accuracy, details
 
 def get_best_room_submission(room_id, user_id):
@@ -1011,9 +1030,11 @@ CSS_SCORE_PROPERTIES = {
     'right', 'bottom', 'left', 'width', 'height', 'max-width', 'min-height',
     'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
     'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-    'border', 'border-color', 'border-radius', 'box-shadow', 'opacity',
+    'border', 'border-width', 'border-style', 'border-color', 'border-top',
+    'border-right', 'border-bottom', 'border-left', 'border-radius',
+    'box-shadow', 'opacity',
     'transform', 'gap', 'align-items', 'justify-content', 'grid-template-columns',
-    'flex-direction'
+    'grid-template-rows', 'flex-direction', 'overflow', 'object-fit'
 }
 
 CSS_SCORE_GROUPS = {
@@ -1021,8 +1042,8 @@ CSS_SCORE_GROUPS = {
     'Color': {'color', 'background', 'background-color', 'opacity'},
     'Layout': {'display', 'position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'max-width', 'min-height', 'transform'},
     'Spacing': {'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'gap'},
-    'Shape': {'border', 'border-color', 'border-radius', 'box-shadow'},
-    'Alignment': {'align-items', 'justify-content', 'grid-template-columns', 'flex-direction'}
+    'Shape': {'border', 'border-width', 'border-style', 'border-color', 'border-top', 'border-right', 'border-bottom', 'border-left', 'border-radius', 'box-shadow'},
+    'Alignment': {'align-items', 'justify-content', 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'overflow', 'object-fit'}
 }
 
 def normalize_code_text(value):
@@ -1040,6 +1061,31 @@ def token_similarity(left, right):
     if not left_tokens or not right_tokens:
         return 0.0
     return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+def numeric_value_similarity(left, right):
+    left_numbers = [float(num) for num in re.findall(r'-?\d+(?:\.\d+)?', str(left or ''))]
+    right_numbers = [float(num) for num in re.findall(r'-?\d+(?:\.\d+)?', str(right or ''))]
+    if not left_numbers or not right_numbers:
+        return None
+    pairs = zip(left_numbers[:4], right_numbers[:4])
+    scores = []
+    for left_num, right_num in pairs:
+        denominator = max(abs(left_num), abs(right_num), 1.0)
+        scores.append(max(0.0, 1.0 - (abs(left_num - right_num) / denominator)))
+    return sum(scores) / len(scores) if scores else None
+
+def css_value_similarity(player_value, target_value):
+    player = normalize_code_text(player_value)
+    target = normalize_code_text(target_value)
+    if not player or not target:
+        return 0.0
+    if player == target:
+        return 1.0
+    token_score = token_similarity(player, target)
+    number_score = numeric_value_similarity(player, target)
+    if number_score is None:
+        return token_score
+    return max(token_score * 0.7, (token_score * 0.45) + (number_score * 0.55))
 
 def extract_css_properties(css_text):
     properties = {}
@@ -1062,8 +1108,8 @@ def css_property_similarity(player_css, target_css):
         if target_values & player_values:
             score += 1
         else:
-            best = max((token_similarity(pv, tv) for pv in player_values for tv in target_values), default=0)
-            score += best * 0.65
+            best = max((css_value_similarity(pv, tv) for pv in player_values for tv in target_values), default=0)
+            score += best * 0.75
     return score / len(target_props)
 
 def css_group_similarity(player_css, target_css):
@@ -1082,9 +1128,15 @@ def css_group_similarity(player_css, target_css):
             if target_values & player_values:
                 score += 1
             else:
-                score += max((token_similarity(pv, tv) for pv in player_values for tv in target_values), default=0) * 0.65
+                score += max((css_value_similarity(pv, tv) for pv in player_values for tv in target_values), default=0) * 0.75
         groups[label.lower().replace(' ', '_')] = round((score / len(group_targets)) * 100, 1)
     return groups
+
+def safe_visual_hint(value):
+    try:
+        return max(0.0, min(100.0, float(value))) / 100.0
+    except (TypeError, ValueError):
+        return None
 
 def calculate_code_quality(html_code, css_code, js_code=''):
     combined = '\n'.join([str(html_code or ''), str(css_code or ''), str(js_code or '')])
@@ -1121,22 +1173,30 @@ def deterministic_submission_score(challenge, html_code, css_code, js_code='', v
     css_similarity = token_similarity(css_code, target_css) if target_css else min(1.0, len(extract_css_properties(css_code)) / 18)
     property_similarity = css_property_similarity(css_code, target_css) if target_css else min(1.0, len(extract_css_properties(css_code)) / 24)
     property_groups = css_group_similarity(css_code, target_css) if target_css else {}
+    visual_similarity = safe_visual_hint(visual_hint)
     js_penalty = 0 if not js_code.strip() else min(6, len(js_code.strip()) / 600)
 
     if challenge_type == 'html' and (target_html or target_css):
-        score = (html_similarity * 32) + (css_similarity * 18) + (property_similarity * 36) + (quality * 0.14) - js_penalty
+        if visual_similarity is not None:
+            score = (visual_similarity * 52) + (property_similarity * 25) + (html_similarity * 10) + (css_similarity * 5) + (quality * 0.08) - js_penalty
+        else:
+            score = (property_similarity * 45) + (html_similarity * 18) + (css_similarity * 17) + (quality * 0.20) - js_penalty
     else:
         structure_score = min(1.0, (len(re.findall(r'<[a-z][\w-]*', html_code, re.I)) / 10))
         style_score = min(1.0, len(extract_css_properties(css_code)) / 20)
-        score = (structure_score * 28) + (style_score * 42) + (css_similarity * 12) + (quality * 0.18) - js_penalty
+        if visual_similarity is not None:
+            score = (visual_similarity * 65) + (style_score * 14) + (structure_score * 8) + (quality * 0.13) - js_penalty
+        else:
+            score = (structure_score * 28) + (style_score * 42) + (css_similarity * 12) + (quality * 0.18) - js_penalty
 
     details = {
         'html_similarity': round(html_similarity * 100, 1),
         'css_similarity': round(css_similarity * 100, 1),
         'style_property_match': round(property_similarity * 100, 1),
+        'visual_match': round((visual_similarity or 0) * 100, 1),
         'code_quality': quality,
         'style_groups': property_groups,
-        'scoring_mode': 'target-code' if challenge_type == 'html' and (target_html or target_css) else 'visual-code-rubric'
+        'scoring_mode': 'visual-output-target' if visual_similarity is not None else ('target-code' if challenge_type == 'html' and (target_html or target_css) else 'visual-code-rubric')
     }
     return round(max(0, min(100, score)), 1), details
 
@@ -4081,6 +4141,7 @@ def save_submission():
         existing.js_code = js_code
         existing.challenge_id = challenge.id if challenge else data.get('challenge_id')
         existing.accuracy = accuracy
+        existing.score_details = json.dumps(score_details)
         existing.submitted_at = datetime.now(timezone.utc)
     else:
         submission = Submission(
@@ -4090,7 +4151,8 @@ def save_submission():
             html_code=html_code,
             css_code=css_code,
             js_code=js_code,
-            accuracy=accuracy
+            accuracy=accuracy,
+            score_details=json.dumps(score_details)
         )
         db.session.add(submission)
     

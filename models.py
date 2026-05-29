@@ -216,6 +216,7 @@ class Submission(db.Model):
     css_code = db.Column(db.Text)
     js_code = db.Column(db.Text)
     accuracy = db.Column(db.Float, default=0.0)
+    score_details = db.Column(db.Text)
     is_forfeit = db.Column(db.Boolean, default=False)
     is_final = db.Column(db.Boolean, default=False)
     submitted_at = db.Column(db.DateTime, default=datetime.utcnow)

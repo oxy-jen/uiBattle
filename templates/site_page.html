@@ -12,18 +12,18 @@
     </section>
 
     {% if page.get('images') or page.get('videos') %}
-    <section class="site-media-band media-mode-{{ page.get('carousel_mode', 'infinite') }} {% for effect in page.get('media_effects', []) %}media-effect-{{ effect }} {% endfor %}">
+    <section class="site-media-band media-mode-{{ page.get('carousel_mode', 'infinite') }} {% for effect in page.get('media_effects', []) %}media-effect-{{ effect }} {% endfor %}" data-carousel-mode="{{ page.get('carousel_mode', 'infinite') }}">
         <div class="site-media-viewport">
             <div class="site-media-track">
             {% for image in page.get('images', []) %}
-            <figure class="site-media-item effect-{{ image.get('effect') or 'hover' }}">
+            <figure class="site-media-item effect-{{ image.get('effect') or 'hover' }}" data-duration="{{ image.get('duration', '') }}">
                 <img src="{{ image.url }}" alt="{{ image.caption or 'About UI Battle Arena' }}">
                 {% if image.caption %}<figcaption>{{ image.caption }}</figcaption>{% endif %}
             </figure>
             {% endfor %}
             {% for video in page.get('videos', []) %}
-            <figure class="site-media-item effect-{{ video.get('effect') or 'hover' }}">
-                <video src="{{ video.url }}" {% if 'autoplay' in page.get('media_effects', []) %}autoplay muted loop{% endif %} controls playsinline data-start="{{ video.get('start_time', '') }}" data-duration="{{ video.get('duration', '') }}"></video>
+            <figure class="site-media-item effect-{{ video.get('effect') or 'hover' }}" data-duration="{{ video.get('duration', '') }}">
+                <video src="{{ video.url }}" {% if 'autoplay' in page.get('media_effects', []) %}autoplay muted loop{% endif %} controls playsinline muted data-start="{{ video.get('start_time', '') }}" data-duration="{{ video.get('duration', '') }}"></video>
                 {% if video.caption %}<figcaption>{{ video.caption }}</figcaption>{% endif %}
             </figure>
             {% endfor %}
@@ -83,8 +83,15 @@
 {{ super() }}
 <script>
 document.querySelectorAll('.site-media-item video').forEach((video) => {
+    const item = video.closest('.site-media-item');
+    const band = video.closest('.site-media-band');
     const start = Number(video.dataset.start || 0);
     const duration = Number(video.dataset.duration || 0);
+    const playVideo = () => video.play().catch(() => {});
+    const pauseVideo = (reset = false) => {
+        video.pause();
+        if (reset && Number.isFinite(start)) video.currentTime = Math.max(0, start);
+    };
     const applyStart = () => {
         if (Number.isFinite(start) && start > 0 && Math.abs(video.currentTime - start) > 0.5) {
             video.currentTime = start;
@@ -97,10 +104,28 @@ document.querySelectorAll('.site-media-item video').forEach((video) => {
             if (video.autoplay || video.loop) video.play().catch(() => {});
         }
     });
+    if (band?.classList.contains('media-effect-play-on-hover') || item?.classList.contains('effect-play-on-hover')) {
+        pauseVideo(true);
+        item.addEventListener('mouseenter', playVideo);
+        item.addEventListener('focusin', playVideo);
+        item.addEventListener('mouseleave', () => pauseVideo(true));
+        item.addEventListener('focusout', () => pauseVideo(true));
+    }
+    if (band?.classList.contains('media-effect-pause-on-hover') || item?.classList.contains('effect-pause-on-hover')) {
+        item.addEventListener('mouseenter', () => pauseVideo(false));
+        item.addEventListener('focusin', () => pauseVideo(false));
+        item.addEventListener('mouseleave', playVideo);
+        item.addEventListener('focusout', playVideo);
+    }
+    if (band?.classList.contains('media-effect-play-on-scroll') || item?.classList.contains('effect-play-on-scroll')) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => entry.isIntersecting ? playVideo() : pauseVideo(false));
+        }, { threshold: 0.55 });
+        observer.observe(item);
+    }
 });
 
-const mediaBand = document.querySelector('.site-media-band.media-effect-scroll, .site-media-band.media-effect-parallax');
-if (mediaBand) {
+document.querySelectorAll('.site-media-band.media-effect-scroll, .site-media-band.media-effect-parallax').forEach((mediaBand) => {
     const updateMediaMotion = () => {
         const rect = mediaBand.getBoundingClientRect();
         const progress = Math.max(-1, Math.min(1, (window.innerHeight / 2 - rect.top) / Math.max(rect.height, 1)));
@@ -108,7 +133,32 @@ if (mediaBand) {
     };
     updateMediaMotion();
     window.addEventListener('scroll', updateMediaMotion, { passive: true });
-}
+});
+
+document.querySelectorAll('.text-effect-typing').forEach((heading) => {
+    const fullText = heading.textContent;
+    heading.textContent = '';
+    heading.style.setProperty('--typing-chars', String(Math.max(fullText.length, 1)));
+    let index = 0;
+    const tick = () => {
+        heading.textContent = fullText.slice(0, index);
+        index += 1;
+        if (index <= fullText.length) window.setTimeout(tick, 38);
+    };
+    tick();
+});
+
+document.querySelectorAll('.text-effect-react-scroll').forEach((heading) => {
+    const update = () => {
+        const rect = heading.getBoundingClientRect();
+        const progress = Math.max(0, Math.min(1, 1 - Math.abs((rect.top + rect.height / 2) - window.innerHeight / 2) / Math.max(window.innerHeight / 2, 1)));
+        heading.style.setProperty('--site-text-shift', `${(1 - progress) * 18}px`);
+        heading.style.setProperty('--site-text-scale', String(.96 + (progress * .04)));
+        heading.style.setProperty('--site-text-opacity', String(.62 + (progress * .38)));
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+});
 
 document.querySelectorAll('.site-media-band').forEach((band) => {
     const track = band.querySelector('.site-media-track');
@@ -119,9 +169,12 @@ document.querySelectorAll('.site-media-band').forEach((band) => {
     let activeIndex = 0;
     let timer = null;
     const shouldRotate = !band.classList.contains('media-mode-static') && slides.length > 1;
-    const interval = band.classList.contains('media-mode-rotating') ? 5200 : 4200;
+    const defaultInterval = band.classList.contains('media-mode-rotating') ? 5200 : 4200;
+    band.style.setProperty('--site-slide-count', slides.length);
+    band.style.setProperty('--site-angle-step', `${360 / Math.max(slides.length, 1)}deg`);
 
     slides.forEach((slide, index) => {
+        slide.style.setProperty('--site-slide-index', index);
         const dot = document.createElement('button');
         dot.type = 'button';
         dot.className = 'site-media-dot';
@@ -135,10 +188,18 @@ document.querySelectorAll('.site-media-band').forEach((band) => {
 
     function setActiveSlide(index, userAction = false) {
         activeIndex = (index + slides.length) % slides.length;
-        track.style.transform = `translateX(-${activeIndex * 100}%)`;
+        if (band.classList.contains('media-mode-circular')) {
+            band.style.setProperty('--site-active-slide', activeIndex);
+        } else if (band.classList.contains('media-mode-scroll-snap') || band.classList.contains('media-effect-infinite-scroll')) {
+            slides[activeIndex].scrollIntoView({ behavior: userAction ? 'smooth' : 'auto', block: 'nearest', inline: 'center' });
+        } else {
+            track.style.transform = `translateX(-${activeIndex * 100}%)`;
+        }
         slides.forEach((slide, slideIndex) => {
             const distance = Math.abs(slideIndex - activeIndex);
             const wrappedDistance = Math.min(distance, slides.length - distance);
+            const signedDistance = ((slideIndex - activeIndex + slides.length + Math.floor(slides.length / 2)) % slides.length) - Math.floor(slides.length / 2);
+            slide.style.setProperty('--slot-angle', `${signedDistance * (360 / Math.max(slides.length, 1))}deg`);
             slide.classList.toggle('is-active', slideIndex === activeIndex);
             slide.classList.toggle('is-near', wrappedDistance === 1);
         });
@@ -153,7 +214,12 @@ document.querySelectorAll('.site-media-band').forEach((band) => {
     function restartRotation() {
         if (timer) clearInterval(timer);
         if (!shouldRotate) return;
-        timer = setInterval(() => setActiveSlide(activeIndex + 1), interval);
+        const activeSlide = slides[activeIndex];
+        const slideDuration = Math.max(1, Number(activeSlide?.dataset.duration || 0)) * 1000;
+        timer = setTimeout(() => {
+            setActiveSlide(activeIndex + 1);
+            restartRotation();
+        }, slideDuration || defaultInterval);
     }
 
     band.addEventListener('mouseenter', () => {

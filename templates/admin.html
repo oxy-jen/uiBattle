@@ -1055,21 +1055,21 @@
                         </label>
                         <label>Carousel mode
                             <select data-field="carousel_mode">
-                                {% for mode in ['infinite', 'rotating', 'scroll-snap', 'static'] %}
+                                {% for mode in ['infinite', 'rotating', 'circular', 'scroll-snap', 'static'] %}
                                 <option value="{{ mode }}" {% if page.get('carousel_mode') == mode %}selected{% endif %}>{{ mode }}</option>
                                 {% endfor %}
                             </select>
                         </label>
                         <label>Text effect
                             <select data-field="text_effect">
-                                {% for effect in ['fade', 'slide', 'scale', 'glow'] %}
+                                {% for effect in ['fade', 'slide', 'scale', 'glow', 'typing', 'react-scroll'] %}
                                 <option value="{{ effect }}" {% if page.get('text_effect') == effect %}selected{% endif %}>{{ effect }}</option>
                                 {% endfor %}
                             </select>
                         </label>
                         <label>Media effects
-                            <select data-field="media_effects" multiple size="5">
-                                {% for effect in ['scroll', 'hover', 'autoplay', 'parallax', 'pause-on-hover'] %}
+                            <select data-field="media_effects" multiple size="8">
+                                {% for effect in ['scroll', 'hover', 'autoplay', 'parallax', 'pause-on-hover', 'play-on-hover', 'play-on-scroll', 'infinite-scroll'] %}
                                 <option value="{{ effect }}" {% if effect in page.get('media_effects', []) %}selected{% endif %}>{{ effect }}</option>
                                 {% endfor %}
                             </select>
@@ -3998,15 +3998,19 @@ function siteArrayItemTemplate(key, item = {}) {
             <input data-item-field="caption" value="${escapeAttr(item.caption || '')}" placeholder="Caption">
             <input data-item-field="start_time" value="${escapeAttr(item.start_time || '')}" placeholder="Start time, seconds">
             <input data-item-field="duration" value="${escapeAttr(item.duration || '')}" placeholder="Duration, seconds">
+            <select data-item-field="effect">
+                ${['hover', 'scroll', 'parallax', 'play-on-hover', 'pause-on-hover', 'play-on-scroll'].map(effect => `<option value="${effect}" ${item.effect === effect ? 'selected' : ''}>${effect}</option>`).join('')}
+            </select>
         `;
     }
     return `
         <input data-item-field="url" class="site-array-wide" value="${escapeAttr(item.url || '')}" placeholder="Image URL or uploaded file">
         ${remove}
-        <input data-item-field="caption" value="${escapeAttr(item.caption || '')}" placeholder="Caption">
-        <select data-item-field="effect">
-            ${['hover', 'scroll', 'parallax'].map(effect => `<option value="${effect}" ${item.effect === effect ? 'selected' : ''}>${effect}</option>`).join('')}
-        </select>
+    <input data-item-field="caption" value="${escapeAttr(item.caption || '')}" placeholder="Caption">
+    <input data-item-field="duration" value="${escapeAttr(item.duration || '')}" placeholder="Slide duration, seconds">
+    <select data-item-field="effect">
+            ${['hover', 'scroll', 'parallax', 'rotate'].map(effect => `<option value="${effect}" ${item.effect === effect ? 'selected' : ''}>${effect}</option>`).join('')}
+    </select>
     `;
 }
 

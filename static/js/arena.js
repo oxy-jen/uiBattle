@@ -738,12 +738,22 @@ async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
 }
 
 function stableCodeHash() {
+    const normalizeForOutput = (value, kind) => {
+        let text = String(value || '');
+        if (kind === 'css') {
+            text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+        }
+        if (kind === 'js') {
+            text = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\n)\s*\/\/.*(?=\n|$)/g, '$1');
+        }
+        return text.replace(/\s+/g, ' ').trim();
+    };
     const text = JSON.stringify({
         room: ROOM_ID,
         challenge: CHALLENGE_ID,
-        html: htmlEditor?.getValue() || '',
-        css: cssEditor?.getValue() || '',
-        js: jsEditor?.getValue() || ''
+        html: normalizeForOutput(htmlEditor?.getValue(), 'html'),
+        css: normalizeForOutput(cssEditor?.getValue(), 'css'),
+        js: normalizeForOutput(jsEditor?.getValue(), 'js')
     });
     let hash = 2166136261;
     for (let i = 0; i < text.length; i += 1) {
