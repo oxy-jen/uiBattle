@@ -2075,6 +2075,7 @@ DEFAULT_SITE_CONTENT = {
         'body': (
             'By using UI Battle Arena, you agree to compete honestly, respect other users, and follow admin instructions during rooms, tournaments, and public chat.\n\n'
             'Fair play means submitting your own work, avoiding harmful scripts, not attacking the platform, and not trying to manipulate score storage, timers, camera checks, chat, or leaderboard data. You may use normal frontend tools and frameworks when a challenge allows it, but your marks come from how closely the final output matches the target and how cleanly the submission behaves.\n\n'
+            'During arena matches, players MUST NOT RIGHT CLICK OR THEY ARE DISQUALIFIED. Players must not right-click, open Inspect, view page source, use developer tools, or use browser inspection shortcuts to look for hints in the target or page code. Those actions are prohibited for players because they can reveal implementation clues that should be earned through visual analysis.\n\n'
             'Respectful conduct is required. Harassment, threats, abusive language, impersonation, spam, cheating, and unsafe content may lead to warnings, room removal, disqualification, account restrictions, or data reset by an admin.\n\n'
             'Admins may review feedback, reports, match records, submissions, scores, certificates, media settings, and chat messages to operate the arena. Maintenance may temporarily interrupt access when updates or resets are needed.\n\n'
             'For questions about these terms, contact the arena team.'
@@ -2123,6 +2124,7 @@ DEFAULT_SITE_CONTENT = {
             'Joining a match: log in, open the dashboard, join an available room or invite link, and wait for the admin or room state to start the challenge. Allow camera and microphone when required by your organizer.\n\n'
             'Building your answer: use the editor to write HTML, CSS, and JavaScript. Your code does not need to be identical to another student or to the admin source. What matters is the final rendered output, including layout, spacing, colors, typography, borders, radius, and interaction behavior.\n\n'
             'Submitting: use Submit & Check before time runs out. The arena saves your trusted score and score details so progress remains stable after refresh. If your screen freezes or you lose connection, rejoin the room and submit again if the match is still active.\n\n'
+            'Fair play: players MUST NOT RIGHT CLICK OR THEY ARE DISQUALIFIED. Players must not use Inspect, view page source, or use developer-tool shortcuts during arena matches. The target should be studied visually, not by reading page code or hidden hints.\n\n'
             'Understanding scores: the score compares the output against the target and also checks important CSS groups such as typography, color, layout, spacing, shape, and alignment. Small details like borders, shadows, and radius can move your percentage.\n\n'
             'Need help: send Feedback for suggestions and non-urgent issues. Use Report for urgent scoring, safety, access, or tournament problems.'
         ),
@@ -2245,6 +2247,16 @@ def refresh_builtin_site_content():
         or 'The arena will be updated soon' in str(notice.get('message') or '')
     ):
         saved['maintenance_notice'] = json.loads(json.dumps(DEFAULT_SITE_CONTENT['maintenance_notice']))
+        changed = True
+    required_policy = 'During arena matches, players MUST NOT RIGHT CLICK OR THEY ARE DISQUALIFIED. Players must not right-click, open Inspect, view page source, use developer tools, or use browser inspection shortcuts to look for hints in the target or page code.'
+    terms = saved.get('terms')
+    if isinstance(terms, dict) and required_policy not in str(terms.get('body') or ''):
+        terms['body'] = (str(terms.get('body') or DEFAULT_SITE_CONTENT['terms']['body']).rstrip() + '\n\n' + required_policy)
+        changed = True
+    help_policy = 'Fair play: players MUST NOT RIGHT CLICK OR THEY ARE DISQUALIFIED. Players must not use Inspect, view page source, or use developer-tool shortcuts during arena matches. The target should be studied visually, not by reading page code or hidden hints.'
+    help_page = saved.get('help')
+    if isinstance(help_page, dict) and help_policy not in str(help_page.get('body') or ''):
+        help_page['body'] = (str(help_page.get('body') or DEFAULT_SITE_CONTENT['help']['body']).rstrip() + '\n\n' + help_policy)
         changed = True
     if changed:
         profiles['__site_content__'] = saved

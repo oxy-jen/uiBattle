@@ -43,6 +43,7 @@ const IS_OBSERVER_ROLE = USER_ROLE === 'admin' || USER_ROLE === 'spectator';
 const CAN_PUBLISH_MEDIA = IS_PLAYER_ROLE || USER_ROLE === 'admin';
 const INITIAL_SCORES = arenaConfig.initialScores || {};
 const SCORE_CACHE_KEY = `arena_${ROOM_ID}_${CURRENT_USERNAME}_score_cache`;
+const PLAYER_INSPECT_WARNING = 'Players MUST NOT RIGHT CLICK OR THEY ARE DISQUALIFIED. Inspect and source shortcuts are prohibited during arena matches.';
 
 // Parse target HTML/CSS (handle JSON escaping)
 let TARGET_HTML = TARGET_HTML_RAW;
@@ -424,12 +425,37 @@ function updateCursorPosition() {
     }
 }
 
+function getPlayerInspectGuardScript() {
+    if (!IS_PLAYER_ROLE) return '';
+    return `<script>
+        (() => {
+            const warning = ${JSON.stringify(PLAYER_INSPECT_WARNING)};
+            const block = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            };
+            document.addEventListener('contextmenu', block, true);
+            document.addEventListener('keydown', (event) => {
+                const key = String(event.key || '').toLowerCase();
+                const blocked =
+                    key === 'f12' ||
+                    ((event.ctrlKey || event.metaKey) && event.shiftKey && ['i', 'j', 'c'].includes(key)) ||
+                    ((event.ctrlKey || event.metaKey) && ['u', 's'].includes(key));
+                if (blocked) block(event);
+            }, true);
+            document.documentElement.setAttribute('data-player-inspect-warning', warning);
+        })();
+    <\/script>`;
+}
+
 function updatePreview() {
     if (!htmlEditor || !cssEditor || !jsEditor) return;
 
     const html = htmlEditor.getValue();
     const css = cssEditor.getValue();
     const js = jsEditor.getValue();
+    const guardScript = getPlayerInspectGuardScript();
     
     const doc = `<!DOCTYPE html>
     <html>
@@ -439,6 +465,7 @@ function updatePreview() {
     </head>
     <body>
         ${html}
+        ${guardScript}
         <script>${js}<\/script>
     </body>
     </html>`;
@@ -624,6 +651,7 @@ function initTarget() {
         if (targetImg) targetImg.style.display = 'none';
         if (targetFrame) {
             targetFrame.style.display = 'block';
+            const guardScript = getPlayerInspectGuardScript();
             const targetDoc = `<!DOCTYPE html>
             <html>
             <head>
@@ -632,6 +660,7 @@ function initTarget() {
             </head>
             <body>
                 ${TARGET_HTML || ''}
+                ${guardScript}
             </body>
             </html>`;
             targetFrame.srcdoc = targetDoc;
@@ -989,10 +1018,11 @@ function initRefreshGuard() {
 }
 
 function initArenaInspectGuards() {
-    if (!document.querySelector('.arena-root')) return;
+    if (!document.querySelector('.arena-root') || !IS_PLAYER_ROLE) return;
     document.addEventListener('contextmenu', (event) => {
         event.preventDefault();
-        showToast('Inspect and right-click are disabled in active arena rooms.', 'warning');
+        event.stopPropagation();
+        showToast(PLAYER_INSPECT_WARNING, 'warning');
     });
     document.addEventListener('keydown', (event) => {
         const key = String(event.key || '').toLowerCase();
@@ -1003,7 +1033,7 @@ function initArenaInspectGuards() {
         if (blocked) {
             event.preventDefault();
             event.stopPropagation();
-            showToast('Browser inspection shortcuts are disabled during matches.', 'warning');
+            showToast(PLAYER_INSPECT_WARNING, 'warning');
         }
     }, true);
 }
@@ -1645,7 +1675,8 @@ function buildCompiledPreviewHtml() {
     const html = htmlEditor.getValue();
     const css = cssEditor.getValue();
     const js = jsEditor.getValue();
-    return `<!DOCTYPE html><html><head><style>${css}</style></head><body>${html}<script>${js}<\/script></body></html>`;
+    const guardScript = getPlayerInspectGuardScript();
+    return `<!DOCTYPE html><html><head><style>${css}</style></head><body>${html}${guardScript}<script>${js}<\/script></body></html>`;
 }
 
 function broadcastCodePreview() {
