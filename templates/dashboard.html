@@ -42,30 +42,13 @@
             </div>
         </div>
         
-        <section class="dashboard-shortcuts-panel" aria-labelledby="dashboard-shortcuts-title">
+        <section class="dashboard-shortcuts-panel dashboard-shortcuts-link-panel" aria-labelledby="dashboard-shortcuts-title">
             <div class="dashboard-shortcuts-head">
                 <div>
                     <h2 id="dashboard-shortcuts-title"><i class="fas fa-keyboard"></i> Coding Shortcuts</h2>
-                    <p>Use these in the arena editor to build faster without opening developer tools.</p>
+                    <p>Open the full VS Code-style arena shortcut page when you need the reference.</p>
                 </div>
-                <a href="{{ url_for('help_page') }}"><i class="fas fa-circle-info"></i> Rules</a>
-            </div>
-            <div class="dashboard-shortcuts-grid">
-                <div>
-                    <strong>HTML snippets</strong>
-                    <span><kbd>!</kbd> or <kbd>html:5</kbd> then Enter/Tab for boilerplate.</span>
-                    <span><kbd>div.card</kbd>, <kbd>#app</kbd>, <kbd>ul>li*3</kbd>, <kbd>card</kbd>, <kbd>hero</kbd>, <kbd>form</kbd>, <kbd>modal</kbd>, <kbd>table</kbd>.</span>
-                </div>
-                <div>
-                    <strong>CSS helpers</strong>
-                    <span><kbd>bg</kbd>, <kbd>c</kbd>, <kbd>p16</kbd>, <kbd>m10</kbd>, <kbd>d:f</kbd>, <kbd>flex</kbd>, <kbd>grid2</kbd>, <kbd>pos:a</kbd>, <kbd>shadow</kbd>.</span>
-                    <span>Type a color property like <kbd>background:</kbd> or press <kbd>Alt+C</kbd> to open the color picker.</span>
-                </div>
-                <div>
-                    <strong>Editor keys</strong>
-                    <span><kbd>Ctrl+Space</kbd> autocomplete, <kbd>Ctrl+/</kbd> comment, <kbd>Shift+Alt+F</kbd> format.</span>
-                    <span><kbd>Alt+Up/Down</kbd> move line, <kbd>Ctrl+Enter</kbd> submit, <kbd>Ctrl+1/2/3</kbd> switch tabs.</span>
-                </div>
+                <a href="{{ url_for('shortcuts_page') }}"><i class="fas fa-up-right-from-square"></i> Open Shortcuts</a>
             </div>
         </section>
 
@@ -145,6 +128,7 @@
                 {% for item in visible_site_pages('footer') %}
                 <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
                 {% endfor %}
+                <a href="{{ url_for('shortcuts_page') }}" role="menuitem"><i class="fas fa-keyboard"></i> Editor Shortcuts</a>
                 <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
             </div>
         </nav>
@@ -164,6 +148,9 @@
     border-radius: 8px;
     background: var(--bg-panel);
     padding: 18px;
+}
+.dashboard-shortcuts-link-panel {
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(34, 197, 94, 0.08)), var(--bg-panel);
 }
 .dashboard-shortcuts-head {
     display: flex;
@@ -191,34 +178,6 @@
     padding: 9px 11px;
     background: var(--bg-panel-alt);
     font-weight: 800;
-}
-.dashboard-shortcuts-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-}
-.dashboard-shortcuts-grid div {
-    display: grid;
-    gap: 8px;
-    align-content: start;
-    border: 1px solid var(--border-default);
-    border-radius: 8px;
-    background: var(--bg-panel-alt);
-    padding: 12px;
-}
-.dashboard-shortcuts-grid span {
-    color: var(--text-secondary);
-    line-height: 1.4;
-}
-.dashboard-shortcuts-grid kbd {
-    display: inline-block;
-    border: 1px solid var(--border-default);
-    border-radius: 5px;
-    background: rgba(15,23,42,0.5);
-    color: var(--text-primary);
-    padding: 2px 5px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
 }
 .room-choice-actions .btn-join,
 .room-choice-actions .btn-spectate {
@@ -267,7 +226,6 @@
 @media (max-width: 640px) {
     .room-choice-actions { grid-template-columns: 1fr; }
     .dashboard-shortcuts-head { align-items: flex-start; flex-direction: column; }
-    .dashboard-shortcuts-grid { grid-template-columns: 1fr; }
 }
 </style>
 

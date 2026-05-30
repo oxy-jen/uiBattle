@@ -2142,7 +2142,7 @@ DEFAULT_SITE_CONTENT = {
         'text_effect': 'fade',
         'contact_items': [],
         'links': [
-            {'label': 'Editor Shortcuts', 'url': '/help#editor-shortcuts'},
+            {'label': 'Editor Shortcuts', 'url': '/shortcuts'},
             {'label': 'Dashboard', 'url': '/dashboard'},
             {'label': 'Leaderboard', 'url': '/leaderboard'},
             {'label': 'Support', 'url': '/support'}
@@ -2917,6 +2917,78 @@ def contact_page():
 @app.route('/help')
 def help_page():
     return render_template('site_page.html', page_key='help', site_content=get_site_content())
+
+@app.route('/shortcuts')
+def shortcuts_page():
+    shortcut_groups = [
+        {
+            'title': 'Build Snippets',
+            'icon': 'fa-wand-magic-sparkles',
+            'rows': [
+                ('! or html:5 + Enter/Tab', 'Insert a full HTML5 document shell.'),
+                ('div.card, #app, a.btn + Enter/Tab', 'Expand simple HTML class and id abbreviations.'),
+                ('ul>li*3, nav>ul>li*4 + Enter/Tab', 'Create repeated nested HTML structures.'),
+                ('card, hero, grid, form, modal, table, video', 'Drop common UI starter blocks into HTML.'),
+                ('m10, p16, w100p, d:f, grid2, pos:a, shadow', 'Expand quick CSS utility snippets.')
+            ]
+        },
+        {
+            'title': 'Editing',
+            'icon': 'fa-pen-to-square',
+            'rows': [
+                ('Ctrl+Space', 'Open autocomplete suggestions.'),
+                ('Ctrl+F', 'Find text in the current editor.'),
+                ('Ctrl+H', 'Replace the next matching text.'),
+                ('Ctrl+/', 'Toggle a line comment.'),
+                ('Shift+Alt+A', 'Toggle a block comment when the language supports it.'),
+                ('Ctrl+L', 'Select the current line.'),
+                ('Ctrl+D', 'Select the next matching word or selection.'),
+                ('Ctrl+Shift+L', 'Select all matches in the current editor.'),
+                ('Ctrl+G', 'Jump to a line number.')
+            ]
+        },
+        {
+            'title': 'Lines and Layout',
+            'icon': 'fa-grip-lines',
+            'rows': [
+                ('Alt+Up / Alt+Down', 'Move the current line up or down.'),
+                ('Shift+Alt+Up / Shift+Alt+Down', 'Duplicate the current line.'),
+                ('Ctrl+Shift+K', 'Delete the current line.'),
+                ('Ctrl+[ / Ctrl+]', 'Outdent or indent selected code.'),
+                ('Shift+Alt+F', 'Format indentation.'),
+                ('Alt+Z', 'Toggle line wrapping.'),
+                ('Ctrl+Alt+Up / Ctrl+Alt+Down', 'Add another cursor above or below.')
+            ]
+        },
+        {
+            'title': 'Arena Actions',
+            'icon': 'fa-crosshairs',
+            'rows': [
+                ('Ctrl+1 / Ctrl+2 / Ctrl+3', 'Switch between HTML, CSS, and JavaScript.'),
+                ('Ctrl+`', 'Cycle to the next editor tab.'),
+                ('Ctrl+S', 'Save locally and refresh the preview.'),
+                ('Shift+Enter', 'Refresh the live preview.'),
+                ('Ctrl+Enter', 'Submit and check your score.'),
+                ('Ctrl+Alt+R', 'Reset to the starter code after confirmation.'),
+                ('Alt+C in CSS', 'Open the color picker near the cursor.')
+            ]
+        },
+        {
+            'title': 'VS Code Memory',
+            'icon': 'fa-code',
+            'rows': [
+                ('Ctrl+K Ctrl+S', 'VS Code opens Keyboard Shortcuts. In the arena, use this page as the reference.'),
+                ('Ctrl+Shift+P', 'VS Code opens the Command Palette. Arena keeps match actions visible instead.'),
+                ('Ctrl+P', 'VS Code opens Quick Open. Arena uses fixed HTML, CSS, and JS tabs.'),
+                ('F5', 'VS Code starts debugging when a debugger is available. Arena debugging tools stay disabled for fair play.')
+            ]
+        }
+    ]
+    sources = [
+        {'label': 'VS Code keyboard shortcuts', 'url': 'https://code.visualstudio.com/docs/getstarted/keybindings'},
+        {'label': 'VS Code default keybindings', 'url': 'https://code.visualstudio.com/docs/reference/default-keybindings'}
+    ]
+    return render_template('shortcuts.html', shortcut_groups=shortcut_groups, sources=sources, site_content=get_site_content())
 
 @app.route('/helpline')
 def helpline_page():

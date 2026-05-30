@@ -64,6 +64,7 @@
                     {% for item in visible_site_pages('arena') %}
                     <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
                     {% endfor %}
+                    <a href="{{ url_for('shortcuts_page') }}" role="menuitem"><i class="fas fa-keyboard"></i> Editor Shortcuts</a>
                     <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
                 </div>
             </div>
@@ -409,6 +410,7 @@
                         {% for item in visible_site_pages('arena') %}
                         <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
                         {% endfor %}
+                        <a href="{{ url_for('shortcuts_page') }}" role="menuitem"><i class="fas fa-keyboard"></i> Editor Shortcuts</a>
                         <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
                     </div>
                 </div>
@@ -498,7 +500,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/socket.js') }}?v=arena12"></script>
-<script src="{{ url_for('static', filename='js/arena.js') }}?v=arena18"></script>
+<script src="{{ url_for('static', filename='js/arena.js') }}?v=arena19"></script>
 
 {% endblock %}
  

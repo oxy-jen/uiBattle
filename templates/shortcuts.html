@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="shortcuts-page">
+    <section class="shortcuts-hero">
+        <div>
+            <span class="site-kicker">UI Battle Arena</span>
+            <h1>Editor Shortcuts</h1>
+            <p>VS Code-inspired keys for the arena editor, plus the snippets and match actions that are specific to UI Battle.</p>
+        </div>
+        <a href="{{ url_for('dashboard') }}"><i class="fas fa-gauge-high"></i> Dashboard</a>
+    </section>
+
+    <section class="shortcuts-reference-grid" aria-label="Editor shortcut reference">
+        {% for group in shortcut_groups %}
+        <article class="shortcut-reference-card">
+            <h2><i class="fas {{ group.icon }}"></i> {{ group.title }}</h2>
+            <div class="shortcut-reference-rows">
+                {% for keys, detail in group.rows %}
+                <div>
+                    <kbd>{{ keys }}</kbd>
+                    <span>{{ detail }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+        {% endfor %}
+    </section>
+
+    <section class="shortcut-sources">
+        <h2><i class="fas fa-book-open"></i> Reference Sources</h2>
+        <p>These arena shortcuts are adapted from common VS Code editing patterns and adjusted for fair-play match rules.</p>
+        <div>
+            {% for source in sources %}
+            <a href="{{ source.url }}" rel="noopener"><i class="fas fa-up-right-from-square"></i> {{ source.label }}</a>
+            {% endfor %}
+        </div>
+    </section>
+
+    <nav class="site-footer-links site-menu" data-site-menu>
+        <button class="site-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" data-site-menu-toggle>
+            <i class="fas fa-circle-info"></i>
+            <span>Help Pages</span>
+            <i class="fas fa-chevron-down"></i>
+        </button>
+        <div class="site-menu-panel" role="menu" data-site-menu-panel hidden>
+            {% for item in visible_site_pages('footer') %}
+            <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
+            {% endfor %}
+            <a href="{{ url_for('shortcuts_page') }}" role="menuitem"><i class="fas fa-keyboard"></i> Editor Shortcuts</a>
+            <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
+            <a href="{{ url_for('login_page') }}" role="menuitem"><i class="fas fa-right-to-bracket"></i> Arena Login</a>
+        </div>
+    </nav>
+</main>
+{% endblock %}

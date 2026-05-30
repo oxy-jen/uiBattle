@@ -38,31 +38,12 @@
             {{ page.get('body', '')|replace('\n', '<br>')|safe }}
         </article>
         {% if page_key == 'help' %}
-        <section class="help-shortcuts-reference" id="editor-shortcuts" aria-labelledby="editor-shortcuts-title">
+        <section class="help-shortcuts-reference help-shortcuts-compact" id="editor-shortcuts" aria-labelledby="editor-shortcuts-title">
             <div class="help-shortcuts-head">
                 <h2 id="editor-shortcuts-title"><i class="fas fa-keyboard"></i> Editor Shortcuts</h2>
-                <a href="{{ url_for('dashboard') }}"><i class="fas fa-gauge-high"></i> Open Dashboard</a>
+                <a href="{{ url_for('shortcuts_page') }}"><i class="fas fa-up-right-from-square"></i> Open Shortcuts Page</a>
             </div>
-            <div class="help-shortcuts-grid">
-                <div>
-                    <strong>Build faster</strong>
-                    <span><kbd>!</kbd> or <kbd>html:5</kbd> + Enter creates a page shell.</span>
-                    <span><kbd>Ctrl</kbd> + <kbd>Space</kbd> opens autocomplete.</span>
-                    <span><kbd>Alt</kbd> + <kbd>C</kbd> opens the CSS color picker.</span>
-                </div>
-                <div>
-                    <strong>Edit like VS Code</strong>
-                    <span><kbd>Ctrl</kbd> + <kbd>F</kbd> finds text.</span>
-                    <span><kbd>Ctrl</kbd> + <kbd>H</kbd> replaces the next match.</span>
-                    <span><kbd>Alt</kbd> + <kbd>Z</kbd> toggles line wrap.</span>
-                </div>
-                <div>
-                    <strong>Arena actions</strong>
-                    <span><kbd>Ctrl</kbd> + <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> switches editors.</span>
-                    <span><kbd>Ctrl</kbd> + <kbd>S</kbd> saves and refreshes preview.</span>
-                    <span><kbd>Ctrl</kbd> + <kbd>Enter</kbd> submits and checks score.</span>
-                </div>
-            </div>
+            <p>The full shortcut reference now lives on its own page so the Help Center stays easier to scan.</p>
         </section>
         {% endif %}
         {% if page.get('contact_items') %}
@@ -107,6 +88,7 @@
             {% for item in visible_site_pages('footer') %}
             <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
             {% endfor %}
+            <a href="{{ url_for('shortcuts_page') }}" role="menuitem"><i class="fas fa-keyboard"></i> Editor Shortcuts</a>
             <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
             <a href="{{ url_for('login_page') }}" role="menuitem"><i class="fas fa-right-to-bracket"></i> Arena Login</a>
         </div>

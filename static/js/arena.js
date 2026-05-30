@@ -59,14 +59,17 @@ const EDITOR_SHORTCUT_GROUPS = [
         ['Ctrl+F', 'Find text in the current editor'],
         ['Ctrl+H', 'Replace the next match'],
         ['Ctrl+/', 'Toggle comment'],
+        ['Shift+Alt+A', 'Toggle block comment'],
         ['Ctrl+Z / Ctrl+Y', 'Undo and redo'],
         ['Ctrl+L', 'Select the current line'],
+        ['Ctrl+G', 'Go to line'],
         ['Alt+Up / Alt+Down', 'Move line'],
         ['Ctrl+Alt+Up / Down', 'Add cursor above or below'],
         ['Shift+Alt+Up / Down', 'Duplicate line'],
         ['Ctrl+Shift+K', 'Delete line'],
         ['Ctrl+D', 'Select next match'],
         ['Ctrl+Shift+L', 'Select all matches'],
+        ['Ctrl+[ / Ctrl+]', 'Outdent or indent'],
         ['Shift+Alt+F', 'Format indentation']
     ]],
     ['Arena', [
@@ -379,6 +382,15 @@ function selectCurrentLine(editor) {
     editor.setSelection({ line: cursor.line, ch: 0 }, { line: cursor.line, ch: line.length });
 }
 
+function toggleBlockComment(editor) {
+    if (!editor) return;
+    if (editor.blockComment) {
+        editor.blockComment(editor.getCursor('from'), editor.getCursor('to'));
+    } else if (editor.toggleComment) {
+        editor.toggleComment({ indent: true });
+    }
+}
+
 function selectNextOccurrence(editor) {
     const selected = editor.getSelection() || editor.findWordAt(editor.getCursor());
     const query = typeof selected === 'string' ? selected : editor.getRange(selected.anchor, selected.head);
@@ -493,6 +505,27 @@ async function replaceNextInEditor(editor) {
     }
 }
 
+async function goToEditorLine(editor) {
+    if (!editor) return;
+    const value = await showPrompt({
+        title: 'Go to line',
+        label: `Line number 1-${editor.lineCount()}`,
+        placeholder: '42',
+        required: true,
+        confirmText: 'Go'
+    });
+    if (!value) return;
+    const lineNo = Number.parseInt(value, 10);
+    if (!Number.isFinite(lineNo) || lineNo < 1 || lineNo > editor.lineCount()) {
+        showToast('Enter a valid line number', 'warning');
+        return;
+    }
+    const line = lineNo - 1;
+    editor.setCursor({ line, ch: 0 });
+    editor.scrollIntoView({ line, ch: 0 }, 90);
+    editor.focus();
+}
+
 function cursorLooksLikeCssColorValue(editor) {
     if (!editor || editor.getOption('mode') !== 'css') return false;
     const cursor = editor.getCursor();
@@ -549,8 +582,11 @@ function getEditorExtraKeys() {
         'Cmd-Alt-F': replaceNextInEditor,
         'Ctrl-/': (editor) => editor.toggleComment ? editor.toggleComment({ indent: true }) : null,
         'Cmd-/': (editor) => editor.toggleComment ? editor.toggleComment({ indent: true }) : null,
+        'Shift-Alt-A': toggleBlockComment,
         'Ctrl-L': selectCurrentLine,
         'Cmd-L': selectCurrentLine,
+        'Ctrl-G': goToEditorLine,
+        'Cmd-G': goToEditorLine,
         'Alt-Up': (editor) => moveCurrentLine(editor, -1),
         'Alt-Down': (editor) => moveCurrentLine(editor, 1),
         'Ctrl-Alt-Up': (editor) => addCursorLine(editor, -1),
@@ -565,6 +601,10 @@ function getEditorExtraKeys() {
         'Cmd-D': selectNextOccurrence,
         'Ctrl-Shift-L': selectAllOccurrences,
         'Cmd-Shift-L': selectAllOccurrences,
+        'Ctrl-[': (editor) => editor.execCommand('indentLess'),
+        'Cmd-[': (editor) => editor.execCommand('indentLess'),
+        'Ctrl-]': (editor) => editor.execCommand('indentMore'),
+        'Cmd-]': (editor) => editor.execCommand('indentMore'),
         'Shift-Alt-F': formatEditorSelection,
         'Alt-Z': toggleEditorLineWrap,
         'Ctrl-S': (editor) => {

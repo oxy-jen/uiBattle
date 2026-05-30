@@ -1651,6 +1651,75 @@ input:checked + .slider:before { transform: translateX(30px); }
   line-height: 1.35;
 }
 
+.cm-s-dracula.CodeMirror {
+  background: #101827;
+  color: #e5edf7;
+}
+
+.cm-s-dracula .CodeMirror-gutters {
+  background: #0b1220;
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.cm-s-dracula .CodeMirror-linenumber {
+  color: #64748b;
+}
+
+.cm-s-dracula .cm-tag,
+.cm-s-dracula .cm-bracket {
+  color: #60a5fa;
+}
+
+.cm-s-dracula .cm-attribute {
+  color: #34d399;
+}
+
+.cm-s-dracula .cm-string,
+.cm-s-dracula .cm-string-2 {
+  color: #fbbf24;
+}
+
+.cm-s-dracula .cm-keyword {
+  color: #c084fc;
+}
+
+.cm-s-dracula .cm-def,
+.cm-s-dracula .cm-variable-2 {
+  color: #f8fafc;
+}
+
+.cm-s-dracula .cm-variable,
+.cm-s-dracula .cm-property {
+  color: #67e8f9;
+}
+
+.cm-s-dracula .cm-number,
+.cm-s-dracula .cm-atom {
+  color: #fb7185;
+}
+
+.cm-s-dracula .cm-qualifier {
+  color: #a7f3d0;
+}
+
+.cm-s-dracula .cm-builtin {
+  color: #93c5fd;
+}
+
+.cm-s-dracula .cm-comment {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.cm-s-dracula .cm-meta {
+  color: #38bdf8;
+}
+
+.cm-s-dracula .cm-error {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.22);
+}
+
 .CodeMirror-activeline-background {
   background: rgba(96, 165, 250, 0.11) !important;
 }
@@ -6038,6 +6107,140 @@ li.CodeMirror-hint-active {
     padding: 3px 6px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
+}
+
+.help-shortcuts-compact p {
+    margin: 0;
+    color: var(--text-secondary);
+}
+
+.shortcuts-page {
+    width: min(1180px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 88px 0 42px;
+}
+
+.shortcuts-hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-default);
+}
+
+.shortcuts-hero h1 {
+    margin: 6px 0 8px;
+    font-size: clamp(2.1rem, 5vw, 4.3rem);
+    line-height: 0.95;
+}
+
+.shortcuts-hero p {
+    max-width: 720px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+}
+
+.shortcuts-hero a,
+.shortcut-sources a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+    text-decoration: none;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel);
+    padding: 10px 13px;
+    font-weight: 800;
+}
+
+.shortcuts-reference-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.shortcut-reference-card,
+.shortcut-sources {
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel);
+    padding: 16px;
+}
+
+.shortcut-reference-card h2,
+.shortcut-sources h2 {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 12px;
+    font-size: 1.18rem;
+}
+
+.shortcut-reference-card h2 i {
+    color: var(--neon-cyan);
+}
+
+.shortcut-reference-rows {
+    display: grid;
+}
+
+.shortcut-reference-rows div {
+    display: grid;
+    grid-template-columns: minmax(128px, 0.72fr) 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.shortcut-reference-rows div:first-child {
+    border-top: 0;
+}
+
+.shortcut-reference-rows kbd {
+    width: fit-content;
+    max-width: 100%;
+    border: 1px solid rgba(96, 165, 250, 0.42);
+    border-radius: 6px;
+    background: rgba(15,23,42,0.72);
+    color: #e0f2fe;
+    padding: 5px 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.shortcut-reference-rows span,
+.shortcut-sources p {
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.shortcut-sources {
+    margin-top: 18px;
+}
+
+.shortcut-sources div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+@media (max-width: 680px) {
+    .shortcuts-hero {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .shortcut-reference-rows div {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
 }
 
 .arena-css-color-picker {
