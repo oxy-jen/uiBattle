@@ -2307,6 +2307,49 @@ def email_href(value):
         return '#'
     return email if email.lower().startswith('mailto:') else f'mailto:{email}'
 
+def site_mail_recipients(preferred=None):
+    recipients = []
+    for email in [preferred, *ARENA_CONTACT_EMAILS, configured_admin_email()]:
+        clean = valid_email(email)
+        if clean and clean not in recipients:
+            recipients.append(clean)
+    return recipients
+
+def load_feedback_messages(limit=250):
+    profiles = load_profile_store()
+    rows = profiles.setdefault('__feedback_messages__', [])
+    changed = False
+    for row in rows:
+        if isinstance(row, dict) and not row.get('id'):
+            row['id'] = uuid.uuid4().hex
+            changed = True
+        if isinstance(row, dict) and 'replies' not in row:
+            row['replies'] = []
+            changed = True
+    if changed:
+        profiles['__feedback_messages__'] = rows[:250]
+        save_profile_store(profiles)
+    return rows[:limit]
+
+def save_feedback_message(row):
+    profiles = load_profile_store()
+    rows = profiles.setdefault('__feedback_messages__', [])
+    rows.insert(0, row)
+    profiles['__feedback_messages__'] = rows[:250]
+    save_profile_store(profiles)
+    return row
+
+def update_feedback_message(message_id, updater):
+    profiles = load_profile_store()
+    rows = profiles.setdefault('__feedback_messages__', [])
+    for row in rows:
+        if isinstance(row, dict) and row.get('id') == message_id:
+            updater(row)
+            profiles['__feedback_messages__'] = rows[:250]
+            save_profile_store(profiles)
+            return row
+    return None
+
 def visible_site_pages(surface='footer'):
     content = get_site_content()
     rows = []
@@ -2995,24 +3038,24 @@ def helpline_page():
     return redirect(url_for('contact_page'))
 
 def store_and_notify_site_message(kind, data):
-    kind = 'report' if kind == 'report' else 'feedback'
+    kind = kind if kind in {'feedback', 'report', 'mail'} else 'feedback'
     message = str(data.get('message') or '').strip()
     if not message:
         return {'success': False, 'error': f'{kind.title()} message is required'}, 400
 
     row = {
+        'id': uuid.uuid4().hex,
         'type': kind,
         'name': str(data.get('name') or session.get('username') or 'Visitor')[:120],
         'email': str(data.get('email') or '')[:180],
+        'subject': str(data.get('subject') or f'UI Battle Arena {kind}')[:160],
         'message': message[:2000],
         'room_code': str(data.get('room_code') or '')[:80],
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'target_email': str(data.get('target_email') or '')[:180],
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'replies': []
     }
-    profiles = load_profile_store()
-    feedback_rows = profiles.setdefault('__feedback_messages__', [])
-    feedback_rows.insert(0, row)
-    profiles['__feedback_messages__'] = feedback_rows[:250]
-    save_profile_store(profiles)
+    save_feedback_message(row)
 
     subject = f"UI Battle Arena {kind}: {row['name']}"
     body = (
@@ -3020,14 +3063,11 @@ def store_and_notify_site_message(kind, data):
         f"Name: {row['name']}\n"
         f"Email: {row['email'] or 'Not provided'}\n"
         f"Room code: {row['room_code'] or 'Not provided'}\n"
+        f"Subject: {row['subject']}\n"
         f"Sent at: {row['created_at']}\n\n"
         f"Message:\n{row['message']}"
     )
-    recipients = []
-    for email in ARENA_CONTACT_EMAILS + [configured_admin_email()]:
-        clean = valid_email(email)
-        if clean and clean not in recipients:
-            recipients.append(clean)
+    recipients = site_mail_recipients(row.get('target_email'))
     email_sent = 0
     if recipients and email_configured():
         email_sent = notify_users_by_email(
@@ -3041,6 +3081,23 @@ def store_and_notify_site_message(kind, data):
         'message': f"{kind.title()} sent to admins",
         'email_sent': email_sent
     }, 200
+
+@app.route('/site-mail', methods=['POST'])
+def site_mail_page():
+    data = request.get_json(silent=True) or request.form or {}
+    sender_email = valid_email(data.get('email'))
+    if not sender_email:
+        return jsonify({'success': False, 'error': 'Enter a valid email address so admins can reply.'}), 400
+    if rate_limited('site-mail', sender_email or client_rate_identity(), limit=5, window_seconds=30 * 60):
+        return rate_limit_response('Too many mail messages. Wait a while before sending another.')
+    payload, status = store_and_notify_site_message('mail', {
+        **dict(data),
+        'email': sender_email,
+        'subject': str(data.get('subject') or 'Support request')[:160]
+    })
+    if status == 200:
+        payload['message'] = 'Message sent to the arena inbox.'
+    return jsonify(payload), status
 
 @app.route('/feedback', methods=['GET', 'POST'])
 def feedback_page():
@@ -3141,7 +3198,7 @@ def admin_panel():
         room.id: sorted(list(room_spectators.get(room.id, set())))
         for room in rooms
     }
-    feedback_messages = load_profile_store().get('__feedback_messages__', [])[:250]
+    feedback_messages = load_feedback_messages()
     
     return render_template('admin.html',
                          user=user, 
@@ -3619,6 +3676,58 @@ def admin_email_user(user_id):
         f'Hello {target_user.username},\n\n{message}\n\nUI Battle Arena'
     )
     return jsonify({'success': bool(sent)})
+
+@app.route('/admin/site-mail/<message_id>/reply', methods=['POST'])
+@admin_required
+def admin_reply_site_mail(message_id):
+    if not email_configured():
+        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+    if rate_limited('admin-site-mail-reply', str(session.get('user_id')), limit=30, window_seconds=60 * 60):
+        return rate_limit_response('Too many replies. Wait a while before sending another.')
+
+    data = request.get_json(silent=True) or {}
+    subject = (data.get('subject') or 'Re: UI Battle Arena support').strip()[:160]
+    message = (data.get('message') or '').strip()[:3000]
+    if not message:
+        return jsonify({'success': False, 'error': 'Reply message is required'}), 400
+
+    sent_state = {'sent': False, 'target': None}
+    admin = get_current_user()
+
+    def updater(row):
+        target = valid_email(row.get('email'))
+        if not target:
+            return
+        sent = send_email(
+            target,
+            subject,
+            (
+                f"Hello {row.get('name') or 'there'},\n\n"
+                f"{message}\n\n"
+                "UI Battle Arena Support"
+            )
+        )
+        sent_state['sent'] = bool(sent)
+        sent_state['target'] = target
+        replies = row.setdefault('replies', [])
+        replies.append({
+            'id': uuid.uuid4().hex,
+            'admin': admin.username if admin else 'Admin',
+            'subject': subject,
+            'message': message,
+            'sent': bool(sent),
+            'sent_at': datetime.now(timezone.utc).isoformat()
+        })
+        row['last_reply_at'] = replies[-1]['sent_at']
+
+    row = update_feedback_message(message_id, updater)
+    if not row:
+        return jsonify({'success': False, 'error': 'Inbox message not found'}), 404
+    if not sent_state['target']:
+        return jsonify({'success': False, 'error': 'This message has no valid reply email.'}), 400
+    if not sent_state['sent']:
+        return jsonify({'success': False, 'error': 'Reply saved, but email could not be sent. Check email settings.'}), 500
+    return jsonify({'success': True, 'message': f"Reply sent to {sent_state['target']}"})
 
 @app.route('/admin/export-data')
 @admin_required

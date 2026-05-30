@@ -49,7 +49,8 @@
         {% if page.get('contact_items') %}
         <div class="site-contact-grid">
             {% for item in page.get('contact_items', []) %}
-            <a class="site-contact-item" href="{{ contact_href(item) }}">
+            <a class="site-contact-item" href="{{ contact_href(item) }}"
+               {% if item.kind == 'email' %}data-mail-compose data-mail-target="{{ item.value or item.url }}" data-mail-label="{{ item.label or 'Support email' }}"{% endif %}>
                 <i class="{% if item.kind == 'whatsapp' %}fab fa-whatsapp{% else %}fas {% if item.kind == 'phone' %}fa-phone{% elif item.kind == 'email' %}fa-envelope{% else %}fa-link{% endif %}{% endif %}"></i>
                 <span>{{ item.label or item.kind|title }}</span>
                 <strong>{{ item.value or item.url }}</strong>
@@ -74,9 +75,37 @@
         </form>
         {% endif %}
         {% if page.get('contact_email') %}
-        <a class="btn-primary" href="{{ email_href(page.get('contact_email')) }}"><i class="fas fa-envelope"></i> Contact Support</a>
+        <a class="btn-primary" href="{{ email_href(page.get('contact_email')) }}" data-mail-compose data-mail-target="{{ page.get('contact_email') }}" data-mail-label="Contact Support"><i class="fas fa-envelope"></i> Contact Support</a>
         {% endif %}
     </section>
+
+    <div class="site-mail-overlay" id="site-mail-overlay" hidden>
+        <div class="site-mail-dialog" role="dialog" aria-modal="true" aria-labelledby="site-mail-title">
+            <header>
+                <div>
+                    <h2 id="site-mail-title"><i class="fas fa-envelope-open-text"></i> Contact Support</h2>
+                    <p id="site-mail-target-label">Choose how to continue.</p>
+                </div>
+                <button type="button" data-mail-close aria-label="Close mail composer"><i class="fas fa-times"></i></button>
+            </header>
+            <div class="site-mail-choice" id="site-mail-choice">
+                <button type="button" class="btn-secondary" id="site-mail-native-btn"><i class="fas fa-up-right-from-square"></i> Continue to Mail App</button>
+                <button type="button" class="btn-primary" id="site-mail-web-btn"><i class="fas fa-pen-to-square"></i> Use Web Form</button>
+            </div>
+            <form class="site-mail-form" id="site-mail-form" hidden>
+                <input type="hidden" name="target_email" id="site-mail-target">
+                <label>Name <input name="name" maxlength="120" placeholder="Your name" required></label>
+                <label>Email <input name="email" type="email" maxlength="180" placeholder="you@example.com" required></label>
+                <label>Subject <input name="subject" maxlength="160" placeholder="What do you need help with?" required></label>
+                <label>Room code <input name="room_code" maxlength="80" placeholder="Optional"></label>
+                <label>Message <textarea name="message" rows="6" maxlength="2500" placeholder="Explain the issue, account, room, device, or score problem." required></textarea></label>
+                <div class="site-mail-actions">
+                    <button type="button" class="btn-secondary" id="site-mail-back-btn"><i class="fas fa-arrow-left"></i> Back</button>
+                    <button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send Message</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <nav class="site-footer-links site-menu" data-site-menu>
         <button class="site-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" data-site-menu-toggle>
@@ -267,6 +296,76 @@ document.getElementById('feedback-form')?.addEventListener('submit', async (even
         form.reset();
     } else {
         showToast(data.error || 'Could not send feedback', 'error');
+    }
+});
+
+const mailOverlay = document.getElementById('site-mail-overlay');
+const mailChoice = document.getElementById('site-mail-choice');
+const mailForm = document.getElementById('site-mail-form');
+const mailTargetInput = document.getElementById('site-mail-target');
+const mailTargetLabel = document.getElementById('site-mail-target-label');
+let nativeMailHref = '';
+
+function openSiteMailComposer(link) {
+    if (!mailOverlay || !mailChoice || !mailForm || !mailTargetInput) return;
+    const target = (link.dataset.mailTarget || '').replace(/^mailto:/i, '').trim();
+    const label = link.dataset.mailLabel || 'Support email';
+    nativeMailHref = link.getAttribute('href') || `mailto:${target}`;
+    mailTargetInput.value = target;
+    mailTargetLabel.textContent = target ? `${label}: ${target}` : label;
+    mailChoice.hidden = false;
+    mailForm.hidden = true;
+    mailOverlay.hidden = false;
+}
+
+document.querySelectorAll('[data-mail-compose]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+        event.preventDefault();
+        openSiteMailComposer(link);
+    });
+});
+
+document.querySelectorAll('[data-mail-close]').forEach((button) => {
+    button.addEventListener('click', () => {
+        if (mailOverlay) mailOverlay.hidden = true;
+    });
+});
+
+mailOverlay?.addEventListener('click', (event) => {
+    if (event.target === mailOverlay) mailOverlay.hidden = true;
+});
+
+document.getElementById('site-mail-native-btn')?.addEventListener('click', () => {
+    if (nativeMailHref) window.location.href = nativeMailHref;
+});
+
+document.getElementById('site-mail-web-btn')?.addEventListener('click', () => {
+    if (mailChoice) mailChoice.hidden = true;
+    if (mailForm) mailForm.hidden = false;
+    mailForm?.querySelector('input[name="name"]')?.focus();
+});
+
+document.getElementById('site-mail-back-btn')?.addEventListener('click', () => {
+    if (mailChoice) mailChoice.hidden = false;
+    if (mailForm) mailForm.hidden = true;
+});
+
+mailForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const res = await fetch('{{ url_for("site_mail_page") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+        showToast(data.message || 'Message sent', 'success');
+        form.reset();
+        if (mailOverlay) mailOverlay.hidden = true;
+    } else {
+        showToast(data.error || 'Could not send message', 'error');
     }
 });
 </script>

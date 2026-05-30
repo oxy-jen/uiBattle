@@ -1109,17 +1109,31 @@
                     </div>
                     {% endfor %}
                     <div class="content-editor-card feedback-inbox-card">
-                        <h4>Feedback and Reports Inbox</h4>
+                        <h4>Site Mail, Feedback, and Reports Inbox</h4>
                         {% for item in feedback_messages|default([]) %}
                         <div class="feedback-inbox-item">
                             <strong>{{ item.name }} <em>{{ item.type|default('feedback')|title }}</em></strong>
                             <span>{{ item.created_at }}</span>
                             {% if item.email %}<a href="mailto:{{ item.email }}">{{ item.email }}</a>{% endif %}
+                            {% if item.subject %}<small>Subject: {{ item.subject }}</small>{% endif %}
+                            {% if item.target_email %}<small>Sent to: {{ item.target_email }}</small>{% endif %}
                             {% if item.room_code %}<small>Room: {{ item.room_code }}</small>{% endif %}
                             <p>{{ item.message }}</p>
+                            {% if item.replies %}
+                            <div class="feedback-replies">
+                                {% for reply in item.replies %}
+                                <small><i class="fas fa-reply"></i> {{ reply.admin }} replied {{ reply.sent_at }}{% if not reply.sent %} (email failed){% endif %}</small>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% if item.email %}
+                            <button type="button" class="btn-secondary feedback-reply-btn" onclick='replyInboxMessage({{ item.id|tojson }}, {{ item.email|tojson }}, {{ item.name|tojson }}, {{ item.subject|default("UI Battle Arena support")|tojson }})'>
+                                <i class="fas fa-reply"></i> Reply in app
+                            </button>
+                            {% endif %}
                         </div>
                         {% else %}
-                        <p class="muted">No feedback or reports yet.</p>
+                        <p class="muted">No site mail, feedback, or reports yet.</p>
                         {% endfor %}
                     </div>
                     {% set notice = site_content.get('maintenance_notice', {}) %}
@@ -1362,6 +1376,17 @@
 .feedback-inbox-item p {
     margin: 0;
     color: var(--text-secondary);
+}
+.feedback-replies {
+    display: grid;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.45);
+}
+.feedback-reply-btn {
+    width: fit-content;
+    margin-top: 4px;
 }
 @media (max-width: 900px) {
     .site-lab-preview {
@@ -3620,6 +3645,40 @@ window.emailPlayer = async (userId, username) => {
         showToast(`Email sent to ${username}`, 'success');
     } catch (err) {
         showToast(err.message || 'Could not send email', 'error');
+    }
+};
+
+window.replyInboxMessage = async (messageId, email, name, originalSubject) => {
+    try {
+        const subject = await showPrompt({
+            title: `Reply to ${name || email}`,
+            message: `This reply will be emailed to ${email} and saved on this inbox item.`,
+            label: 'Subject',
+            value: originalSubject && originalSubject.toLowerCase().startsWith('re:') ? originalSubject : `Re: ${originalSubject || 'UI Battle Arena support'}`,
+            required: true,
+            confirmText: 'Continue'
+        });
+        if (!subject) return;
+        const message = await showPrompt({
+            title: `Reply to ${name || email}`,
+            label: 'Reply message',
+            placeholder: 'Write the admin reply...',
+            multiline: true,
+            required: true,
+            confirmText: 'Send Reply'
+        });
+        if (!message) return;
+        const res = await fetch(`/admin/site-mail/${encodeURIComponent(messageId)}/reply`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({subject, message})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not send reply');
+        showToast(data.message || 'Reply sent', 'success');
+        setTimeout(() => window.location.reload(), 650);
+    } catch (err) {
+        showToast(err.message || 'Could not send reply', 'error');
     }
 };
 
