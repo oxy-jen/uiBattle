@@ -70,11 +70,19 @@
         <span>Dark</span>
     </button>
     {% if request.endpoint in ['login_page', 'about_page', 'support_page', 'terms_page', 'contact_page', 'help_page', 'feedback_page', 'report_page', 'maintenance_page'] %}
-    <nav class="public-site-nav" aria-label="Public site links">
-        {% for item in visible_site_pages('public') %}
-        <a href="{{ item.url }}">{{ item.label }}</a>
-        {% endfor %}
-        <a href="{{ url_for('maintenance_page') }}">Maintenance</a>
+    <nav class="public-site-nav site-menu" aria-label="Public site links" data-site-menu>
+        <button class="site-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" data-site-menu-toggle>
+            <i class="fas fa-circle-info"></i>
+            <span>Help Menu</span>
+            <i class="fas fa-chevron-down"></i>
+        </button>
+        <div class="site-menu-panel" role="menu" data-site-menu-panel hidden>
+            {% for item in visible_site_pages('public') %}
+            <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
+            {% endfor %}
+            <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
+            <a href="{{ url_for('login_page') }}" role="menuitem"><i class="fas fa-right-to-bracket"></i> Arena Login</a>
+        </div>
     </nav>
     {% endif %}
 
@@ -184,11 +192,18 @@
                 {% endif %}
                 <button class="profile-menu-save" type="submit"><i class="fas fa-save"></i> Save</button>
             </div>
-            <div class="profile-site-links" aria-label="Site pages">
-                {% for item in visible_site_pages('profile') %}
-                <a href="{{ item.url }}"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
-                {% endfor %}
-                <a href="{{ url_for('maintenance_page') }}"><i class="fas fa-calendar-days"></i> Maintenance</a>
+            <div class="profile-site-links site-menu" aria-label="Site pages" data-site-menu>
+                <button class="site-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" data-site-menu-toggle>
+                    <i class="fas fa-circle-info"></i>
+                    <span>Help Pages</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="site-menu-panel" role="menu" data-site-menu-panel hidden>
+                    {% for item in visible_site_pages('profile') %}
+                    <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
+                    {% endfor %}
+                    <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
+                </div>
             </div>
         </form>
 

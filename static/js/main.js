@@ -33,6 +33,7 @@ applyGlobalTheme(getSavedGlobalTheme());
 document.addEventListener('DOMContentLoaded', () => {
     applyGlobalTheme(getSavedGlobalTheme());
     initProfileSitePermissions();
+    initSiteMenus();
     if (document.getElementById('admin-theme-toggle')) {
         const globalToggle = document.getElementById('global-theme-toggle');
         if (globalToggle) globalToggle.hidden = true;
@@ -44,6 +45,48 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+function initSiteMenus() {
+    const menus = Array.from(document.querySelectorAll('[data-site-menu]'));
+    if (!menus.length) return;
+
+    const closeMenu = (menu) => {
+        const panel = menu.querySelector('[data-site-menu-panel]');
+        const toggle = menu.querySelector('[data-site-menu-toggle]');
+        if (!panel || !toggle) return;
+        panel.hidden = true;
+        toggle.setAttribute('aria-expanded', 'false');
+    };
+
+    const closeAllMenus = (except = null) => {
+        menus.forEach((menu) => {
+            if (menu !== except) closeMenu(menu);
+        });
+    };
+
+    menus.forEach((menu) => {
+        const toggle = menu.querySelector('[data-site-menu-toggle]');
+        const panel = menu.querySelector('[data-site-menu-panel]');
+        if (!toggle || !panel) return;
+
+        toggle.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const nextOpen = panel.hidden;
+            closeAllMenus(menu);
+            panel.hidden = !nextOpen;
+            toggle.setAttribute('aria-expanded', String(nextOpen));
+        });
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('[data-site-menu]')) closeAllMenus();
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeAllMenus();
+    });
+}
 
 function showToast(message, type = 'info') {
     const toast = document.createElement('div');

@@ -135,11 +135,18 @@
                 </div>
             </div>
         </div>
-        <nav class="dashboard-footer-links" aria-label="Site pages">
-            {% for item in visible_site_pages('footer') %}
-            <a href="{{ item.url }}"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
-            {% endfor %}
-            <a href="{{ url_for('maintenance_page') }}"><i class="fas fa-calendar-days"></i> Maintenance</a>
+        <nav class="dashboard-footer-links site-menu" aria-label="Site pages" data-site-menu>
+            <button class="site-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" data-site-menu-toggle>
+                <i class="fas fa-circle-info"></i>
+                <span>Help Pages</span>
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            <div class="site-menu-panel" role="menu" data-site-menu-panel hidden>
+                {% for item in visible_site_pages('footer') %}
+                <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
+                {% endfor %}
+                <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
+            </div>
         </nav>
     </div>
 </div>
@@ -239,7 +246,8 @@
     padding: 18px 0 0;
     border-top: 1px solid var(--border-default);
 }
-.dashboard-footer-links a {
+.dashboard-footer-links .site-menu-toggle,
+.dashboard-footer-links .site-menu-panel a {
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -251,7 +259,8 @@
     padding: 9px 12px;
     font-weight: 800;
 }
-.dashboard-footer-links a:hover {
+.dashboard-footer-links .site-menu-toggle:hover,
+.dashboard-footer-links .site-menu-panel a:hover {
     color: var(--text-primary);
     border-color: var(--accent-primary);
 }

@@ -2142,6 +2142,7 @@ DEFAULT_SITE_CONTENT = {
         'text_effect': 'fade',
         'contact_items': [],
         'links': [
+            {'label': 'Editor Shortcuts', 'url': '/help#editor-shortcuts'},
             {'label': 'Dashboard', 'url': '/dashboard'},
             {'label': 'Leaderboard', 'url': '/leaderboard'},
             {'label': 'Support', 'url': '/support'}

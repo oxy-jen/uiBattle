@@ -5975,6 +5975,71 @@ li.CodeMirror-hint-active {
     font-size: 11px;
 }
 
+.help-shortcuts-reference {
+    margin: 26px 0;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel-alt);
+    padding: 18px;
+}
+
+.help-shortcuts-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+.help-shortcuts-head h2 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.help-shortcuts-head a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--neon-cyan);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.help-shortcuts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+}
+
+.help-shortcuts-grid div {
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-panel);
+    padding: 14px;
+}
+
+.help-shortcuts-grid strong {
+    color: var(--text-primary);
+}
+
+.help-shortcuts-grid span {
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.help-shortcuts-grid kbd {
+    display: inline-block;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: rgba(15,23,42,0.58);
+    color: var(--text-primary);
+    padding: 3px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+}
+
 .arena-css-color-picker {
     position: absolute;
     z-index: 10001;

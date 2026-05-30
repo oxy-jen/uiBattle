@@ -54,9 +54,19 @@
                 <i class="fas fa-comment-dots"></i>
                 <span>Chat</span>
             </button>
-            <a class="icon-btn site-icon-link" href="{{ url_for('support_page') }}" title="Support" aria-label="Support">
-                <i class="fas fa-life-ring"></i>
-            </a>
+            <div class="site-menu arena-help-menu" data-site-menu>
+                <button class="icon-btn site-menu-toggle" type="button" title="Help pages" aria-label="Help pages" aria-haspopup="menu" aria-expanded="false" data-site-menu-toggle>
+                    <i class="fas fa-circle-info"></i>
+                    <span>Help</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="site-menu-panel" role="menu" data-site-menu-panel hidden>
+                    {% for item in visible_site_pages('arena') %}
+                    <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
+                    {% endfor %}
+                    <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
+                </div>
+            </div>
             <button class="icon-btn" id="share-btn" title="Share"><i class="fas fa-share-alt"></i></button>
             <button class="icon-btn" id="leave-room-btn" title="Leave"><i class="fas fa-sign-out-alt"></i></button>
             <button class="user-dropdown profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">
@@ -189,7 +199,7 @@
                 <span id="editor-mode">HTML</span>
                 <span class="separator">|</span>
                 <button type="button" id="editor-shortcuts-btn" class="editor-shortcuts-btn"><i class="fas fa-keyboard"></i> Shortcuts</button>
-                <span class="editor-shortcuts">!/html:5 + Enter · Ctrl+Space autocomplete · Ctrl+/ comment · Shift+Alt+F format</span>
+                <span class="editor-shortcuts">Ctrl+Space autocomplete · Ctrl+F find · Alt+Z wrap · Ctrl+` next tab</span>
             </div>
         </div>
         
@@ -389,11 +399,18 @@
                 <div class="sidebar-card-header">
                     <i class="fas fa-circle-info"></i> SITE
                 </div>
-                <div class="site-sidebar-links">
-                    {% for item in visible_site_pages('arena') %}
-                    <a href="{{ item.url }}"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
-                    {% endfor %}
-                    <a href="{{ url_for('maintenance_page') }}"><i class="fas fa-calendar-days"></i> Maintenance</a>
+                <div class="site-sidebar-links site-menu" data-site-menu>
+                    <button class="site-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" data-site-menu-toggle>
+                        <i class="fas fa-circle-info"></i>
+                        <span>Help Pages</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="site-menu-panel" role="menu" data-site-menu-panel hidden>
+                        {% for item in visible_site_pages('arena') %}
+                        <a href="{{ item.url }}" role="menuitem"><i class="fas fa-circle-info"></i> {{ item.label }}</a>
+                        {% endfor %}
+                        <a href="{{ url_for('maintenance_page') }}" role="menuitem"><i class="fas fa-calendar-days"></i> Maintenance</a>
+                    </div>
                 </div>
             </div>
             <!-- Leaderboard -->
@@ -481,7 +498,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/socket.js') }}?v=arena12"></script>
-<script src="{{ url_for('static', filename='js/arena.js') }}?v=arena17"></script>
+<script src="{{ url_for('static', filename='js/arena.js') }}?v=arena18"></script>
 
 {% endblock %}
  

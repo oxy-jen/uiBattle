@@ -56,17 +56,27 @@ const EDITOR_SHORTCUT_GROUPS = [
     ]],
     ['Editing', [
         ['Ctrl+Space', 'Autocomplete'],
+        ['Ctrl+F', 'Find text in the current editor'],
+        ['Ctrl+H', 'Replace the next match'],
         ['Ctrl+/', 'Toggle comment'],
+        ['Ctrl+Z / Ctrl+Y', 'Undo and redo'],
+        ['Ctrl+L', 'Select the current line'],
         ['Alt+Up / Alt+Down', 'Move line'],
+        ['Ctrl+Alt+Up / Down', 'Add cursor above or below'],
         ['Shift+Alt+Up / Down', 'Duplicate line'],
         ['Ctrl+Shift+K', 'Delete line'],
         ['Ctrl+D', 'Select next match'],
+        ['Ctrl+Shift+L', 'Select all matches'],
         ['Shift+Alt+F', 'Format indentation']
     ]],
     ['Arena', [
         ['Ctrl+1 / Ctrl+2 / Ctrl+3', 'Switch HTML, CSS, JS tabs'],
+        ['Ctrl+`', 'Cycle to the next editor tab'],
         ['Ctrl+S', 'Save locally and refresh preview'],
         ['Ctrl+Enter', 'Submit and check score'],
+        ['Ctrl+Alt+R', 'Reset your starter code'],
+        ['Shift+Enter', 'Refresh the live preview'],
+        ['Alt+Z', 'Toggle editor line wrap'],
         ['Alt+C in CSS', 'Open color picker']
     ]]
 ];
@@ -362,6 +372,13 @@ function formatEditorSelection(editor) {
     });
 }
 
+function selectCurrentLine(editor) {
+    if (!editor) return;
+    const cursor = editor.getCursor();
+    const line = editor.getLine(cursor.line) || '';
+    editor.setSelection({ line: cursor.line, ch: 0 }, { line: cursor.line, ch: line.length });
+}
+
 function selectNextOccurrence(editor) {
     const selected = editor.getSelection() || editor.findWordAt(editor.getCursor());
     const query = typeof selected === 'string' ? selected : editor.getRange(selected.anchor, selected.head);
@@ -369,6 +386,110 @@ function selectNextOccurrence(editor) {
     const cursor = editor.getSearchCursor ? editor.getSearchCursor(query, editor.getCursor('to')) : null;
     if (cursor && cursor.findNext()) {
         editor.addSelection(cursor.from(), cursor.to());
+    }
+}
+
+function selectAllOccurrences(editor) {
+    if (!editor || !editor.getSearchCursor) return;
+    const selected = editor.getSelection() || editor.findWordAt(editor.getCursor());
+    const query = typeof selected === 'string' ? selected : editor.getRange(selected.anchor, selected.head);
+    if (!query) return;
+    const cursor = editor.getSearchCursor(query, CodeMirror.Pos(0, 0));
+    const ranges = [];
+    while (cursor.findNext() && ranges.length < 120) {
+        ranges.push({ anchor: cursor.from(), head: cursor.to() });
+    }
+    if (ranges.length) {
+        editor.setSelections(ranges);
+        showToast(`${ranges.length} match${ranges.length === 1 ? '' : 'es'} selected`, 'info');
+    }
+}
+
+function addCursorLine(editor, direction) {
+    if (!editor) return;
+    const selections = editor.listSelections();
+    const nextSelections = selections.map((selection) => {
+        const head = selection.head;
+        const nextLine = head.line + direction;
+        if (nextLine < 0 || nextLine >= editor.lineCount()) return selection;
+        const nextCh = Math.min(head.ch, (editor.getLine(nextLine) || '').length);
+        return { anchor: { line: nextLine, ch: nextCh }, head: { line: nextLine, ch: nextCh } };
+    });
+    editor.setSelections(selections.concat(nextSelections));
+}
+
+function cycleEditorTab() {
+    const tabs = ['html', 'css', 'js'];
+    const nextIndex = (tabs.indexOf(currentTab) + 1) % tabs.length;
+    switchTab(tabs[nextIndex]);
+}
+
+function toggleEditorLineWrap(editor) {
+    if (!editor) return;
+    const next = !editor.getOption('lineWrapping');
+    editor.setOption('lineWrapping', next);
+    showToast(`Line wrap ${next ? 'enabled' : 'disabled'}`, 'info');
+}
+
+async function findInEditor(editor) {
+    if (!editor || !editor.getSearchCursor) return;
+    const selected = editor.getSelection();
+    const query = await showPrompt({
+        title: 'Find in editor',
+        label: 'Search text',
+        value: selected,
+        placeholder: 'class name, color, text...',
+        required: true,
+        confirmText: 'Find'
+    });
+    if (!query) return;
+    const start = editor.getCursor('to');
+    let cursor = editor.getSearchCursor(query, start);
+    let found = cursor.findNext();
+    if (!found) {
+        cursor = editor.getSearchCursor(query, CodeMirror.Pos(0, 0));
+        found = cursor.findNext();
+    }
+    if (found) {
+        editor.setSelection(cursor.from(), cursor.to());
+        editor.scrollIntoView({ from: cursor.from(), to: cursor.to() }, 80);
+    } else {
+        showToast('No match found', 'warning');
+    }
+}
+
+async function replaceNextInEditor(editor) {
+    if (!editor || !editor.getSearchCursor) return;
+    const selected = editor.getSelection();
+    const query = await showPrompt({
+        title: 'Replace in editor',
+        label: 'Find text',
+        value: selected,
+        placeholder: 'Text to replace',
+        required: true,
+        confirmText: 'Next'
+    });
+    if (!query) return;
+    const replacement = await showPrompt({
+        title: 'Replace in editor',
+        label: 'Replace with',
+        placeholder: 'New text',
+        confirmText: 'Replace'
+    });
+    if (replacement === null) return;
+    const start = editor.getCursor('from');
+    let cursor = editor.getSearchCursor(query, start);
+    let found = cursor.findNext();
+    if (!found) {
+        cursor = editor.getSearchCursor(query, CodeMirror.Pos(0, 0));
+        found = cursor.findNext();
+    }
+    if (found) {
+        cursor.replace(replacement);
+        editor.setSelection(cursor.from(), CodeMirror.Pos(cursor.from().line, cursor.from().ch + replacement.length));
+        showToast('Match replaced', 'success');
+    } else {
+        showToast('No match found', 'warning');
     }
 }
 
@@ -422,17 +543,30 @@ function getEditorExtraKeys() {
     return {
         'Ctrl-Space': showEditorHint,
         'Cmd-Space': showEditorHint,
+        'Ctrl-F': findInEditor,
+        'Cmd-F': findInEditor,
+        'Ctrl-H': replaceNextInEditor,
+        'Cmd-Alt-F': replaceNextInEditor,
         'Ctrl-/': (editor) => editor.toggleComment ? editor.toggleComment({ indent: true }) : null,
         'Cmd-/': (editor) => editor.toggleComment ? editor.toggleComment({ indent: true }) : null,
+        'Ctrl-L': selectCurrentLine,
+        'Cmd-L': selectCurrentLine,
         'Alt-Up': (editor) => moveCurrentLine(editor, -1),
         'Alt-Down': (editor) => moveCurrentLine(editor, 1),
+        'Ctrl-Alt-Up': (editor) => addCursorLine(editor, -1),
+        'Ctrl-Alt-Down': (editor) => addCursorLine(editor, 1),
+        'Cmd-Alt-Up': (editor) => addCursorLine(editor, -1),
+        'Cmd-Alt-Down': (editor) => addCursorLine(editor, 1),
         'Shift-Alt-Up': duplicateCurrentLine,
         'Shift-Alt-Down': duplicateCurrentLine,
         'Ctrl-Shift-K': deleteCurrentLine,
         'Cmd-Shift-K': deleteCurrentLine,
         'Ctrl-D': selectNextOccurrence,
         'Cmd-D': selectNextOccurrence,
+        'Ctrl-Shift-L': selectAllOccurrences,
+        'Cmd-Shift-L': selectAllOccurrences,
         'Shift-Alt-F': formatEditorSelection,
+        'Alt-Z': toggleEditorLineWrap,
         'Ctrl-S': (editor) => {
             saveArenaToLocal();
             updatePreview();
@@ -447,14 +581,19 @@ function getEditorExtraKeys() {
         },
         'Ctrl-Enter': () => runDiffCheck({ silent: false, live: false, save: true }),
         'Cmd-Enter': () => runDiffCheck({ silent: false, live: false, save: true }),
+        'Shift-Enter': updatePreview,
         'Ctrl-1': () => switchTab('html'),
         'Ctrl-2': () => switchTab('css'),
         'Ctrl-3': () => switchTab('js'),
         'Cmd-1': () => switchTab('html'),
         'Cmd-2': () => switchTab('css'),
         'Cmd-3': () => switchTab('js'),
+        'Ctrl-`': cycleEditorTab,
+        'Cmd-`': cycleEditorTab,
         'Ctrl-E': (editor) => expandEditorAbbreviation(editor) || showEditorHint(editor),
         'Cmd-E': (editor) => expandEditorAbbreviation(editor) || showEditorHint(editor),
+        'Ctrl-Alt-R': resetCode,
+        'Cmd-Alt-R': resetCode,
         'Alt-C': openCssColorPicker,
         'Enter': handleEditorEnter,
         'Tab': (editor) => {
