@@ -72,6 +72,12 @@ from models import (
     Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard,
     Competition, CompetitionWave, CompetitionAdminAssignment, DisputeCase
 )
+from moderation_terms import (
+    BAD_LANGUAGE_TERMS,
+    SENSITIVE_LANGUAGE_PATTERNS,
+    SENSITIVE_LANGUAGE_PHRASES,
+    SENSITIVE_LANGUAGE_TERMS
+)
 from auth import login_required, admin_required, get_current_user
 
 db.init_app(app)
@@ -136,25 +142,6 @@ AVATAR_TEMPLATES = [
     {'id': 'signal', 'name': 'Signal', 'icon': 'fa-signal', 'shape': 'hex'},
     {'id': 'craft', 'name': 'Craft', 'icon': 'fa-gem', 'shape': 'circle'}
 ]
-BAD_LANGUAGE_TERMS = {
-    'asshole', 'bastard', 'bitch', 'bullshit', 'cunt', 'damn', 'dick',
-    'fag', 'faggot', 'fuck', 'motherfucker', 'nigga', 'nigger', 'piss',
-    'prick', 'pussy', 'shit', 'slut', 'whore'
-}
-SENSITIVE_LANGUAGE_TERMS = {
-    'abuse', 'abused', 'abusing', 'assault', 'assaulted', 'assaulting',
-    'assaults', 'assult', 'assults', 'bomb', 'blood', 'die', 'drug', 'drugs', 'harm', 'harass',
-    'harassed', 'harassment', 'hate', 'immoral', 'kill', 'killed', 'killing',
-    'kills', 'molest', 'molested', 'molesting', 'murder', 'naked', 'nude',
-    'porn', 'rape', 'raped', 'raping', 'sex', 'sexual', 'sexy', 'shoot',
-    'suicide', 'terror', 'threat', 'violence', 'violent', 'weapon',
-    'fck', 'fckoff', 'fuckoff', 'foff', 'stfu', 'kys', 'kms', 'gtfo',
-    'idiot', 'moron', 'loser', 'trash', 'garbage', 'worthless', 'ugly',
-    'dumb', 'stupid', 'retard', 'retarded', 'clown', 'psycho', 'lunatic',
-    'shetani', 'mashetani', 'shenzi', 'mshenzi', 'washenzi', 'ushenzi',
-    'mbwa', 'umbwa', 'pumbavu', 'mpumbavu', 'wapumbavu', 'mjinga', 'wajinga',
-    'fala', 'mafalla', 'takataka', 'mavi', 'malaya', 'kahaba'
-}
 LEET_TRANSLATION = str.maketrans({'0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '*': '', '!': 'i', '+': 't'})
 
 def allowed_file(filename):
@@ -627,8 +614,16 @@ def contains_bad_language(message):
     return False
 
 def contains_sensitive_language(message):
-    words = normalize_chat_text(message).split()
+    normalized = normalize_chat_text(message)
+    words = normalized.split()
     if any(term in words for term in SENSITIVE_LANGUAGE_TERMS):
+        return True
+    normalized_phrase = f' {normalized} '
+    for phrase in SENSITIVE_LANGUAGE_PHRASES:
+        if f' {normalize_chat_text(phrase)} ' in normalized_phrase:
+            return True
+    raw_message = (message or '').lower().translate(LEET_TRANSLATION)
+    if any(re.search(pattern, raw_message, flags=re.IGNORECASE) for pattern in SENSITIVE_LANGUAGE_PATTERNS):
         return True
     for index in range(len(words)):
         combined = ''
