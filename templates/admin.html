@@ -429,39 +429,64 @@
                     </div>
                     
                     <div id="html-fields" class="type-fields" style="display:none;">
-                        <div class="admin-code-section">
-                            <h3><i class="fas fa-bullseye"></i> Target Output Source</h3>
-                            <small class="help-text">This private HTML/CSS renders the target players must match.</small>
-                            <div class="form-group">
-                                <label>Target HTML *</label>
-                                <textarea id="target-html" name="target_html" rows="8" placeholder="<div class='container'>\n  <div class='box'></div>\n</div>"></textarea>
+                        <div class="challenge-builder-grid">
+                            <div class="admin-code-section code-workbench">
+                                <div class="panel-title-row">
+                                    <div>
+                                        <h3><i class="fas fa-bullseye"></i> Target Output Source</h3>
+                                        <small class="help-text">Private source used to render the official target for players to match.</small>
+                                    </div>
+                                    <span class="panel-pill">Required target</span>
+                                </div>
+                                <div class="code-editor-grid">
+                                    <div class="form-group editor-pane editor-pane-wide">
+                                        <label>Target HTML *</label>
+                                        <textarea id="target-html" name="target_html" rows="8" placeholder="<main class='challenge-shell'>\n  <button id='action'>Launch</button>\n</main>"></textarea>
+                                    </div>
+                                    <div class="form-group editor-pane">
+                                        <label>Target CSS</label>
+                                        <textarea id="target-css" name="target_css" rows="6" placeholder=".challenge-shell {\n  display: grid;\n  place-items: center;\n}"></textarea>
+                                    </div>
+                                    <div class="form-group editor-pane">
+                                        <label>Target JavaScript</label>
+                                        <textarea id="target-js" name="target_js" rows="6" placeholder="document.querySelector('#action')?.classList.add('ready');"></textarea>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label>Target CSS</label>
-                                <textarea id="target-css" name="target_css" rows="6" placeholder=".container {\n  display: grid;\n  place-items: center;\n}\n.box {\n  background: #7c3aed;\n}"></textarea>
+
+                            <div class="admin-code-section code-workbench">
+                                <div class="panel-title-row">
+                                    <div>
+                                        <h3><i class="fas fa-user-edit"></i> Player Starter Code</h3>
+                                        <small class="help-text">Optional starting files for player editors. Empty starter HTML now opens as a blank HTML tab.</small>
+                                    </div>
+                                    <span class="panel-pill muted">Optional</span>
+                                </div>
+                                <div class="code-editor-grid">
+                                    <div class="form-group editor-pane editor-pane-wide">
+                                        <label>Starter HTML for Players <span class="optional-label">optional</span></label>
+                                        <textarea id="starter-html" name="starter_html" rows="7" placeholder="Leave empty for a blank player HTML editor"></textarea>
+                                    </div>
+                                    <div class="form-group editor-pane">
+                                        <label>Starter CSS for Players</label>
+                                        <textarea id="starter-css" name="starter_css" rows="6" placeholder="body {\n  margin: 0;\n}"></textarea>
+                                    </div>
+                                    <div class="form-group editor-pane">
+                                        <label>Starter JavaScript for Players</label>
+                                        <textarea id="starter-js" name="starter_js" rows="6" placeholder="// Optional player starter JavaScript"></textarea>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label official-toggle">
+                                        <input type="checkbox" id="html-locked" checked> Lock starter HTML for players (read-only)
+                                    </label>
+                                    <small class="help-text">When locked, players can still edit CSS and JavaScript. If starter HTML is empty, the locked HTML editor stays blank.</small>
+                                </div>
                             </div>
-                            <div id="html-preview" class="preview-frame">
+
+                            <div id="html-preview" class="preview-frame builder-preview">
                                 <div class="preview-header"><i class="fas fa-desktop"></i> Target Output Preview</div>
                                 <iframe id="preview-iframe" sandbox="allow-scripts" style="width:100%;height:300px;border:none;background:#fff;"></iframe>
-                            </div>
-                        </div>
-
-                        <div class="admin-code-section">
-                            <h3><i class="fas fa-user-edit"></i> Player Starter Code</h3>
-                            <small class="help-text">This is what appears in each player's editor. CSS is always editable.</small>
-                            <div class="form-group">
-                                <label>Starter HTML for Players *</label>
-                                <textarea id="starter-html" name="starter_html" rows="7" placeholder="<div class='container'>\n  <div class='box'></div>\n</div>"></textarea>
-                            </div>
-                            <div class="form-group">
-                                <label>Starter CSS for Players</label>
-                                <textarea id="starter-css" name="starter_css" rows="6" placeholder=":root {\n  --primary: #7c3aed;\n}\nbody {\n  margin: 0;\n}"></textarea>
-                            </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="html-locked" checked> Lock starter HTML for players (read-only)
-                                </label>
-                                <small class="help-text">When locked, players use this HTML as reference/structure and edit CSS. When unlocked, they can modify HTML too.</small>
                             </div>
                         </div>
                     </div>
@@ -3170,6 +3195,199 @@ textarea {
     background: #f8fafc;
 }
 
+#section-create .form-card {
+    width: min(1180px, 100%);
+    max-width: none;
+    padding: clamp(18px, 2.5vw, 28px);
+}
+
+#create-challenge-form {
+    display: grid;
+    gap: 18px;
+}
+
+#create-challenge-form .form-group {
+    margin-bottom: 0;
+}
+
+#create-challenge-form .form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+#create-challenge-form .competition-setup-panel .form-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#create-challenge-form .competition-setup-panel .form-row:first-of-type,
+#create-challenge-form .competition-setup-panel .form-row:nth-of-type(2),
+#create-challenge-form .competition-setup-panel .form-row:nth-of-type(3),
+#create-challenge-form .competition-setup-panel .form-row:nth-of-type(6),
+#create-challenge-form .competition-setup-panel .bulk-room-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.challenge-type-toggle {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 4px;
+    gap: 4px;
+    border: 1px solid #243042;
+    border-radius: 8px;
+    background: #0b1220;
+}
+
+.type-btn {
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    min-height: 44px;
+}
+
+.type-btn.active {
+    background: #0369a1;
+    color: #fff;
+}
+
+.admin-code-section {
+    border-color: #243042;
+    border-radius: 8px;
+    background: #101827;
+}
+
+.challenge-builder-grid {
+    display: grid;
+    gap: 16px;
+}
+
+.panel-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.panel-title-row h3 {
+    margin-bottom: 4px;
+}
+
+.panel-pill {
+    flex: 0 0 auto;
+    padding: 5px 9px;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.12);
+    color: #bae6fd;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.panel-pill.muted {
+    border-color: rgba(148, 163, 184, 0.35);
+    background: rgba(148, 163, 184, 0.1);
+    color: #cbd5e1;
+}
+
+.optional-label {
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.code-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.editor-pane-wide {
+    grid-column: 1 / -1;
+}
+
+.code-workbench .CodeMirror {
+    min-height: 190px;
+    height: clamp(190px, 24vh, 280px);
+    border: 1px solid #243042;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.code-workbench .editor-pane-wide .CodeMirror {
+    min-height: 230px;
+}
+
+.builder-preview {
+    margin-top: 0;
+    border-color: #243042;
+    background: #0b1220;
+}
+
+.builder-preview iframe {
+    min-height: 360px;
+}
+
+.official-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 2px;
+}
+
+.admin-container * {
+    scrollbar-width: thin;
+    scrollbar-color: #64748b #111827;
+}
+
+.admin-container ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.admin-container ::-webkit-scrollbar-track {
+    background: #111827;
+    border-radius: 999px;
+}
+
+.admin-container ::-webkit-scrollbar-thumb {
+    border: 2px solid #111827;
+    border-radius: 999px;
+    background: #64748b;
+}
+
+.admin-container ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.admin-container[data-admin-theme="light"] .challenge-type-toggle,
+.admin-container[data-admin-theme="light"] .builder-preview {
+    background: #eef2f7;
+    border-color: #d8dee6;
+}
+
+.admin-container[data-admin-theme="light"] .admin-code-section {
+    background: #f8fafc;
+    border-color: #d8dee6;
+}
+
+.admin-container[data-admin-theme="light"] .code-workbench .CodeMirror {
+    border-color: #cbd5e1;
+}
+
+@media (max-width: 980px) {
+    #create-challenge-form .form-row,
+    #create-challenge-form .competition-setup-panel .form-row,
+    #create-challenge-form .competition-setup-panel .form-row:first-of-type,
+    #create-challenge-form .competition-setup-panel .form-row:nth-of-type(2),
+    #create-challenge-form .competition-setup-panel .form-row:nth-of-type(3),
+    #create-challenge-form .competition-setup-panel .form-row:nth-of-type(6),
+    #create-challenge-form .competition-setup-panel .bulk-room-options,
+    .code-editor-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .admin-live-shortcut,
 .admin-certificate-shortcut {
     margin-top: 18px;
@@ -3353,7 +3571,7 @@ textarea {
 </style>
 
 <script>
-let adminTargetHtmlEditor, adminTargetCssEditor, adminStarterHtmlEditor, adminStarterCssEditor;
+let adminTargetHtmlEditor, adminTargetCssEditor, adminTargetJsEditor, adminStarterHtmlEditor, adminStarterCssEditor, adminStarterJsEditor;
 let certificateTemplateSettings = {{ certificate_template|tojson }};
 
 function certificateFileToDataUrl(file) {
@@ -3575,39 +3793,49 @@ window.saveAdminCertificateTemplate = async () => {
 function initAdminEditors() {
     const targetHtmlTextarea = document.getElementById('target-html');
     const targetCssTextarea = document.getElementById('target-css');
+    const targetJsTextarea = document.getElementById('target-js');
     const starterHtmlTextarea = document.getElementById('starter-html');
     const starterCssTextarea = document.getElementById('starter-css');
+    const starterJsTextarea = document.getElementById('starter-js');
     
     if (targetHtmlTextarea) {
         adminTargetHtmlEditor = CodeMirror.fromTextArea(targetHtmlTextarea, {
-            mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, tabSize: 2
+            mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, tabSize: 2, lineWrapping: false
         });
     }
     if (targetCssTextarea) {
         adminTargetCssEditor = CodeMirror.fromTextArea(targetCssTextarea, {
-            mode: 'css', theme: 'dracula', lineNumbers: true, tabSize: 2
+            mode: 'css', theme: 'dracula', lineNumbers: true, tabSize: 2, lineWrapping: false
+        });
+    }
+    if (targetJsTextarea) {
+        adminTargetJsEditor = CodeMirror.fromTextArea(targetJsTextarea, {
+            mode: 'javascript', theme: 'dracula', lineNumbers: true, tabSize: 2, lineWrapping: false
         });
     }
     if (starterHtmlTextarea) {
         adminStarterHtmlEditor = CodeMirror.fromTextArea(starterHtmlTextarea, {
-            mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, tabSize: 2
+            mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, tabSize: 2, lineWrapping: false
         });
     }
     if (starterCssTextarea) {
         adminStarterCssEditor = CodeMirror.fromTextArea(starterCssTextarea, {
-            mode: 'css', theme: 'dracula', lineNumbers: true, tabSize: 2
+            mode: 'css', theme: 'dracula', lineNumbers: true, tabSize: 2, lineWrapping: false
+        });
+    }
+    if (starterJsTextarea) {
+        adminStarterJsEditor = CodeMirror.fromTextArea(starterJsTextarea, {
+            mode: 'javascript', theme: 'dracula', lineNumbers: true, tabSize: 2, lineWrapping: false
         });
     }
 
     if (adminTargetHtmlEditor) {
         adminTargetHtmlEditor.on('change', () => {
             scheduleAdminTargetPreview();
-            if (adminStarterHtmlEditor && !adminStarterHtmlEditor.getValue().trim()) {
-                adminStarterHtmlEditor.setValue(adminTargetHtmlEditor.getValue());
-            }
         });
     }
     if (adminTargetCssEditor) adminTargetCssEditor.on('change', scheduleAdminTargetPreview);
+    if (adminTargetJsEditor) adminTargetJsEditor.on('change', scheduleAdminTargetPreview);
 }
 
 function setChallengeType(type) {
@@ -3620,7 +3848,7 @@ function setChallengeType(type) {
     if (imageInput) imageInput.required = type === 'image';
 
     setTimeout(() => {
-        [adminTargetHtmlEditor, adminTargetCssEditor, adminStarterHtmlEditor, adminStarterCssEditor].forEach((editor) => {
+        [adminTargetHtmlEditor, adminTargetCssEditor, adminTargetJsEditor, adminStarterHtmlEditor, adminStarterCssEditor, adminStarterJsEditor].forEach((editor) => {
             if (editor) editor.refresh();
         });
         renderAdminTargetPreview();
@@ -3640,13 +3868,14 @@ function renderAdminTargetPreview() {
 
     const html = adminTargetHtmlEditor ? adminTargetHtmlEditor.getValue() : '';
     const css = adminTargetCssEditor ? adminTargetCssEditor.getValue() : '';
+    const js = adminTargetJsEditor ? adminTargetJsEditor.getValue() : '';
     iframe.srcdoc = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <style>${css}</style>
 </head>
-<body>${html}</body>
+<body>${html}<script>${js}<\/script></body>
 </html>`;
 }
 
@@ -3708,7 +3937,7 @@ updateCompetitionSetupUI();
 // Create challenge form
 document.getElementById('create-challenge-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    [adminTargetHtmlEditor, adminTargetCssEditor, adminStarterHtmlEditor, adminStarterCssEditor].forEach((editor) => {
+    [adminTargetHtmlEditor, adminTargetCssEditor, adminTargetJsEditor, adminStarterHtmlEditor, adminStarterCssEditor, adminStarterJsEditor].forEach((editor) => {
         if (editor) editor.save();
     });
 
@@ -3773,14 +4002,12 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
             showToast('Please add target HTML for the rendered target', 'error');
             return;
         }
-        if (!starterHtml) {
-            showToast('Please add starter HTML for players', 'error');
-            return;
-        }
         formData.append('target_html', targetHtml);
         formData.append('target_css', adminTargetCssEditor ? adminTargetCssEditor.getValue() : '');
+        formData.append('target_js', adminTargetJsEditor ? adminTargetJsEditor.getValue() : '');
         formData.append('starter_html', starterHtml);
         formData.append('starter_css', adminStarterCssEditor ? adminStarterCssEditor.getValue() : '');
+        formData.append('starter_js', adminStarterJsEditor ? adminStarterJsEditor.getValue() : '');
         formData.append('html_locked', document.getElementById('html-locked').checked ? 'true' : 'false');
     }
     
@@ -3993,8 +4220,10 @@ window.viewChallengeDetails = async (challengeId) => {
                 `<div class="detail-card"><span class="detail-label">HTML Locked</span><span class="detail-value">${data.html_locked ? 'Yes' : 'No'}</span></div>
                  <div class="code-preview"><strong>Private Target HTML:</strong><pre><code>${escapeHtml(data.target_html || 'No HTML')}</code></pre></div>
                  <div class="code-preview"><strong>Private Target CSS:</strong><pre><code>${escapeHtml(data.target_css || 'No CSS')}</code></pre></div>
+                 <div class="code-preview"><strong>Private Target JS:</strong><pre><code>${escapeHtml(data.target_js || 'No JS')}</code></pre></div>
                  <div class="code-preview"><strong>Player Starter HTML:</strong><pre><code>${escapeHtml(data.starter_html || 'No starter HTML')}</code></pre></div>
-                 <div class="code-preview"><strong>Player Starter CSS:</strong><pre><code>${escapeHtml(data.starter_css || 'No starter CSS')}</code></pre></div>`
+                 <div class="code-preview"><strong>Player Starter CSS:</strong><pre><code>${escapeHtml(data.starter_css || 'No starter CSS')}</code></pre></div>
+                 <div class="code-preview"><strong>Player Starter JS:</strong><pre><code>${escapeHtml(data.starter_js || 'No starter JS')}</code></pre></div>`
             }
         `;
     }

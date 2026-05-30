@@ -60,8 +60,10 @@ class Challenge(db.Model):
     target_image_path = db.Column(db.String(200), nullable=True)
     target_html = db.Column(db.Text, nullable=True)
     target_css = db.Column(db.Text, nullable=True)
+    target_js = db.Column(db.Text, nullable=True)
     starter_html = db.Column(db.Text, nullable=True)
     starter_css = db.Column(db.Text, nullable=True)
+    starter_js = db.Column(db.Text, nullable=True)
     html_locked = db.Column(db.Boolean, default=True)
     
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))

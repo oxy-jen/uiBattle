@@ -36,8 +36,10 @@ const TIME_LIMIT = parseInt(getElement('challenge-time-limit')?.value || arenaCo
 const TARGET_IMAGE_URL = getElement('target-image-url')?.value || arenaConfig.targetImageUrl || '';
 const TARGET_HTML_RAW = getElement('target-html-data')?.value || arenaConfig.targetHtml || '';
 const TARGET_CSS_RAW = getElement('target-css-data')?.value || arenaConfig.targetCss || '';
+const TARGET_JS_RAW = getElement('target-js-data')?.value || arenaConfig.targetJs || '';
 const STARTER_HTML_RAW = getElement('starter-html-data')?.value || arenaConfig.starterHtml || '';
 const STARTER_CSS_RAW = getElement('starter-css-data')?.value || arenaConfig.starterCss || '';
+const STARTER_JS_RAW = getElement('starter-js-data')?.value || arenaConfig.starterJs || '';
 const PLAYER_ROLES = ['player1', 'player2'];
 const IS_PLAYER_ROLE = PLAYER_ROLES.includes(USER_ROLE);
 const IS_OBSERVER_ROLE = USER_ROLE === 'admin' || USER_ROLE === 'spectator';
@@ -87,8 +89,10 @@ const EDITOR_SHORTCUT_GROUPS = [
 // Parse target HTML/CSS (handle JSON escaping)
 let TARGET_HTML = TARGET_HTML_RAW;
 let TARGET_CSS = TARGET_CSS_RAW;
+let TARGET_JS = TARGET_JS_RAW;
 let STARTER_HTML = STARTER_HTML_RAW;
 let STARTER_CSS = STARTER_CSS_RAW;
+let STARTER_JS = STARTER_JS_RAW;
 try {
     if (TARGET_HTML_RAW && TARGET_HTML_RAW.startsWith('"')) {
         TARGET_HTML = JSON.parse(TARGET_HTML_RAW);
@@ -96,11 +100,17 @@ try {
     if (TARGET_CSS_RAW && TARGET_CSS_RAW.startsWith('"')) {
         TARGET_CSS = JSON.parse(TARGET_CSS_RAW);
     }
+    if (TARGET_JS_RAW && TARGET_JS_RAW.startsWith('"')) {
+        TARGET_JS = JSON.parse(TARGET_JS_RAW);
+    }
     if (STARTER_HTML_RAW && STARTER_HTML_RAW.startsWith('"')) {
         STARTER_HTML = JSON.parse(STARTER_HTML_RAW);
     }
     if (STARTER_CSS_RAW && STARTER_CSS_RAW.startsWith('"')) {
         STARTER_CSS = JSON.parse(STARTER_CSS_RAW);
+    }
+    if (STARTER_JS_RAW && STARTER_JS_RAW.startsWith('"')) {
+        STARTER_JS = JSON.parse(STARTER_JS_RAW);
     }
 } catch(e) {}
 
@@ -678,14 +688,14 @@ function initEditors() {
     
     // Set initial content based on challenge type
     if (CHALLENGE_TYPE === 'html') {
-        htmlEditor.setValue(STARTER_HTML || TARGET_HTML || '');
+        htmlEditor.setValue(STARTER_HTML || '');
         if (HTML_LOCKED) {
             htmlEditor.setOption('readOnly', true);
             const htmlTab = document.querySelector('[data-tab="html"]');
             if (htmlTab) htmlTab.innerHTML = 'ðŸ”’ HTML';
         }
         cssEditor.setValue(STARTER_CSS || '');
-        jsEditor.setValue('');
+        jsEditor.setValue(STARTER_JS || '');
         // Switch to CSS tab by default
         switchTab('css');
     } else {
@@ -1042,6 +1052,7 @@ function initTarget() {
             <body>
                 ${TARGET_HTML || ''}
                 ${guardScript}
+                <script>${TARGET_JS || ''}<\/script>
             </body>
             </html>`;
             targetFrame.srcdoc = targetDoc;
@@ -2042,12 +2053,12 @@ async function resetCode() {
     if (CHALLENGE_TYPE === 'html' && HTML_LOCKED) {
         // Only reset CSS and JS
         cssEditor.setValue(STARTER_CSS || '');
-        jsEditor.setValue('');
-        showToast('CSS reset to the admin starter CSS. HTML structure preserved.', 'info');
+        jsEditor.setValue(STARTER_JS || '');
+        showToast('CSS and JS reset to the admin starter code. HTML structure preserved.', 'info');
     } else if (CHALLENGE_TYPE === 'html') {
-        htmlEditor.setValue(STARTER_HTML || TARGET_HTML || '');
+        htmlEditor.setValue(STARTER_HTML || '');
         cssEditor.setValue(STARTER_CSS || '');
-        jsEditor.setValue('');
+        jsEditor.setValue(STARTER_JS || '');
         showToast('Code reset to the admin starter code.', 'info');
     } else {
         htmlEditor.setValue('');

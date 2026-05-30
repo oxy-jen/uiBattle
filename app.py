@@ -933,8 +933,10 @@ def ensure_schema_upgrades():
         'challenge_type': "ALTER TABLE challenges ADD COLUMN challenge_type VARCHAR(10) DEFAULT 'image'",
         'target_html': 'ALTER TABLE challenges ADD COLUMN target_html TEXT',
         'target_css': 'ALTER TABLE challenges ADD COLUMN target_css TEXT',
+        'target_js': 'ALTER TABLE challenges ADD COLUMN target_js TEXT',
         'starter_html': 'ALTER TABLE challenges ADD COLUMN starter_html TEXT',
         'starter_css': 'ALTER TABLE challenges ADD COLUMN starter_css TEXT',
+        'starter_js': 'ALTER TABLE challenges ADD COLUMN starter_js TEXT',
         'html_locked': 'ALTER TABLE challenges ADD COLUMN html_locked BOOLEAN DEFAULT 1'
     }
     for column, ddl in challenge_additions.items():
@@ -4347,19 +4349,21 @@ def create_challenge():
     else:
         target_html = (request.form.get('target_html') or '').strip()
         target_css = request.form.get('target_css', '')
-        starter_html = (request.form.get('starter_html') or target_html).strip()
+        target_js = request.form.get('target_js', '')
+        starter_html = (request.form.get('starter_html') or '').strip()
         starter_css = request.form.get('starter_css', '')
+        starter_js = request.form.get('starter_js', '')
         html_locked = request.form.get('html_locked') == 'true'
 
         if not target_html:
             return jsonify({'success': False, 'error': 'Target HTML is required'}), 400
-        if not starter_html:
-            return jsonify({'success': False, 'error': 'Player starter HTML is required'}), 400
         
         new_challenge.target_html = target_html
         new_challenge.target_css = target_css
+        new_challenge.target_js = target_js
         new_challenge.starter_html = starter_html
         new_challenge.starter_css = starter_css
+        new_challenge.starter_js = starter_js
         new_challenge.html_locked = html_locked
     
     db.session.add(new_challenge)
@@ -4933,8 +4937,10 @@ def challenge_details(challenge_id):
         'target_image_url': url_for('static', filename='uploads/' + challenge.target_image_path) if challenge.target_image_path else None,
         'target_html': challenge.target_html,
         'target_css': challenge.target_css,
-        'starter_html': challenge.starter_html or challenge.target_html,
+        'target_js': challenge.target_js or '',
+        'starter_html': challenge.starter_html if challenge.starter_html is not None else (challenge.target_html or ''),
         'starter_css': challenge.starter_css or '',
+        'starter_js': challenge.starter_js or '',
         'html_locked': challenge.html_locked,
         'is_active': challenge.is_active
     })
