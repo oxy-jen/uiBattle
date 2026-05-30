@@ -69,7 +69,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 from models import (
     db, User, Challenge, Room, Submission, ChatMessage,
-    Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard
+    Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard,
+    Competition, CompetitionWave, CompetitionAdminAssignment, DisputeCase
 )
 from auth import login_required, admin_required, get_current_user
 
@@ -957,7 +958,9 @@ def ensure_schema_upgrades():
 
     room_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(rooms)")).fetchall()}
     room_additions = {
-        'is_public': 'ALTER TABLE rooms ADD COLUMN is_public BOOLEAN DEFAULT 0'
+        'is_public': 'ALTER TABLE rooms ADD COLUMN is_public BOOLEAN DEFAULT 0',
+        'competition_id': 'ALTER TABLE rooms ADD COLUMN competition_id INTEGER',
+        'wave_id': 'ALTER TABLE rooms ADD COLUMN wave_id INTEGER'
     }
     for column, ddl in room_additions.items():
         if column not in room_columns:
@@ -1605,7 +1608,7 @@ def build_profile_achievements(user, record, rank=None, award_card=None):
         'best_streak': best_streak
     }
 
-TOURNAMENT_SIZES = {4, 8, 16, 32}
+TOURNAMENT_SIZES = {4, 8, 16, 32, 64, 128}
 ROUND_NAMES_BY_SIZE = {
     32: 'Round of 32',
     16: 'Round of 16',
@@ -1617,6 +1620,321 @@ ROUND_NAMES_BY_SIZE = {
 def tournament_round_name(player_count):
     return ROUND_NAMES_BY_SIZE.get(player_count, f'Round of {player_count}')
 
+def parse_int_list(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [item for item in re.split(r'[\s,]+', value) if item.strip()]
+    try:
+        return [int(item) for item in value]
+    except (TypeError, ValueError):
+        return []
+
+def parse_positive_int(value, default=0, minimum=0, maximum=None):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    number = max(minimum, number)
+    if maximum is not None:
+        number = min(maximum, number)
+    return number
+
+def parse_bool_value(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+def competition_stage_label(value):
+    return str(value or 'registration').replace('_', ' ').title()
+
+def challenge_usage_to_format(value):
+    usage = value or 'single_room'
+    return {
+        'challenge_only': 'challenge_only',
+        'single_room': 'single_room',
+        'bulk_rooms': 'bulk_rooms',
+        'qualification': 'qualification',
+        'bracket': 'bracket',
+        'qualifier_bracket': 'qualifier_bracket'
+    }.get(usage, 'single_room')
+
+def next_power_of_two(value):
+    number = max(2, int(value or 2))
+    power = 1
+    while power < number:
+        power *= 2
+    return power
+
+def create_competition_record(name, challenge_id=None, created_by=None, **options):
+    competition = Competition(
+        name=(name or 'Untitled Competition').strip()[:160],
+        format=options.get('format') or 'single_room',
+        stage=options.get('stage') or 'registration',
+        status=options.get('status') or options.get('stage') or 'registration',
+        challenge_id=challenge_id,
+        max_participants=parse_positive_int(options.get('max_participants'), 2, 1, 5000),
+        room_mode=options.get('room_mode') or '1v1',
+        players_per_wave=parse_positive_int(options.get('players_per_wave'), 100, 2, 5000),
+        room_visibility=options.get('room_visibility') or 'private',
+        start_at=(options.get('start_at') or '').strip()[:80] or None,
+        end_at=(options.get('end_at') or '').strip()[:80] or None,
+        auto_start=bool(options.get('auto_start')),
+        auto_submit=options.get('auto_submit', True) is not False,
+        allowed_attempts=options.get('allowed_attempts') or 'one',
+        tie_break_rule=options.get('tie_break_rule') or 'higher_score_then_time',
+        advance_rule=options.get('advance_rule') or 'top_32',
+        fair_play_strictness=options.get('fair_play_strictness') or 'normal',
+        notes=(options.get('notes') or '').strip() or None,
+        created_by=created_by
+    )
+    db.session.add(competition)
+    db.session.flush()
+    return competition
+
+def create_wave_record(competition, name, challenge_id=None, **options):
+    wave = CompetitionWave(
+        competition_id=competition.id,
+        name=(name or f'Wave {len(competition.waves) + 1}').strip()[:100],
+        status=options.get('status') or 'scheduled',
+        challenge_id=challenge_id or competition.challenge_id,
+        start_at=(options.get('start_at') or '').strip()[:80] or None,
+        end_at=(options.get('end_at') or '').strip()[:80] or None,
+        players_expected=parse_positive_int(options.get('players_expected'), 0, 0, 5000)
+    )
+    db.session.add(wave)
+    db.session.flush()
+    return wave
+
+def parse_admin_assignment_lines(raw_value):
+    assignments = []
+    for line in str(raw_value or '').splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [part.strip() for part in line.split(':')]
+        if not parts:
+            continue
+        admin_id = parse_positive_int(parts[0], 0, 1)
+        if not admin_id:
+            continue
+        role = (parts[1] if len(parts) > 1 and parts[1] else 'room_admin')[:40]
+        range_start = None
+        range_end = None
+        if len(parts) > 2 and parts[2]:
+            match = re.match(r'^\s*(\d+)\s*(?:-|\.\.)\s*(\d+)\s*$', parts[2])
+            if match:
+                range_start = parse_positive_int(match.group(1), None, 1)
+                range_end = parse_positive_int(match.group(2), None, 1)
+            else:
+                single = parse_positive_int(parts[2], 0, 1)
+                range_start = single or None
+                range_end = single or None
+        notes = ':'.join(parts[3:]).strip() if len(parts) > 3 else ''
+        assignments.append({
+            'admin_id': admin_id,
+            'role': role,
+            'room_range_start': range_start,
+            'room_range_end': range_end,
+            'notes': notes[:500] or None
+        })
+    return assignments
+
+def add_competition_assignments(competition, assignments, wave=None):
+    added = []
+    if not competition:
+        return added
+    for item in assignments:
+        admin = db.session.get(User, item.get('admin_id'))
+        if not admin or admin.role != 'admin':
+            continue
+        assignment = CompetitionAdminAssignment(
+            competition_id=competition.id,
+            wave_id=wave.id if wave else None,
+            admin_id=admin.id,
+            role=item.get('role') or 'room_admin',
+            room_range_start=item.get('room_range_start'),
+            room_range_end=item.get('room_range_end'),
+            notes=item.get('notes')
+        )
+        db.session.add(assignment)
+        added.append(assignment)
+    return added
+
+def create_competition_room(challenge_id, competition=None, wave=None, player1_id=None, player2_id=None, is_public=False, status='waiting'):
+    room = Room(
+        room_code=generate_room_code(),
+        challenge_id=challenge_id,
+        status=status,
+        player1_id=player1_id,
+        player2_id=player2_id,
+        is_public=is_public,
+        competition_id=competition.id if competition else None,
+        wave_id=wave.id if wave else None
+    )
+    db.session.add(room)
+    return room
+
+def pair_players_for_rooms(players, pairing_method='ordered'):
+    ordered_players = list(players or [])
+    if pairing_method == 'seeded':
+        ordered_players = []
+        left = 0
+        right = len(players) - 1
+        while left <= right:
+            ordered_players.append(players[left])
+            if left != right:
+                ordered_players.append(players[right])
+            left += 1
+            right -= 1
+    return [
+        (ordered_players[index], ordered_players[index + 1])
+        for index in range(0, len(ordered_players) - 1, 2)
+    ]
+
+def build_my_assigned_rooms(admin_id):
+    assignments = CompetitionAdminAssignment.query.filter_by(admin_id=admin_id).all()
+    room_ids = []
+    for assignment in assignments:
+        query = Room.query.filter_by(competition_id=assignment.competition_id)
+        if assignment.wave_id:
+            query = query.filter_by(wave_id=assignment.wave_id)
+        rooms = query.order_by(Room.created_at.asc(), Room.id.asc()).all()
+        start = assignment.room_range_start or 1
+        end = assignment.room_range_end or len(rooms)
+        for index, room in enumerate(rooms, start=1):
+            if start <= index <= end:
+                room_ids.append(room.id)
+    if not room_ids:
+        return []
+    return Room.query.filter(Room.id.in_(sorted(set(room_ids)))).order_by(Room.created_at.desc()).all()
+
+def qualification_rows(competition_id=None, wave_id=None, limit=None):
+    query = Room.query
+    if competition_id:
+        query = query.filter_by(competition_id=competition_id)
+    if wave_id:
+        query = query.filter_by(wave_id=wave_id)
+    rooms = query.all()
+    room_ids = [room.id for room in rooms]
+    room_by_id = {room.id: room for room in rooms}
+    player_ids = set()
+    for room in rooms:
+        if room.player1_id:
+            player_ids.add(room.player1_id)
+        if room.player2_id:
+            player_ids.add(room.player2_id)
+    submissions = Submission.query.filter(Submission.room_id.in_(room_ids)).all() if room_ids else []
+    best_by_player = {}
+    for sub in submissions:
+        if not sub.user_id:
+            continue
+        player_ids.add(sub.user_id)
+        current = best_by_player.get(sub.user_id)
+        room = room_by_id.get(sub.room_id)
+        if not current or submission_rank_tuple(sub, room.challenge if room else None) > submission_rank_tuple(current, room.challenge if room else None):
+            best_by_player[sub.user_id] = sub
+    disputes = DisputeCase.query
+    if competition_id:
+        disputes = disputes.filter_by(competition_id=competition_id)
+    if wave_id:
+        disputes = disputes.filter_by(wave_id=wave_id)
+    warning_counts = {}
+    disqualified = set()
+    for dispute in disputes.all():
+        if dispute.player_id:
+            warning_counts[dispute.player_id] = warning_counts.get(dispute.player_id, 0) + 1
+            if dispute.type == 'disqualification' or dispute.status == 'disqualified':
+                disqualified.add(dispute.player_id)
+    rows = []
+    for player_id in player_ids:
+        player = db.session.get(User, player_id)
+        if not player:
+            continue
+        sub = best_by_player.get(player_id)
+        room = room_by_id.get(sub.room_id) if sub else None
+        accuracy, _details = submission_score_analysis(sub, room.challenge if room else None) if sub else (0.0, {})
+        submitted_at = sub.submitted_at if sub else None
+        rows.append({
+            'user': player,
+            'score': round(accuracy, 1),
+            'completed': bool(sub and not sub.is_forfeit),
+            'submitted_at': submitted_at,
+            'submitted_at_value': datetime_sort_value(submitted_at),
+            'fair_play_warnings': warning_counts.get(player_id, 0),
+            'disqualified': player_id in disqualified or bool(sub and sub.is_forfeit),
+            'room': room
+        })
+    rows.sort(key=lambda row: (
+        not row['disqualified'],
+        row['completed'],
+        row['score'],
+        -row['fair_play_warnings'],
+        -row['submitted_at_value']
+    ), reverse=True)
+    for index, row in enumerate(rows, start=1):
+        row['rank'] = index
+    return rows[:limit] if limit else rows
+
+def serialize_competition(competition):
+    if not competition:
+        return None
+    rooms = Room.query.filter_by(competition_id=competition.id).all()
+    disputes = DisputeCase.query.filter_by(competition_id=competition.id).all()
+    waves = CompetitionWave.query.filter_by(competition_id=competition.id).order_by(CompetitionWave.created_at.asc()).all()
+    assignments = CompetitionAdminAssignment.query.filter_by(competition_id=competition.id).order_by(CompetitionAdminAssignment.created_at.asc()).all()
+    return {
+        'id': competition.id,
+        'name': competition.name,
+        'format': competition.format,
+        'stage': competition.stage,
+        'status': competition.status,
+        'challenge': competition.challenge.title if competition.challenge else None,
+        'challenge_id': competition.challenge_id,
+        'max_participants': competition.max_participants,
+        'room_mode': competition.room_mode,
+        'players_per_wave': competition.players_per_wave,
+        'room_visibility': competition.room_visibility,
+        'start_at': competition.start_at,
+        'end_at': competition.end_at,
+        'auto_start': bool(competition.auto_start),
+        'auto_submit': bool(competition.auto_submit),
+        'allowed_attempts': competition.allowed_attempts,
+        'tie_break_rule': competition.tie_break_rule,
+        'advance_rule': competition.advance_rule,
+        'fair_play_strictness': competition.fair_play_strictness,
+        'room_count': len(rooms),
+        'dispute_count': len([case for case in disputes if case.status == 'open']),
+        'waves': [
+            {
+                'id': wave.id,
+                'name': wave.name,
+                'status': wave.status,
+                'start_at': wave.start_at,
+                'end_at': wave.end_at,
+                'players_expected': wave.players_expected,
+                'rooms_created': wave.rooms_created
+            }
+            for wave in waves
+        ],
+        'assignments': [
+            {
+                'id': item.id,
+                'admin_id': item.admin_id,
+                'admin': item.admin.username if item.admin else 'Unknown admin',
+                'role': item.role,
+                'wave_id': item.wave_id,
+                'wave': item.wave.name if item.wave else 'All waves',
+                'room_range_start': item.room_range_start,
+                'room_range_end': item.room_range_end,
+                'notes': item.notes
+            }
+            for item in assignments
+        ]
+    }
+
 def get_player_room_score(room_id, user_id):
     sub = get_best_room_submission(room_id, user_id)
     if not sub or sub.is_forfeit:
@@ -1627,6 +1945,56 @@ def get_player_room_score(room_id, user_id):
 
 def get_participant(tournament_id, user_id):
     return TournamentParticipant.query.filter_by(tournament_id=tournament_id, user_id=user_id).first()
+
+def create_tournament_from_players(name, size, challenge_id, ordered_users, auto_advance=True, competition=None, created_by=None):
+    tournament = Tournament(
+        name=name,
+        size=size,
+        challenge_id=challenge_id,
+        status='live',
+        auto_advance=auto_advance,
+        created_by=created_by,
+        started_at=datetime.now(timezone.utc)
+    )
+    db.session.add(tournament)
+    db.session.flush()
+
+    for seed, player in enumerate(ordered_users, start=1):
+        db.session.add(TournamentParticipant(
+            tournament_id=tournament.id,
+            user_id=player.id,
+            seed=seed,
+            status='active',
+            position='Participant'
+        ))
+
+    seeded = []
+    left = 0
+    right = len(ordered_users) - 1
+    while left <= right:
+        seeded.append(ordered_users[left])
+        if left != right:
+            seeded.append(ordered_users[right])
+        left += 1
+        right -= 1
+
+    round_name = tournament_round_name(size)
+    for index in range(0, len(seeded), 2):
+        create_tournament_match(
+            tournament,
+            1,
+            round_name,
+            (index // 2) + 1,
+            seeded[index].id,
+            seeded[index + 1].id,
+            competition=competition
+        )
+
+    if competition:
+        competition.tournament_id = tournament.id
+        competition.status = 'bracket'
+        competition.stage = 'bracket'
+    return tournament
 
 def certificate_type_for_position(position):
     if position == 'Champion':
@@ -1640,21 +2008,23 @@ def certificate_type_for_position(position):
 def certificate_id_for(tournament_id, user_id):
     return f"UIBA-{tournament_id:04d}-{user_id:04d}-{secrets.token_hex(3).upper()}"
 
-def create_tournament_room(tournament, player1_id=None, player2_id=None):
+def create_tournament_room(tournament, player1_id=None, player2_id=None, competition=None, wave=None):
     room = Room(
         room_code=generate_room_code(),
         challenge_id=tournament.challenge_id,
         status='waiting',
         player1_id=player1_id,
         player2_id=player2_id,
-        is_public=False
+        is_public=False,
+        competition_id=competition.id if competition else None,
+        wave_id=wave.id if wave else None
     )
     db.session.add(room)
     db.session.flush()
     return room
 
-def create_tournament_match(tournament, round_number, round_name, match_number, player1_id, player2_id):
-    room = create_tournament_room(tournament, player1_id, player2_id)
+def create_tournament_match(tournament, round_number, round_name, match_number, player1_id, player2_id, competition=None, wave=None):
+    room = create_tournament_room(tournament, player1_id, player2_id, competition=competition, wave=wave)
     match = TournamentMatch(
         tournament_id=tournament.id,
         round_number=round_number,
@@ -2150,6 +2520,34 @@ DEFAULT_SITE_CONTENT = {
         'images': [],
         'videos': []
     },
+    'competition_guide': {
+        'hero_title': 'Competition Guide',
+        'hero_subtitle': 'Run large contests by placing an organizer layer above many simultaneous 1v1 arena rooms.',
+        'body': (
+            'Official rule: A competition may contain many simultaneous 1v1 arena rooms. Each arena room has exactly two active players. For large competitions, players first compete in qualification waves. The highest-ranked players advance to a knockout bracket. Admins are assigned to supervise groups of rooms, review disputes, and confirm winners.\n\n'
+            'How it works: one arena match remains 2 players only. A bracket round creates one room per pair. For 32 players, the round of 32 creates 16 rooms at the same time, the round of 16 creates 8 rooms, quarterfinals create 4 rooms, semifinals create 2 rooms, and the final creates 1 room.\n\n'
+            'For 1000 players: do not run one giant room or one pair after another. Use qualification waves first. Example: register 1000 students, split them into waves of about 100, run many rooms or score-based attempts in parallel, rank by score, completion, time, and fair-play status, then move the top 32 or 64 into the official knockout bracket.\n\n'
+            'Recommended execution: create the qualification challenge, register students, split them into waves, create rooms in bulk, start each wave, let auto-scoring rank first, send disputed scores and cheating alerts to review, publish the qualifier leaderboard, create the final bracket, run every bracket round in parallel, and have senior admins watch the final.\n\n'
+            'Admin roles: the tournament director starts rounds and makes final decisions. Room admins supervise groups of rooms. Fair play admins review right-click, inspect, camera, microphone, and suspicious behavior alerts. Scoring admins handle close matches and manual overrides. Support admins solve login, wrong-room, device, and network problems. Certificate admins confirm names, winners, and awards.\n\n'
+            'Practical staffing: one experienced room admin can watch about 5 to 20 rooms depending on screen setup and strictness. For 1000 students, plan for about 10 to 30 admins or helpers if live supervision is serious.\n\n'
+            'Features to add next: large tournament mode, qualifier plus bracket competitions, automatic pairing, wave management, admin-to-room assignment, supervisor dashboards, bulk room creation, qualification leaderboard, dispute queue, and contest stage statuses such as Registration, Qualification, Review, Bracket, Finals, and Completed.'
+        ),
+        'contact_email': ARENA_CONTACT_EMAILS[0],
+        'nav_label': 'Competition Guide',
+        'visible': True,
+        'placements': ['public', 'dashboard', 'arena', 'profile', 'footer'],
+        'layout_style': 'help',
+        'text_effect': 'fade',
+        'contact_items': [],
+        'links': [
+            {'label': 'Create Tournament', 'url': '/tournament'},
+            {'label': 'Admin Console', 'url': '/admin'},
+            {'label': 'Help Center', 'url': '/help'},
+            {'label': 'Report a Problem', 'url': '/report'}
+        ],
+        'images': [],
+        'videos': []
+    },
     'feedback': {
         'hero_title': 'Feedback',
         'hero_subtitle': 'Tell the organizers what is broken, confusing, or worth improving.',
@@ -2269,7 +2667,7 @@ def refresh_builtin_site_content():
         profiles['__site_content__'] = saved
         save_profile_store(profiles)
 
-SITE_PAGE_KEYS = ['about', 'support', 'terms', 'contact', 'help', 'feedback', 'report']
+SITE_PAGE_KEYS = ['about', 'support', 'terms', 'contact', 'help', 'competition_guide', 'feedback', 'report']
 SITE_PAGE_PLACEMENTS = ['public', 'dashboard', 'arena', 'profile', 'footer']
 
 def site_page_url(page_key):
@@ -2279,6 +2677,7 @@ def site_page_url(page_key):
         'terms': 'terms_page',
         'contact': 'contact_page',
         'help': 'help_page',
+        'competition_guide': 'competition_guide_page',
         'feedback': 'feedback_page',
         'report': 'report_page'
     }.get(page_key)
@@ -2474,10 +2873,14 @@ def clear_created_platform_data():
         'match_results': MatchResult.query.delete(synchronize_session=False),
         'tournament_participants': TournamentParticipant.query.delete(synchronize_session=False),
         'tournament_matches': TournamentMatch.query.delete(synchronize_session=False),
+        'competition_admin_assignments': CompetitionAdminAssignment.query.delete(synchronize_session=False),
+        'dispute_cases': DisputeCase.query.delete(synchronize_session=False),
+        'competition_waves': CompetitionWave.query.delete(synchronize_session=False),
         'award_cards': AwardCard.query.delete(synchronize_session=False),
         'submissions': Submission.query.delete(synchronize_session=False),
         'chat_messages': ChatMessage.query.delete(synchronize_session=False),
         'rooms': Room.query.delete(synchronize_session=False),
+        'competitions': Competition.query.delete(synchronize_session=False),
         'tournaments': Tournament.query.delete(synchronize_session=False),
         'challenges': Challenge.query.delete(synchronize_session=False),
         'students': User.query.filter(User.role != 'admin').delete(synchronize_session=False)
@@ -2562,6 +2965,20 @@ def run_room_timer(room_id):
             finalize_room_results(room)
             db.session.commit()
     socketio.emit('challenge_ended', {'room_id': room_id}, room=str(room_id))
+
+def start_room_timer_if_needed(room):
+    if not room or not room.challenge:
+        return
+    if room.id not in room_timers or room_timers.get(room.id, 0) <= 0:
+        room_timers[room.id] = room.challenge.time_limit
+    socketio.emit('challenge_started', {
+        'room_id': room.id,
+        'time_limit': room.challenge.time_limit,
+        'challenge_title': room.challenge.title
+    }, room=str(room.id))
+    thread = threading.Thread(target=run_room_timer, args=(room.id,))
+    thread.daemon = True
+    thread.start()
 
 def emit_challenge_paused(room):
     if not room:
@@ -2961,6 +3378,16 @@ def contact_page():
 def help_page():
     return render_template('site_page.html', page_key='help', site_content=get_site_content())
 
+@app.route('/competition-guide')
+def competition_guide_page():
+    return render_template('site_page.html', page_key='competition_guide', site_content=get_site_content())
+
+@app.route('/admin/competition-guide')
+@admin_required
+def admin_competition_guide():
+    user = get_current_user()
+    return render_template('admin_competition_guide.html', user=user)
+
 @app.route('/shortcuts')
 def shortcuts_page():
     shortcut_groups = [
@@ -3169,6 +3596,19 @@ def admin_panel():
     players = User.query.order_by(User.username.asc()).all()
     tournaments = Tournament.query.order_by(Tournament.created_at.desc()).all()
     completed_tournaments = [t for t in tournaments if t.status == 'completed']
+    competitions = Competition.query.order_by(Competition.created_at.desc()).all()
+    competition_data = [serialize_competition(competition) for competition in competitions]
+    competition_room_counts = {
+        competition.id: Room.query.filter_by(competition_id=competition.id).count()
+        for competition in competitions
+    }
+    competition_leaderboards = {
+        competition.id: qualification_rows(competition_id=competition.id, limit=10)
+        for competition in competitions
+    }
+    my_assigned_rooms = build_my_assigned_rooms(user.id)
+    open_disputes = DisputeCase.query.filter(DisputeCase.status.in_(['open', 'review'])).order_by(DisputeCase.created_at.desc()).limit(80).all()
+    admin_users = User.query.filter_by(role='admin').order_by(User.username.asc()).all()
 
     total_matches = Submission.query.count()
     avg_accuracy = db.session.query(func.avg(Submission.accuracy)).scalar() or 0
@@ -3222,6 +3662,13 @@ def admin_panel():
                          feedback_messages=feedback_messages,
                          tournaments=tournaments,
                          completed_tournaments=completed_tournaments,
+                         competitions=competitions,
+                         competition_data=competition_data,
+                         competition_room_counts=competition_room_counts,
+                         competition_leaderboards=competition_leaderboards,
+                         my_assigned_rooms=my_assigned_rooms,
+                         open_disputes=open_disputes,
+                         admin_users=admin_users,
                          site_content=get_site_content(),
                          certificate_template=get_certificate_template_settings(),
                          tournament_sizes=sorted(TOURNAMENT_SIZES))
@@ -3740,7 +4187,9 @@ def export_data():
             'status': r.status,
             'player1': r.player1.username if r.player1 else None,
             'player2': r.player2.username if r.player2 else None,
-            'challenge': r.challenge.title if r.challenge else None
+            'challenge': r.challenge.title if r.challenge else None,
+            'competition_id': r.competition_id,
+            'wave_id': r.wave_id
         }
         for r in Room.query.all()
     ]
@@ -3759,6 +4208,10 @@ def export_data():
         serialize_tournament(tournament)
         for tournament in Tournament.query.order_by(Tournament.created_at.desc()).all()
     ]
+    competition_data = [
+        serialize_competition(competition)
+        for competition in Competition.query.order_by(Competition.created_at.desc()).all()
+    ]
     admin_actions = [
         {
             'id': action.id,
@@ -3773,7 +4226,7 @@ def export_data():
         }
         for action in AdminAction.query.order_by(AdminAction.timestamp.desc()).all()
     ]
-    return jsonify({'users': user_data, 'rooms': room_data, 'challenges': challenge_data, 'tournaments': tournament_data, 'admin_actions': admin_actions})
+    return jsonify({'users': user_data, 'rooms': room_data, 'challenges': challenge_data, 'competitions': competition_data, 'tournaments': tournament_data, 'admin_actions': admin_actions})
 
 @app.route('/admin/maintenance/clear-data', methods=['POST'])
 @admin_required
@@ -3805,6 +4258,24 @@ def create_challenge():
     room_visibility = request.form.get('room_visibility', 'private')
     room_is_public = room_visibility == 'public'
     share_with_email = request.form.get('share_with_email') == 'true'
+    launch_mode = request.form.get('launch_mode', 'single_room')
+    pairing_method = request.form.get('pairing_method', 'ordered')
+    stage_type = request.form.get('stage_type', 'practice')
+    wave_name = (request.form.get('wave_name') or '').strip()[:80]
+    advance_rule = (request.form.get('advance_rule') or '').strip()[:120]
+    competition_name = (request.form.get('competition_name') or '').strip()[:160]
+    max_participants = parse_positive_int(request.form.get('max_participants'), 2, 1, 5000)
+    room_mode = request.form.get('room_mode', '1v1')
+    rooms_to_create = parse_positive_int(request.form.get('rooms_to_create'), 1, 0, 2500)
+    players_per_wave = parse_positive_int(request.form.get('players_per_wave'), 100, 1, 5000)
+    start_at = (request.form.get('start_at') or '').strip()[:80]
+    end_at = (request.form.get('end_at') or '').strip()[:80]
+    auto_start = parse_bool_value(request.form.get('auto_start'))
+    auto_submit = parse_bool_value(request.form.get('auto_submit'), True)
+    allowed_attempts = request.form.get('allowed_attempts', 'one')
+    tie_break_rule = request.form.get('tie_break_rule', 'higher_score_then_time')
+    fair_play_strictness = request.form.get('fair_play_strictness', 'normal')
+    assignment_lines = request.form.get('admin_assignments', '')
     title = (request.form.get('title') or '').strip()
     difficulty = request.form.get('difficulty') or 'Medium'
     try:
@@ -3815,10 +4286,40 @@ def create_challenge():
 
     if challenge_type not in {'image', 'html'}:
         return jsonify({'success': False, 'error': 'Invalid challenge type'}), 400
+    if launch_mode not in {'challenge_only', 'single_room', 'bulk_rooms', 'qualification', 'bracket', 'qualifier_bracket'}:
+        return jsonify({'success': False, 'error': 'Invalid launch mode'}), 400
     if not title:
         return jsonify({'success': False, 'error': 'Challenge name is required'}), 400
-    if share_with_email and not email_configured():
+    if share_with_email and launch_mode == 'single_room' and not email_configured():
         return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+    needs_participants = launch_mode in {'bulk_rooms', 'qualification', 'qualifier_bracket', 'bracket'}
+    if needs_participants:
+        participant_ids = list(dict.fromkeys(parse_int_list(request.form.getlist('participant_ids') or request.form.get('participant_ids'))))
+        if len(participant_ids) < 2:
+            return jsonify({'success': False, 'error': 'Select at least two players for this competition mode'}), 400
+        if launch_mode != 'bracket' and room_mode == '1v1' and len(participant_ids) % 2 != 0:
+            return jsonify({'success': False, 'error': 'Bulk 1v1 rooms need an even number of players'}), 400
+        participant_users = User.query.filter(User.id.in_(participant_ids), User.role == 'player').all()
+        if len(participant_users) != len(participant_ids):
+            return jsonify({'success': False, 'error': 'All competition participants must be player accounts'}), 400
+        participant_users_by_id = {player.id: player for player in participant_users}
+        ordered_bulk_players = [participant_users_by_id[player_id] for player_id in participant_ids]
+    else:
+        ordered_bulk_players = []
+
+    if launch_mode == 'bracket':
+        bracket_size = next_power_of_two(len(ordered_bulk_players))
+        if bracket_size != len(ordered_bulk_players) or bracket_size not in TOURNAMENT_SIZES:
+            return jsonify({'success': False, 'error': 'Bracket mode needs exactly 4, 8, 16, 32, 64, or 128 selected players'}), 400
+
+    if stage_type:
+        stage_note = f"\n\nCompetition setup: {stage_type.replace('_', ' ').title()}."
+        if wave_name:
+            stage_note += f" Wave/group: {wave_name}."
+        if advance_rule:
+            stage_note += f" Advance rule: {advance_rule}."
+        if stage_note not in description:
+            description = f"{description}{stage_note}"
     
     new_challenge = Challenge(
         title=title,
@@ -3867,28 +4368,119 @@ def create_challenge():
         new_challenge.html_locked = html_locked
     
     db.session.add(new_challenge)
+    db.session.flush()
+
+    competition = None
+    wave = None
+    should_create_competition = launch_mode not in {'single_room', 'challenge_only'} or bool(competition_name)
+    if should_create_competition:
+        competition = create_competition_record(
+            competition_name or f'{title} Competition',
+            challenge_id=new_challenge.id,
+            created_by=session['user_id'],
+            format=challenge_usage_to_format(launch_mode),
+            stage=stage_type or 'practice',
+            status='scheduled' if launch_mode in {'qualification', 'qualifier_bracket', 'bulk_rooms'} else (stage_type or 'practice'),
+            max_participants=max_participants,
+            room_mode=room_mode,
+            players_per_wave=players_per_wave,
+            room_visibility=room_visibility,
+            start_at=start_at,
+            end_at=end_at,
+            auto_start=auto_start,
+            auto_submit=auto_submit,
+            allowed_attempts=allowed_attempts,
+            tie_break_rule=tie_break_rule,
+            advance_rule=advance_rule or 'top_32',
+            fair_play_strictness=fair_play_strictness
+        )
+        if launch_mode in {'bulk_rooms', 'qualification', 'qualifier_bracket'}:
+            wave = create_wave_record(
+                competition,
+                wave_name or 'Wave A',
+                challenge_id=new_challenge.id,
+                status='live' if auto_start else 'scheduled',
+                start_at=start_at,
+                end_at=end_at,
+                players_expected=len(ordered_bulk_players)
+            )
+        add_competition_assignments(competition, parse_admin_assignment_lines(assignment_lines), wave=wave)
+
+    rooms_created = []
+    new_room = None
+    tournament = None
+    if launch_mode == 'single_room':
+        new_room = create_competition_room(
+            new_challenge.id,
+            competition=competition,
+            status='running' if auto_start else 'waiting',
+            is_public=room_is_public
+        )
+        rooms_created.append(new_room)
+    elif launch_mode in {'bulk_rooms', 'qualification', 'qualifier_bracket'}:
+        if room_mode == 'solo':
+            for player in ordered_bulk_players:
+                room = create_competition_room(
+                    new_challenge.id,
+                    competition=competition,
+                    wave=wave,
+                    player1_id=player.id,
+                    status='running' if auto_start else 'waiting',
+                    is_public=room_is_public
+                )
+                rooms_created.append(room)
+        else:
+            for left_player, right_player in pair_players_for_rooms(ordered_bulk_players, pairing_method):
+                room = create_competition_room(
+                    new_challenge.id,
+                    competition=competition,
+                    wave=wave,
+                    player1_id=left_player.id,
+                    player2_id=right_player.id,
+                    status='running' if auto_start else 'waiting',
+                    is_public=room_is_public
+                )
+                rooms_created.append(room)
+        if wave:
+            wave.rooms_created = len(rooms_created)
+        new_room = rooms_created[0] if rooms_created else None
+    elif launch_mode == 'bracket':
+        tournament = create_tournament_from_players(
+            competition_name or f'{title} Bracket',
+            len(ordered_bulk_players),
+            new_challenge.id,
+            ordered_bulk_players,
+            auto_advance=True,
+            competition=competition,
+            created_by=session['user_id']
+        )
+        rooms_created = Room.query.join(TournamentMatch, TournamentMatch.room_id == Room.id).filter(TournamentMatch.tournament_id == tournament.id).all()
+        new_room = rooms_created[0] if rooms_created else None
+    elif launch_mode == 'challenge_only':
+        new_room = None
+
     db.session.commit()
-    
-    room_code = generate_room_code()
-    new_room = Room(
-        room_code=room_code,
-        challenge_id=new_challenge.id,
-        status='waiting',
-        is_public=room_is_public
-    )
-    db.session.add(new_room)
-    db.session.commit()
+    if auto_start and rooms_created:
+        for room in rooms_created:
+            start_room_timer_if_needed(room)
+
     invite_stats = {'sent': 0, 'failed': 0, 'skipped': 0, 'total': 0}
-    if share_with_email:
+    if share_with_email and new_room and launch_mode == 'single_room':
         invite_stats = send_room_invites(new_room, request.form.get('invite_message') or '')
     
     return jsonify({
         'success': True,
-        'room_code': room_code,
-        'room_id': new_room.id,
-        'is_public': bool(new_room.is_public),
+        'challenge_id': new_challenge.id,
+        'launch_mode': launch_mode,
+        'room_code': new_room.room_code if new_room else None,
+        'room_id': new_room.id if new_room else None,
+        'rooms_created': len(rooms_created),
+        'room_codes': [room.room_code for room in rooms_created[:20]],
+        'competition_id': competition.id if competition else None,
+        'tournament_id': tournament.id if tournament else None,
+        'is_public': bool(new_room.is_public) if new_room else room_is_public,
         'challenge_type': challenge_type,
-        'invite_url': room_invite_url(new_room),
+        'invite_url': room_invite_url(new_room) if new_room else None,
         'invite_stats': invite_stats
     })
 
@@ -4008,7 +4600,7 @@ def admin_create_tournament():
         return jsonify({'success': False, 'error': 'Invalid participant list'}), 400
 
     if size not in TOURNAMENT_SIZES:
-        return jsonify({'success': False, 'error': 'Tournament size must be 4, 8, 16, or 32'}), 400
+        return jsonify({'success': False, 'error': 'Tournament size must be 4, 8, 16, 32, 64, or 128'}), 400
     if not name:
         return jsonify({'success': False, 'error': 'Tournament name is required'}), 400
     if len(set(participant_ids)) != size:
@@ -4086,6 +4678,123 @@ def admin_create_tournament():
         )
     )
     return jsonify({'success': True, 'tournament_id': tournament.id, 'redirect': url_for('tournament_detail', tournament_id=tournament.id)})
+
+@app.route('/api/competition/<int:competition_id>/leaderboard')
+@admin_required
+def api_competition_leaderboard(competition_id):
+    competition = db.session.get(Competition, competition_id)
+    if not competition:
+        return jsonify({'success': False, 'error': 'Competition not found'}), 404
+    rows = qualification_rows(competition_id=competition.id)
+    return jsonify({
+        'success': True,
+        'competition': serialize_competition(competition),
+        'leaderboard': [
+            {
+                'rank': row['rank'],
+                'user_id': row['user'].id,
+                'username': row['user'].username,
+                'score': row['score'],
+                'completed': row['completed'],
+                'submitted_at': row['submitted_at'].isoformat() if row['submitted_at'] else None,
+                'fair_play_warnings': row['fair_play_warnings'],
+                'disqualified': row['disqualified'],
+                'room_id': row['room'].id if row.get('room') else None,
+                'room_code': row['room'].room_code if row.get('room') else None
+            }
+            for row in rows
+        ]
+    })
+
+@app.route('/admin/competition/<int:competition_id>/advance-to-bracket', methods=['POST'])
+@admin_required
+def admin_competition_advance_to_bracket(competition_id):
+    data = request.get_json(silent=True) or request.form
+    competition = db.session.get(Competition, competition_id)
+    if not competition:
+        return jsonify({'success': False, 'error': 'Competition not found'}), 404
+    if not competition.challenge_id:
+        return jsonify({'success': False, 'error': 'Competition has no challenge target'}), 400
+
+    selected_ids = parse_int_list(data.get('participant_ids', []))
+    top_n = parse_positive_int(data.get('top_n'), 32, 4, 128)
+    if selected_ids:
+        ordered_ids = selected_ids
+    else:
+        rows = [row for row in qualification_rows(competition_id=competition.id) if not row['disqualified']]
+        ordered_ids = [row['user'].id for row in rows[:top_n]]
+
+    size = len(ordered_ids)
+    if size not in TOURNAMENT_SIZES:
+        return jsonify({'success': False, 'error': 'Bracket entrants must be exactly 4, 8, 16, 32, 64, or 128 players'}), 400
+
+    users = User.query.filter(User.id.in_(ordered_ids), User.role == 'player').all()
+    if len(users) != size:
+        return jsonify({'success': False, 'error': 'All selected entrants must be player accounts'}), 400
+    users_by_id = {player.id: player for player in users}
+    ordered_users = [users_by_id[player_id] for player_id in ordered_ids]
+
+    tournament = create_tournament_from_players(
+        f'{competition.name} Bracket',
+        size,
+        competition.challenge_id,
+        ordered_users,
+        auto_advance=parse_bool_value(data.get('auto_advance'), True),
+        competition=competition,
+        created_by=session['user_id']
+    )
+    log_admin_action(
+        session['user_id'],
+        'advance_competition_to_bracket',
+        f'Advanced {size} players from qualification leaderboard',
+        tournament_id=tournament.id,
+        admin_note=competition.name
+    )
+    db.session.commit()
+    socketio.emit('tournament_bracket_update', {'tournament': serialize_tournament(tournament)}, room=f"tournament_{tournament.id}")
+    return jsonify({'success': True, 'tournament_id': tournament.id, 'redirect': url_for('tournament_detail', tournament_id=tournament.id)})
+
+@app.route('/admin/competition/<int:competition_id>/assignment', methods=['POST'])
+@admin_required
+def admin_competition_assignment(competition_id):
+    data = request.get_json(silent=True) or request.form
+    competition = db.session.get(Competition, competition_id)
+    if not competition:
+        return jsonify({'success': False, 'error': 'Competition not found'}), 404
+    admin_id = parse_positive_int(data.get('admin_id'), 0, 1)
+    role = (data.get('role') or 'room_admin').strip()[:40]
+    wave_id = parse_positive_int(data.get('wave_id'), 0, 0) or None
+    if wave_id and not CompetitionWave.query.filter_by(id=wave_id, competition_id=competition.id).first():
+        return jsonify({'success': False, 'error': 'Wave not found for this competition'}), 404
+    admin = db.session.get(User, admin_id)
+    if not admin or admin.role != 'admin':
+        return jsonify({'success': False, 'error': 'Select a valid admin user'}), 400
+    assignment = CompetitionAdminAssignment(
+        competition_id=competition.id,
+        wave_id=wave_id,
+        admin_id=admin.id,
+        role=role,
+        room_range_start=parse_positive_int(data.get('room_range_start'), 0, 0) or None,
+        room_range_end=parse_positive_int(data.get('room_range_end'), 0, 0) or None,
+        notes=(data.get('notes') or '').strip()[:500] or None
+    )
+    db.session.add(assignment)
+    db.session.commit()
+    return jsonify({'success': True, 'competition': serialize_competition(competition)})
+
+@app.route('/admin/dispute/<int:case_id>/resolve', methods=['POST'])
+@admin_required
+def admin_resolve_dispute(case_id):
+    data = request.get_json(silent=True) or request.form
+    case = db.session.get(DisputeCase, case_id)
+    if not case:
+        return jsonify({'success': False, 'error': 'Dispute case not found'}), 404
+    case.status = (data.get('status') or 'resolved').strip()[:30]
+    case.resolution = (data.get('resolution') or '').strip()[:1000] or None
+    case.resolved_by = session['user_id']
+    case.resolved_at = datetime.now(timezone.utc)
+    db.session.commit()
+    return jsonify({'success': True})
 
 @app.route('/admin/tournament/<int:tournament_id>/match/<int:match_id>/advance', methods=['POST'])
 @admin_required
@@ -5699,6 +6408,19 @@ def handle_right_click_attempt(data):
         'worked': False,
         'message': f'Player {user.username} tried to right-click in {source}. The attempt was blocked.'
     }
+    if room.competition_id:
+        db.session.add(DisputeCase(
+            competition_id=room.competition_id,
+            wave_id=room.wave_id,
+            room_id=room.id,
+            player_id=user.id,
+            type='fair_play_warning',
+            status='open',
+            priority='high' if source in {'inspect', 'view-source'} else 'normal',
+            reason=payload['message'],
+            created_by=user.id
+        ))
+        db.session.commit()
     socketio.emit('admin_right_click_attempt', payload, room=str(room.id))
 
 
@@ -5761,6 +6483,20 @@ def handle_admin_disqualify_player(data):
         })
     )
     db.session.add(submission)
+    if room.competition_id:
+        db.session.add(DisputeCase(
+            competition_id=room.competition_id,
+            wave_id=room.wave_id,
+            room_id=room.id,
+            player_id=player.id,
+            type='disqualification',
+            status='disqualified',
+            priority='high',
+            reason=reason,
+            created_by=admin.id,
+            resolved_by=admin.id,
+            resolved_at=datetime.now(timezone.utc)
+        ))
     db.session.commit()
     socketio.emit('kicked', {
         'message': f'You were disqualified by admin. Reason: {reason}'

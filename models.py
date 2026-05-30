@@ -81,10 +81,101 @@ class Room(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     ended_at = db.Column(db.DateTime, nullable=True)
     is_public = db.Column(db.Boolean, default=False)
+    competition_id = db.Column(db.Integer, db.ForeignKey('competitions.id'), nullable=True)
+    wave_id = db.Column(db.Integer, db.ForeignKey('competition_waves.id'), nullable=True)
     
     challenge = db.relationship('Challenge', backref='rooms')
     player1 = db.relationship('User', foreign_keys=[player1_id])
     player2 = db.relationship('User', foreign_keys=[player2_id])
+
+class Competition(db.Model):
+    __tablename__ = 'competitions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(160), nullable=False)
+    format = db.Column(db.String(40), default='single_room')
+    stage = db.Column(db.String(40), default='registration')
+    status = db.Column(db.String(30), default='registration')
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
+    max_participants = db.Column(db.Integer, default=2)
+    room_mode = db.Column(db.String(20), default='1v1')
+    players_per_wave = db.Column(db.Integer, default=100)
+    room_visibility = db.Column(db.String(20), default='private')
+    start_at = db.Column(db.String(80), nullable=True)
+    end_at = db.Column(db.String(80), nullable=True)
+    auto_start = db.Column(db.Boolean, default=False)
+    auto_submit = db.Column(db.Boolean, default=True)
+    allowed_attempts = db.Column(db.String(20), default='one')
+    tie_break_rule = db.Column(db.String(120), default='higher_score_then_time')
+    advance_rule = db.Column(db.String(120), default='top_32')
+    fair_play_strictness = db.Column(db.String(20), default='normal')
+    notes = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    challenge = db.relationship('Challenge', backref='competitions')
+    tournament = db.relationship('Tournament', backref='source_competitions')
+    creator = db.relationship('User', foreign_keys=[created_by])
+
+class CompetitionWave(db.Model):
+    __tablename__ = 'competition_waves'
+
+    id = db.Column(db.Integer, primary_key=True)
+    competition_id = db.Column(db.Integer, db.ForeignKey('competitions.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    status = db.Column(db.String(30), default='scheduled')
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=True)
+    start_at = db.Column(db.String(80), nullable=True)
+    end_at = db.Column(db.String(80), nullable=True)
+    players_expected = db.Column(db.Integer, default=0)
+    rooms_created = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    competition = db.relationship('Competition', backref='waves')
+    challenge = db.relationship('Challenge', backref='competition_waves')
+
+class CompetitionAdminAssignment(db.Model):
+    __tablename__ = 'competition_admin_assignments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    competition_id = db.Column(db.Integer, db.ForeignKey('competitions.id'), nullable=False)
+    wave_id = db.Column(db.Integer, db.ForeignKey('competition_waves.id'), nullable=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    role = db.Column(db.String(40), default='room_admin')
+    room_range_start = db.Column(db.Integer, nullable=True)
+    room_range_end = db.Column(db.Integer, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    competition = db.relationship('Competition', backref='admin_assignments')
+    wave = db.relationship('CompetitionWave', backref='admin_assignments')
+    admin = db.relationship('User', foreign_keys=[admin_id])
+
+class DisputeCase(db.Model):
+    __tablename__ = 'dispute_cases'
+
+    id = db.Column(db.Integer, primary_key=True)
+    competition_id = db.Column(db.Integer, db.ForeignKey('competitions.id'), nullable=True)
+    wave_id = db.Column(db.Integer, db.ForeignKey('competition_waves.id'), nullable=True)
+    room_id = db.Column(db.Integer, db.ForeignKey('rooms.id'), nullable=True)
+    player_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    type = db.Column(db.String(40), default='manual_review')
+    status = db.Column(db.String(30), default='open')
+    priority = db.Column(db.String(20), default='normal')
+    reason = db.Column(db.String(220), nullable=False)
+    resolution = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    resolved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+
+    competition = db.relationship('Competition', backref='disputes')
+    wave = db.relationship('CompetitionWave', backref='disputes')
+    room = db.relationship('Room', backref='disputes')
+    player = db.relationship('User', foreign_keys=[player_id])
+    creator = db.relationship('User', foreign_keys=[created_by])
+    resolver = db.relationship('User', foreign_keys=[resolved_by])
 
 class Tournament(db.Model):
     __tablename__ = 'tournaments'

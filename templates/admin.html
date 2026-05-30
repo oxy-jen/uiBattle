@@ -14,6 +14,7 @@
             <a href="#" data-section="challenges"><i class="fas fa-code-branch"></i> Manage Challenges</a>
             <a href="#" data-section="certificates"><i class="fas fa-certificate"></i> Certificates</a>
             <a href="#" data-section="competitions"><i class="fas fa-trophy"></i> Competitions</a>
+            <a href="{{ url_for('admin_competition_guide') }}"><i class="fas fa-book-open"></i> Admin Guide</a>
             <a href="#" data-section="moderation"><i class="fas fa-comments"></i> Chat Moderation</a>
             <a href="#" data-section="broadcast"><i class="fas fa-broadcast-tower"></i> Broadcast</a>
             <a href="#" data-section="site-content"><i class="fas fa-pen-to-square"></i> Site Content</a>
@@ -260,8 +261,9 @@
                     <div class="form-group">
                         <label>Match Room ID Visibility</label>
                         <select id="room-visibility" name="room_visibility">
-                            <option value="private" selected>Private - players must be given the ID</option>
-                            <option value="public">Public - show the ID on player screens</option>
+                            <option value="private" selected>Private invite - players must be given the ID</option>
+                            <option value="assigned">Assigned-only - competition roster controls access</option>
+                            <option value="public">Public lobby - show the ID on player screens</option>
                         </select>
                         <small class="help-text">Private keeps the join ID hidden until you make the room public.</small>
                     </div>
@@ -276,6 +278,146 @@
                     <div class="form-group">
                         <label>Invite Message</label>
                         <textarea id="invite-message" name="invite_message" rows="2" placeholder="Optional short note for the email invite"></textarea>
+                    </div>
+
+                    <div class="admin-code-section competition-setup-panel">
+                        <h3><i class="fas fa-layer-group"></i> Competition Setup</h3>
+                        <small class="help-text">Use this challenge as a saved task, one 1v1 room, or many parallel 1v1 rooms for waves and qualifiers.</small>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Use this challenge for</label>
+                                <select id="launch-mode" name="launch_mode">
+                                    <option value="single_room" selected>Single 1v1 room</option>
+                                    <option value="challenge_only">Challenge only - no room yet</option>
+                                    <option value="bulk_rooms">Bulk 1v1 rooms</option>
+                                    <option value="qualification">Qualification stage</option>
+                                    <option value="bracket">Bracket tournament</option>
+                                    <option value="qualifier_bracket">Qualifier + bracket</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Stage</label>
+                                <select id="stage-type" name="stage_type">
+                                    <option value="practice">Practice / test match</option>
+                                    <option value="qualification">Qualification wave</option>
+                                    <option value="review">Review stage</option>
+                                    <option value="bracket">Bracket round</option>
+                                    <option value="final">Final</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Wave or group name</label>
+                                <input type="text" id="wave-name" name="wave_name" maxlength="80" placeholder="Wave A, Grade 10 Group 2">
+                            </div>
+                            <div class="form-group">
+                                <label>Advance rule</label>
+                                <input type="text" id="advance-rule" name="advance_rule" maxlength="120" placeholder="Top 32 by score, time, and fair play">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Competition name</label>
+                                <input type="text" id="competition-name" name="competition_name" maxlength="160" placeholder="National UI Battle Qualifier">
+                            </div>
+                            <div class="form-group">
+                                <label>Max participants</label>
+                                <input type="number" id="max-participants" name="max_participants" min="1" max="5000" value="1000">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Room mode</label>
+                                <select id="room-mode" name="room_mode">
+                                    <option value="1v1" selected>1v1 rooms</option>
+                                    <option value="solo">Solo score attempts</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Players per wave</label>
+                                <input type="number" id="players-per-wave" name="players_per_wave" min="1" max="5000" value="100">
+                            </div>
+                            <div class="form-group">
+                                <label>Number of rooms to create</label>
+                                <input type="number" id="rooms-to-create" name="rooms_to_create" min="0" max="2500" value="0" readonly>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Start time</label>
+                                <input type="datetime-local" id="start-at" name="start_at">
+                            </div>
+                            <div class="form-group">
+                                <label>End time</label>
+                                <input type="datetime-local" id="end-at" name="end_at">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Allowed attempts</label>
+                                <select id="allowed-attempts" name="allowed_attempts">
+                                    <option value="one">One attempt</option>
+                                    <option value="best_of_2">Best of 2</option>
+                                    <option value="best_of_3">Best of 3</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Fair-play strictness</label>
+                                <select id="fair-play-strictness" name="fair_play_strictness">
+                                    <option value="normal">Normal</option>
+                                    <option value="strict">Strict</option>
+                                    <option value="exam">Exam mode</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="auto-start" name="auto_start">
+                                Auto-start created rooms
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="auto-submit" name="auto_submit" checked>
+                                Auto-submit when timer ends
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>Tie-break rule</label>
+                            <select id="tie-break-rule" name="tie_break_rule">
+                                <option value="higher_score_then_time">Higher score, then faster submit</option>
+                                <option value="fewer_warnings_then_score">Fewer warnings, then score</option>
+                                <option value="admin_review">Admin review</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Admin assignments</label>
+                            <textarea id="admin-assignments" name="admin_assignments" rows="3" placeholder="admin_id:role:room-range&#10;1:director:1-50&#10;2:fair_play:all"></textarea>
+                            <small class="help-text">Use one line per admin: admin ID, role, and optional room range. Director sees everything; room admins can use My Assigned Rooms.</small>
+                        </div>
+                        <div class="form-row bulk-room-options" id="bulk-room-options" hidden>
+                            <div class="form-group">
+                                <label>Pairing method</label>
+                                <select id="pairing-method" name="pairing_method">
+                                    <option value="ordered" selected>Selected order: 1v2, 3v4</option>
+                                    <option value="seeded">Seeded: first vs last</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Bulk room summary</label>
+                                <input type="text" id="bulk-room-summary" value="Select an even number of players" readonly>
+                            </div>
+                        </div>
+                        <label class="tournament-players-select bulk-room-options" id="bulk-participants-wrap" hidden>
+                            Competition participants
+                            <select id="bulk-participants" name="participant_ids" multiple size="8">
+                                {% for p in players %}
+                                    {% if p.role == 'player' %}
+                                    <option value="{{ p.id }}">{{ p.username }} · {{ "%.1f"|format(p.best_accuracy) }}% best</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <small class="help-text">For 1000 students, create qualification waves first, then use the leaderboard to choose top players for a 32, 64, or 128 player bracket.</small>
                     </div>
                     
                     <div id="image-fields" class="type-fields">
@@ -324,7 +466,7 @@
                         </div>
                     </div>
                     
-                    <button type="submit" class="btn-primary">CREATE & LAUNCH ROOM <i class="fas fa-rocket"></i></button>
+                    <button type="submit" class="btn-primary" id="create-challenge-submit">CREATE & LAUNCH ROOM <i class="fas fa-rocket"></i></button>
                 </form>
             </div>
         </div>
@@ -792,6 +934,131 @@
                         <span class="stat-label">Avg Response</span>
                         <span class="stat-sub">Submission time</span>
                     </div>
+                </div>
+            </div>
+
+            <div class="leaderboard-container tournament-admin-card">
+                <h4><i class="fas fa-layer-group"></i> Competition Organizer</h4>
+                <div class="competition-grid">
+                    {% for competition in competitions|default([]) %}
+                    <section class="competition-card" data-competition-id="{{ competition.id }}">
+                        <header>
+                            <div>
+                                <strong>{{ competition.name }}</strong>
+                                <span>{{ competition.format|replace('_', ' ')|title }} · {{ competition.status|upper }}</span>
+                            </div>
+                            <a class="btn-secondary" href="#section-create"><i class="fas fa-plus"></i> New Challenge</a>
+                        </header>
+                        <div class="competition-meta">
+                            <span><i class="fas fa-bullseye"></i> {{ competition.challenge.title if competition.challenge else 'No challenge' }}</span>
+                            <span><i class="fas fa-door-open"></i> {{ competition_room_counts.get(competition.id, 0) }} rooms</span>
+                            <span><i class="fas fa-shield-halved"></i> {{ competition.fair_play_strictness|title }}</span>
+                            <span><i class="fas fa-user-group"></i> {{ competition.max_participants }} max</span>
+                        </div>
+                        <div class="competition-waves">
+                            {% for wave in competition.waves %}
+                            <span>{{ wave.name }} · {{ wave.status|title }} · {{ wave.rooms_created }} rooms</span>
+                            {% else %}
+                            <span>No waves yet</span>
+                            {% endfor %}
+                        </div>
+                        <div class="competition-table-wrap">
+                            <table class="leaderboard-table compact-table">
+                                <thead>
+                                    <tr><th>#</th><th>Select</th><th>Player</th><th>Score</th><th>Done</th><th>Warnings</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in competition_leaderboards.get(competition.id, []) %}
+                                    <tr>
+                                        <td>#{{ row.rank }}</td>
+                                        <td><input type="checkbox" name="participant_ids" value="{{ row.user.id }}"></td>
+                                        <td>{{ row.user.username }}</td>
+                                        <td>{{ row.score }}%</td>
+                                        <td>{{ 'Yes' if row.completed else 'No' }}</td>
+                                        <td>{{ row.fair_play_warnings }}{% if row.disqualified %} · DQ{% endif %}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="6">No qualification scores yet.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <form class="advance-bracket-form" data-competition-id="{{ competition.id }}">
+                            <label>
+                                Advance rule
+                                <select name="top_n">
+                                    <option value="32">Top 32</option>
+                                    <option value="64">Top 64</option>
+                                    <option value="128">Top 128</option>
+                                    <option value="16">Top 16</option>
+                                    <option value="8">Top 8</option>
+                                    <option value="4">Top 4</option>
+                                </select>
+                            </label>
+                            <button type="submit" class="btn-primary"><i class="fas fa-sitemap"></i> Advance To Bracket</button>
+                        </form>
+                        <form class="assignment-form" data-competition-id="{{ competition.id }}">
+                            <label>
+                                Admin
+                                <select name="admin_id" required>
+                                    {% for admin_user in admin_users|default([]) %}
+                                    <option value="{{ admin_user.id }}">{{ admin_user.username }} (#{{ admin_user.id }})</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label>
+                                Role
+                                <select name="role">
+                                    <option value="director">Director</option>
+                                    <option value="room_admin">Room admin</option>
+                                    <option value="fair_play">Fair-play admin</option>
+                                    <option value="scoring">Scoring admin</option>
+                                    <option value="support">Support admin</option>
+                                </select>
+                            </label>
+                            <label><span>Rooms from</span><input type="number" name="room_range_start" min="1" placeholder="1"></label>
+                            <label><span>to</span><input type="number" name="room_range_end" min="1" placeholder="20"></label>
+                            <button type="submit" class="btn-secondary"><i class="fas fa-user-shield"></i> Assign</button>
+                        </form>
+                    </section>
+                    {% else %}
+                    <p class="section-subtitle">No competitions yet. Use Create Challenge and choose Qualification, Bulk Rooms, Bracket, or Qualifier + Bracket.</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="leaderboard-container tournament-admin-card">
+                <h4><i class="fas fa-user-shield"></i> My Assigned Rooms</h4>
+                <div class="tournament-list">
+                    {% for room in my_assigned_rooms|default([]) %}
+                    <div class="tournament-list-row">
+                        <a href="{{ url_for('arena', room_id=room.id) }}">
+                            <strong>{{ room.room_code }}</strong>
+                            <span>{{ room.challenge.title if room.challenge else 'Challenge' }} · {{ room.status|upper }}</span>
+                            <em>{{ room.player1.username if room.player1 else 'Open' }} vs {{ room.player2.username if room.player2 else 'Open' }}</em>
+                        </a>
+                    </div>
+                    {% else %}
+                    <p class="section-subtitle">No assigned room ranges yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="leaderboard-container tournament-admin-card">
+                <h4><i class="fas fa-triangle-exclamation"></i> Dispute Queue</h4>
+                <div class="tournament-list">
+                    {% for case in open_disputes|default([]) %}
+                    <div class="tournament-list-row dispute-row" data-dispute-id="{{ case.id }}">
+                        <a href="{{ url_for('arena', room_id=case.room.id) if case.room else '#' }}">
+                            <strong>{{ case.type|replace('_', ' ')|title }} · {{ case.priority|title }}</strong>
+                            <span>{{ case.reason }}</span>
+                            <em>{{ case.competition.name if case.competition else 'No competition' }} · {{ case.player.username if case.player else 'Unknown player' }}</em>
+                        </a>
+                        <button type="button" class="btn-secondary resolve-dispute-btn" data-dispute-id="{{ case.id }}"><i class="fas fa-check"></i> Resolve</button>
+                    </div>
+                    {% else %}
+                    <p class="section-subtitle">No open dispute cases.</p>
+                    {% endfor %}
                 </div>
             </div>
 
@@ -2426,6 +2693,83 @@
     padding: 10px;
 }
 
+.competition-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.competition-card {
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    padding: 16px;
+    background: var(--panel-glass);
+}
+
+.competition-card header,
+.competition-meta,
+.competition-waves,
+.advance-bracket-form,
+.assignment-form {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.competition-card header {
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.competition-card header strong {
+    display: block;
+    font-size: 18px;
+}
+
+.competition-card header span,
+.competition-meta span,
+.competition-waves span {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.competition-table-wrap {
+    overflow-x: auto;
+    margin: 12px 0;
+}
+
+.compact-table th,
+.compact-table td {
+    padding: 8px;
+    font-size: 13px;
+}
+
+.advance-bracket-form,
+.assignment-form {
+    margin-top: 12px;
+}
+
+.advance-bracket-form label,
+.assignment-form label {
+    flex: 1 1 140px;
+    display: grid;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.assignment-form input,
+.assignment-form select,
+.advance-bracket-form select {
+    width: 100%;
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 10px;
+}
+
 .tournament-players-select {
     grid-column: 1 / -2;
 }
@@ -3317,6 +3661,50 @@ document.querySelectorAll('.type-btn').forEach(btn => {
 
 setChallengeType(document.getElementById('challenge-type')?.value || 'image');
 
+function updateCompetitionSetupUI() {
+    const mode = document.getElementById('launch-mode')?.value || 'single_room';
+    const needsParticipants = ['bulk_rooms', 'qualification', 'bracket', 'qualifier_bracket'].includes(mode);
+    const isBulk = needsParticipants;
+    document.querySelectorAll('.bulk-room-options').forEach((el) => {
+        el.hidden = !isBulk;
+    });
+    const shareEmail = document.getElementById('share-with-email');
+    if (shareEmail) {
+        shareEmail.closest('.form-group').style.display = mode !== 'single_room' ? 'none' : '';
+        if (mode !== 'single_room') shareEmail.checked = false;
+    }
+    const submit = document.getElementById('create-challenge-submit');
+    if (submit) {
+        if (mode === 'challenge_only') submit.innerHTML = 'SAVE CHALLENGE <i class="fas fa-save"></i>';
+        else if (mode === 'qualification') submit.innerHTML = 'CREATE QUALIFIER <i class="fas fa-ranking-star"></i>';
+        else if (mode === 'bracket') submit.innerHTML = 'CREATE BRACKET <i class="fas fa-sitemap"></i>';
+        else if (mode === 'qualifier_bracket') submit.innerHTML = 'CREATE QUALIFIER + BRACKET PLAN <i class="fas fa-trophy"></i>';
+        else if (mode === 'bulk_rooms') submit.innerHTML = 'CREATE BULK ROOMS <i class="fas fa-layer-group"></i>';
+        else submit.innerHTML = 'CREATE & LAUNCH ROOM <i class="fas fa-rocket"></i>';
+    }
+    updateBulkRoomSummary();
+}
+
+function updateBulkRoomSummary() {
+    const selected = Array.from(document.getElementById('bulk-participants')?.selectedOptions || []);
+    const mode = document.getElementById('launch-mode')?.value || 'single_room';
+    const roomMode = document.getElementById('room-mode')?.value || '1v1';
+    const rooms = roomMode === 'solo' ? selected.length : Math.floor(selected.length / 2);
+    const summary = document.getElementById('bulk-room-summary');
+    const roomsInput = document.getElementById('rooms-to-create');
+    if (roomsInput) roomsInput.value = String(rooms || 0);
+    if (summary) {
+        summary.value = selected.length
+            ? `${selected.length} players -> ${rooms} ${roomMode === 'solo' ? 'solo rooms' : '1v1 rooms'}${roomMode !== 'solo' && selected.length % 2 ? ' (one player unpaired)' : ''}${mode === 'bracket' ? ' bracket entrants' : ''}`
+            : 'Select an even number of players';
+    }
+}
+
+document.getElementById('launch-mode')?.addEventListener('change', updateCompetitionSetupUI);
+document.getElementById('bulk-participants')?.addEventListener('change', updateBulkRoomSummary);
+document.getElementById('room-mode')?.addEventListener('change', updateBulkRoomSummary);
+updateCompetitionSetupUI();
+
 // Create challenge form
 document.getElementById('create-challenge-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -3338,8 +3726,41 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
     formData.append('time_limit', document.getElementById('time-limit').value);
     formData.append('description', document.getElementById('description').value);
     formData.append('room_visibility', document.getElementById('room-visibility').value);
+    formData.append('launch_mode', document.getElementById('launch-mode').value);
+    formData.append('stage_type', document.getElementById('stage-type').value);
+    formData.append('wave_name', document.getElementById('wave-name').value);
+    formData.append('advance_rule', document.getElementById('advance-rule').value);
+    formData.append('competition_name', document.getElementById('competition-name').value);
+    formData.append('max_participants', document.getElementById('max-participants').value);
+    formData.append('room_mode', document.getElementById('room-mode').value);
+    formData.append('rooms_to_create', document.getElementById('rooms-to-create').value);
+    formData.append('players_per_wave', document.getElementById('players-per-wave').value);
+    formData.append('start_at', document.getElementById('start-at').value);
+    formData.append('end_at', document.getElementById('end-at').value);
+    formData.append('auto_start', document.getElementById('auto-start').checked ? 'true' : 'false');
+    formData.append('auto_submit', document.getElementById('auto-submit').checked ? 'true' : 'false');
+    formData.append('allowed_attempts', document.getElementById('allowed-attempts').value);
+    formData.append('tie_break_rule', document.getElementById('tie-break-rule').value);
+    formData.append('fair_play_strictness', document.getElementById('fair-play-strictness').value);
+    formData.append('admin_assignments', document.getElementById('admin-assignments').value);
+    formData.append('pairing_method', document.getElementById('pairing-method')?.value || 'ordered');
     formData.append('share_with_email', document.getElementById('share-with-email').checked ? 'true' : 'false');
     formData.append('invite_message', document.getElementById('invite-message').value);
+    const launchMode = document.getElementById('launch-mode').value;
+    if (['bulk_rooms', 'qualification', 'bracket', 'qualifier_bracket'].includes(launchMode)) {
+        const selectedPlayers = Array.from(document.getElementById('bulk-participants').selectedOptions).map(option => option.value);
+        const roomMode = document.getElementById('room-mode').value;
+        const isBracketSize = [4, 8, 16, 32, 64, 128].includes(selectedPlayers.length);
+        if (selectedPlayers.length < 2 || (roomMode !== 'solo' && launchMode !== 'bracket' && selectedPlayers.length % 2 !== 0)) {
+            showToast('Bulk 1v1 rooms need an even number of selected players', 'warning');
+            return;
+        }
+        if (launchMode === 'bracket' && !isBracketSize) {
+            showToast('Bracket mode needs exactly 4, 8, 16, 32, 64, or 128 selected players', 'warning');
+            return;
+        }
+        selectedPlayers.forEach((playerId) => formData.append('participant_ids', playerId));
+    }
     
     if (challengeType === 'image') {
         const file = document.getElementById('target-image').files[0];
@@ -3384,7 +3805,17 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
             const visibility = data.is_public ? 'public' : 'private';
             const inviteStats = data.invite_stats || {sent: 0, failed: 0};
             const suffix = inviteStats.sent ? ` Invites emailed: ${inviteStats.sent}.` : '';
-            showToast(`Room created as ${visibility}! Code: ${data.room_code}.${suffix}`, 'success');
+            if (data.launch_mode === 'challenge_only') {
+                showToast('Challenge saved. Create rooms from it when your wave or bracket is ready.', 'success');
+            } else if (data.launch_mode === 'bulk_rooms') {
+                showToast(`${data.rooms_created} ${visibility} 1v1 rooms created for this wave.`, 'success');
+            } else if (data.launch_mode === 'qualification' || data.launch_mode === 'qualifier_bracket') {
+                showToast(`${data.rooms_created} qualification rooms created and leaderboard tracking is ready.`, 'success');
+            } else if (data.launch_mode === 'bracket') {
+                showToast(`Bracket created with ${data.rooms_created} first-round rooms.`, 'success');
+            } else {
+                showToast(`Room created as ${visibility}! Code: ${data.room_code}.${suffix}`, 'success');
+            }
             setTimeout(() => location.reload(), 1800);
         } else {
             showToast(data.error || 'Error creating challenge', 'error');
@@ -4368,6 +4799,75 @@ document.getElementById('create-tournament-form')?.addEventListener('submit', as
         console.error('create tournament error:', err);
         showToast('Network error creating tournament', 'error');
     }
+});
+
+document.querySelectorAll('.advance-bracket-form').forEach((form) => {
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const competitionId = form.dataset.competitionId;
+        const topN = Number(form.querySelector('[name="top_n"]').value);
+        const card = form.closest('.competition-card');
+        const selected = Array.from(card?.querySelectorAll('input[name="participant_ids"]:checked') || []).map((input) => Number(input.value));
+        try {
+            const res = await fetch(`/admin/competition/${competitionId}/advance-to-bracket`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({top_n: topN, participant_ids: selected, auto_advance: true})
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Could not advance players');
+            showToast(selected.length ? `${selected.length} selected players advanced to bracket` : `Top ${topN} advanced to bracket`, 'success');
+            window.location.href = data.redirect || `/tournament/${data.tournament_id}`;
+        } catch (err) {
+            showToast(err.message || 'Could not create bracket', 'error');
+        }
+    });
+});
+
+document.querySelectorAll('.assignment-form').forEach((form) => {
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const competitionId = form.dataset.competitionId;
+        const payload = Object.fromEntries(new FormData(form).entries());
+        try {
+            const res = await fetch(`/admin/competition/${competitionId}/assignment`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Could not assign admin');
+            showToast('Admin assignment saved', 'success');
+            setTimeout(() => location.reload(), 900);
+        } catch (err) {
+            showToast(err.message || 'Could not assign admin', 'error');
+        }
+    });
+});
+
+document.querySelectorAll('.resolve-dispute-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+        const caseId = button.dataset.disputeId;
+        const resolution = await showPrompt({
+            title: 'Resolve dispute',
+            message: 'Resolution note',
+            value: 'Reviewed by admin.'
+        });
+        if (resolution === null) return;
+        try {
+            const res = await fetch(`/admin/dispute/${caseId}/resolve`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status: 'resolved', resolution})
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Could not resolve dispute');
+            button.closest('.dispute-row')?.remove();
+            showToast('Dispute resolved', 'success');
+        } catch (err) {
+            showToast(err.message || 'Could not resolve dispute', 'error');
+        }
+    });
 });
 
 // Filter functions
