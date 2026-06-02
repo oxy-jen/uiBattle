@@ -25,6 +25,25 @@
             <p><strong>Single 1v1 room</strong> creates one normal arena match for two players.</p>
             <p><strong>Bulk 1v1 rooms</strong> pairs selected players and creates many rooms at once. This is the starting point for waves and qualification rounds.</p>
             <p><strong>Auto-pair live rooms</strong> opens a competition lobby. Admins make the competition live once; each room starts automatically when two players are paired. Odd-numbered players wait in their assigned room until the next partner joins.</p>
+            <p><strong>Qualification stage</strong> creates official qualifying rooms and stores the results for the competition leaderboard.</p>
+            <p><strong>Bracket tournament</strong> creates a knockout tournament from the selected players. Use this only after the roster is final and the number of players is a supported bracket size.</p>
+            <p><strong>Qualifier + bracket</strong> is for events that begin with qualification records and later advance the top players into a tournament bracket.</p>
+
+            <h2>Match Creation Fields</h2>
+            <p><strong>Challenge type:</strong> choose Image Challenge when players must reproduce a target image, or HTML Challenge when the official target is built from HTML, CSS, and optional JavaScript.</p>
+            <p><strong>Challenge name, difficulty, and time limit:</strong> use names that include the round or wave, such as Grade 10 Wave A. Keep time limits consistent inside one stage so scores are comparable.</p>
+            <p><strong>Description:</strong> write the exact task instructions players should see. Include allowed tools, design constraints, and what counts as a complete submission.</p>
+            <p><strong>Match Room ID Visibility:</strong> Private invite hides the room until admins share it. Assigned-only restricts entry through the competition roster. Public lobby exposes the room to player screens.</p>
+            <p><strong>Share invite by email:</strong> use this when players have verified email addresses and should receive the join link immediately after room creation.</p>
+            <p><strong>Stage:</strong> mark rooms as practice, qualification, review, bracket, or final so admins can tell which rooms affect official results.</p>
+            <p><strong>Wave or group name:</strong> use clear labels such as Wave A, Morning Batch, School 3, or Semifinal Room Set.</p>
+            <p><strong>Advance rule:</strong> write the rule before play starts, for example Top 32 by score, time, and fair play. Do not change this after results are visible unless the director announces the change.</p>
+            <p><strong>Room mode:</strong> 1v1 rooms are the official competition format. Solo score attempts are useful for practice, trials, or qualification when direct pairing is not required.</p>
+            <p><strong>Allowed attempts:</strong> One attempt is best for finals. Best of 2 or Best of 3 is useful for qualification, but every player in the same stage must get the same attempt rule.</p>
+            <p><strong>Fair-play strictness:</strong> Normal is for practice, Strict is for official rounds, and Exam mode is for high-stakes events where inspect tools, source viewing, and suspicious behavior need immediate action.</p>
+            <p><strong>Tie-break rule:</strong> choose higher score then faster submit for most events. Use fewer warnings then score when fair play is more important than speed. Use admin review for finals or disputed rounds.</p>
+            <p><strong>Auto-start and auto-submit:</strong> auto-start is useful when rooms are prepared and players are ready at the same time. Auto-submit should stay on for official timed rounds so unfinished work is still recorded.</p>
+            <p><strong>Admin assignments:</strong> add one admin per line with an admin id, role, and optional room range. Example: 1:director:all or 2:fair_play:1-50.</p>
 
             <h2>Large Contest Model</h2>
             <p>For 1000 students, do not run one giant bracket first. Register everyone, split them into waves, run bulk 1v1 rooms or score attempts, rank by score and fair play, then advance the top 32, 64, or 128 into the official bracket.</p>
@@ -51,11 +70,98 @@
             <p>9. Run every bracket round in parallel.</p>
             <p>10. Confirm winners, certificates, and final records.</p>
 
+            <h2>Room Lifecycle Controls</h2>
+            <p><strong>Make Public or Make Private:</strong> switch visibility only when the director is ready for players or spectators to enter. Keep finals private until both finalists are confirmed.</p>
+            <p><strong>Start:</strong> begins the match timer and makes the room live. Use it only after both player names are correct.</p>
+            <p><strong>Pause:</strong> use for verified technical issues, emergency announcements, or director review. Record the reason in the event notes or chat.</p>
+            <p><strong>Resume:</strong> continue only after both players know the match is restarting.</p>
+            <p><strong>End:</strong> closes the room and locks the official result. End rooms after scores are saved and disputes are resolved.</p>
+            <p><strong>Add 30s:</strong> use only for documented issues such as server lag, accidental pause, or director-approved accessibility support. Do not use it to help a losing player.</p>
+            <p><strong>Share Invite by Email:</strong> sends the room link to assigned players when email is available.</p>
+            <p><strong>Watch Players and Full Monitor:</strong> open live supervision views without joining as a player or changing the match result.</p>
+            <p><strong>Kick player:</strong> remove a wrong entrant, disconnected duplicate, or spectator who joined incorrectly. For cheating or rule-breaking, use disqualification instead of a simple kick.</p>
+            <p><strong>Delete Room:</strong> use only for mistaken setup, test rooms, or abandoned rooms that should not count.</p>
+
+            <h2>Live Monitoring Guide</h2>
+            <p>Use Live Arena Monitor to watch both players' rendered output, code panes, and camera feed where enabled. Admins should not edit player work. They observe, warn, pause, disqualify, or record notes.</p>
+            <p>Connect live feeds before the wave starts. If a feed is blank, open the full room monitor, refresh the admin panel, and confirm that the player has joined the correct room.</p>
+            <p>Assign room admins by ranges. A director should watch overall progress while room admins watch detailed behavior in their assigned rooms.</p>
+            <p>For finals, one admin should watch the full monitor, one should watch chat and fair-play alerts, and one should keep event notes.</p>
+
+            <h2>Moderation Workflow</h2>
+            <p><strong>Chat Moderation:</strong> use this section to search room messages, flagged messages, and admin mentions from one place.</p>
+            <p><strong>Flag:</strong> mark harmful, abusive, suspicious, or rule-breaking chat. Flagging preserves the message for review and notifies the room.</p>
+            <p><strong>Reply:</strong> answer player questions without leaving the admin panel. Keep replies short, neutral, and rule-based.</p>
+            <p><strong>Open Room:</strong> jump from a chat issue into the live match when a message needs context.</p>
+            <p><strong>Auto-flagged messages:</strong> messages with sensitive language may already be marked for review. An admin should still decide whether the issue is accidental, disruptive, or disqualifying.</p>
+            <p><strong>Admin mentions:</strong> treat mentions as support requests. Reply publicly if both players need the answer; open the room if the issue affects scoring or fairness.</p>
+
+            <h2>Warnings, Kicks, And Disqualification</h2>
+            <p><strong>Warning:</strong> use for first-time or minor behavior problems such as right-click attempts, inspect shortcuts, off-topic chat, or confusion about rules.</p>
+            <p><strong>Kick:</strong> use for wrong-room joins, duplicate sessions, disruptive spectators, or a player who must rejoin cleanly before the match starts.</p>
+            <p><strong>Disqualification:</strong> use for cheating, repeated inspect/source attempts, abusive chat, identity problems, refusing admin instructions, or tampering with another player's match.</p>
+            <p>Before disqualifying, record a short reason. Good reasons are specific: "Repeated inspect shortcut after warning" or "Abusive chat toward opponent." Avoid vague reasons such as "bad behavior."</p>
+            <p>If a disqualification happens during a tournament match, notify the director so the bracket or qualification leaderboard is reviewed before advancing players.</p>
+
+            <h2>Competition Rules For Players</h2>
+            <p>Players must join only their assigned room and use only their own account. Sharing accounts, joining for another player, or using another person's device as the competitor is not allowed.</p>
+            <p>Players must build the requested UI inside the arena editor. External code, copied full solutions, developer tools, inspect shortcuts, view source, and automation that bypasses the challenge are not allowed unless the director explicitly permits them.</p>
+            <p>Players may ask admins for technical help, but admins cannot provide design answers, code solutions, or strategic hints during official rounds.</p>
+            <p>Players must keep chat respectful and competition-related. Harassment, threats, offensive language, spam, or attempts to distract an opponent can lead to warning or disqualification.</p>
+            <p>Players are responsible for submitting before time ends. When auto-submit is enabled, the system submits the current work at the timer end.</p>
+            <p>Network or device problems must be reported immediately. Admins may pause, add time, restart a room, or schedule a rematch only when the issue is verified and affects fairness.</p>
+
+            <h2>Scoring And Tie Rules</h2>
+            <p>Automatic score should be treated as the first result, not the final judgment in disputed matches. Admins review close scores, broken submissions, flagged behavior, and technical problems.</p>
+            <p>When the tie-break rule is higher score then faster submit, compare score first and submission time second. When the rule is fewer warnings then score, fair-play warnings can decide the match before raw score.</p>
+            <p>For admin review ties, the director should compare final output, task requirements, responsiveness, accessibility, and rule compliance. The decision should be recorded before advancing the winner.</p>
+            <p>Disqualified players should not advance from a qualification leaderboard or tournament match unless the director reverses the decision after review.</p>
+
+            <h2>Broadcasts And Announcements</h2>
+            <p><strong>System Broadcast:</strong> send room announcements such as "Round starts in two minutes" or "Pause all work." Choose one target room or all active rooms.</p>
+            <p><strong>Email Everyone:</strong> send event updates to registered users. Use verified-only when the event requires reliable delivery records.</p>
+            <p><strong>Voice Broadcast:</strong> use microphone broadcast for urgent live instructions. Keep it short, announce the room or wave first, and avoid giving competitive hints.</p>
+            <p>For official rounds, broadcast the same instruction to every affected room so no player receives extra information.</p>
+
+            <h2>Player And Roster Management</h2>
+            <p>Use Add Player before an event when a student is missing from the roster. Keep role set to Player unless the person must access admin tools.</p>
+            <p>If a password is generated, give it only to the correct student and recommend changing it after login if the app supports that workflow.</p>
+            <p>Use search and filters to find players quickly. Review username, role, match count, best accuracy, wins, win rate, leaderboard status, and joined date before assigning rooms.</p>
+            <p>Do not promote a player to admin during a live competition unless the director approves it.</p>
+
+            <h2>Spectators</h2>
+            <p>Spectators can watch after the first two players occupy the match slots. Admins should keep finals and official rooms private until spectators are allowed.</p>
+            <p>Remove spectators who distract players, reveal answers, spam chat, or join a restricted room. For public events, assign a support admin to spectator management.</p>
+
+            <h2>Certificates, Awards, And Records</h2>
+            <p>Use the Certificate Designer before the final event ends. Confirm organization name, competition name, officials, sponsors, signatures, award date, and certificate wording.</p>
+            <p>After winners are confirmed, award certificates from the player list or tournament page. Do not award certificates before disputes and disqualifications are resolved.</p>
+            <p>Use award cards for special recognition such as best design, fair play, fastest accurate submission, or outstanding improvement.</p>
+            <p>Export data after the event if records need to be archived outside the app. Keep challenge names, wave names, winners, disqualifications, and certificate settings consistent for later verification.</p>
+
+            <h2>Dispute Review Checklist</h2>
+            <p>1. Open the room and review both player outputs.</p>
+            <p>2. Check chat moderation records and any flagged messages.</p>
+            <p>3. Check fair-play alerts, right-click or inspect attempts, and admin warnings.</p>
+            <p>4. Confirm whether the timer, auto-submit, or connection failed for either player.</p>
+            <p>5. Compare the score with the published tie-break rule.</p>
+            <p>6. Decide: keep result, adjust by admin review, restart, rematch, or disqualify.</p>
+            <p>7. Record the reason before advancing the winner or publishing awards.</p>
+
+            <h2>Emergency Procedures</h2>
+            <p><strong>Wrong challenge:</strong> pause or end affected rooms, create corrected rooms, and announce that the first attempt is void.</p>
+            <p><strong>Wrong player joined:</strong> kick the wrong entrant before start, confirm the assigned player, then start or restart the room.</p>
+            <p><strong>Many players cannot join:</strong> keep rooms private, use email invite or room codes again, and delay the wave start instead of starting partial rooms.</p>
+            <p><strong>Server or network issue:</strong> pause affected rooms, broadcast a short status update, and resume only when the director confirms the issue is stable.</p>
+            <p><strong>Rule dispute:</strong> stop advancement for that match, gather logs, and let the tournament director make the final decision.</p>
+
             <h2>Current Tools In This App</h2>
-            <p>The Create Challenge tab can now save a challenge only, create one room, create many paired 1v1 rooms, or create an auto-pair live lobby. The Competitions tab can create database tournaments up to 128 players. The Live Arena lets admins watch rooms and fair-play incidents.</p>
+            <p>The Create Challenge tab can save a challenge only, create one room, create many paired 1v1 rooms, open an auto-pair live lobby, create qualification records, and start bracket workflows. The Competitions tab can create database tournaments up to 128 players and advance qualification winners into brackets. The Live Arena lets admins watch rooms, code, output, camera feeds, chat issues, and fair-play incidents.</p>
 
             <h2>Operational Safeguards</h2>
             <p>Admin assignments are saved to the database and shown in My Assigned Rooms. If an admin has active assigned rooms but is not watching any of them, the admin panel shows a warning so supervision duties stay visible.</p>
+            <p>Every official event should have a director, at least one room admin, and at least one moderation or fair-play admin. Large events should also have support admins for login, room codes, email invites, and spectator questions.</p>
+            <p>Do not remove existing rooms, scores, or players during a live dispute unless the director has already decided that the record should be void.</p>
         </article>
     </section>
 </main>
