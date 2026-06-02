@@ -290,6 +290,7 @@
                                     <option value="single_room" selected>Single 1v1 room</option>
                                     <option value="challenge_only">Challenge only - no room yet</option>
                                     <option value="bulk_rooms">Bulk 1v1 rooms</option>
+                                    <option value="auto_pair_live">Auto-pair live rooms</option>
                                     <option value="qualification">Qualification stage</option>
                                     <option value="bracket">Bracket tournament</option>
                                     <option value="qualifier_bracket">Qualifier + bracket</option>
@@ -418,6 +419,7 @@
                             </select>
                         </label>
                         <small class="help-text">For 1000 students, create qualification waves first, then use the leaderboard to choose top players for a 32, 64, or 128 player bracket.</small>
+                        <small class="help-text">Auto-pair live rooms let admins make the competition live once. Players then fill two-person rooms automatically; an odd player waits in a locked room until a partner joins.</small>
                     </div>
                     
                     <div id="image-fields" class="type-fields">
@@ -1054,6 +1056,12 @@
 
             <div class="leaderboard-container tournament-admin-card">
                 <h4><i class="fas fa-user-shield"></i> My Assigned Rooms</h4>
+                {% for warning in my_assignment_warnings|default([]) %}
+                <div class="assignment-warning">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <span>{{ warning.message }}</span>
+                </div>
+                {% endfor %}
                 <div class="tournament-list">
                     {% for room in my_assigned_rooms|default([]) %}
                     <div class="tournament-list-row">
@@ -2759,6 +2767,23 @@
     font-size: 13px;
 }
 
+.assignment-warning {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    border-radius: 8px;
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.assignment-warning i {
+    color: var(--warning);
+}
+
 .competition-table-wrap {
     overflow-x: auto;
     margin: 12px 0;
@@ -3905,6 +3930,7 @@ function updateCompetitionSetupUI() {
     const submit = document.getElementById('create-challenge-submit');
     if (submit) {
         if (mode === 'challenge_only') submit.innerHTML = 'SAVE CHALLENGE <i class="fas fa-save"></i>';
+        else if (mode === 'auto_pair_live') submit.innerHTML = 'CREATE AUTO-PAIR LOBBY <i class="fas fa-user-group"></i>';
         else if (mode === 'qualification') submit.innerHTML = 'CREATE QUALIFIER <i class="fas fa-ranking-star"></i>';
         else if (mode === 'bracket') submit.innerHTML = 'CREATE BRACKET <i class="fas fa-sitemap"></i>';
         else if (mode === 'qualifier_bracket') submit.innerHTML = 'CREATE QUALIFIER + BRACKET PLAN <i class="fas fa-trophy"></i>';

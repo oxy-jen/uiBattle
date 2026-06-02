@@ -1653,6 +1653,7 @@ def challenge_usage_to_format(value):
         'challenge_only': 'challenge_only',
         'single_room': 'single_room',
         'bulk_rooms': 'bulk_rooms',
+        'auto_pair_live': 'auto_pair_live',
         'qualification': 'qualification',
         'bracket': 'bracket',
         'qualifier_bracket': 'qualifier_bracket'
@@ -1774,6 +1775,121 @@ def create_competition_room(challenge_id, competition=None, wave=None, player1_i
     db.session.add(room)
     return room
 
+def is_auto_pair_competition(competition):
+    return bool(competition and competition.format == 'auto_pair_live')
+
+def is_auto_pair_room(room):
+    competition = db.session.get(Competition, room.competition_id) if room and room.competition_id else None
+    return bool(is_auto_pair_competition(competition))
+
+def competition_player_ids(competition_id):
+    ids = set()
+    if not competition_id:
+        return ids
+    rooms = Room.query.filter_by(competition_id=competition_id).all()
+    for room in rooms:
+        if room.player1_id:
+            ids.add(room.player1_id)
+        if room.player2_id:
+            ids.add(room.player2_id)
+    return ids
+
+def auto_pair_competition_codes(competition_id):
+    if not competition_id:
+        return set()
+    return {
+        (code or '').strip().upper()
+        for (code,) in db.session.query(Room.room_code).filter_by(competition_id=competition_id).all()
+        if code
+    }
+
+def set_auto_pair_competition_live(competition, wave=None):
+    if not is_auto_pair_competition(competition):
+        return
+    competition.status = 'live'
+    competition.stage = competition.stage or 'qualification'
+    if wave:
+        wave.status = 'live'
+
+def room_player_payload(room, username=None, message=None):
+    return {
+        'room_id': room.id if room else None,
+        'player1': room.player1.username if room and room.player1 else None,
+        'player2': room.player2.username if room and room.player2 else None,
+        'username': username,
+        'message': message
+    }
+
+def emit_room_players(room, username=None, message=None):
+    if not room:
+        return
+    payload = room_player_payload(room, username=username, message=message)
+    socketio.emit('player_joined', payload, room=str(room.id))
+    socketio.emit('player_list_update', payload, room=str(room.id))
+
+def start_room_match(room, started_by=None):
+    if not room or not room.challenge or room.status == 'ended':
+        return False
+    room.status = 'running'
+    if started_by:
+        room.started_by = started_by
+    tournament_match = TournamentMatch.query.filter_by(room_id=room.id).first()
+    if tournament_match and tournament_match.status == 'waiting':
+        tournament_match.status = 'live'
+    db.session.commit()
+    start_room_timer_if_needed(room)
+    return True
+
+def find_or_create_auto_pair_room(source_room, user):
+    competition = db.session.get(Competition, source_room.competition_id) if source_room and source_room.competition_id else None
+    if not is_auto_pair_competition(competition):
+        return source_room
+
+    existing = Room.query.filter(
+        Room.competition_id == competition.id,
+        Room.status != 'ended',
+        ((Room.player1_id == user.id) | (Room.player2_id == user.id))
+    ).order_by(Room.created_at.desc(), Room.id.desc()).first()
+    if existing:
+        return existing
+
+    current_players = competition_player_ids(competition.id)
+    max_participants = max(1, int(competition.max_participants or 1))
+    if len(current_players) >= max_participants:
+        return None
+
+    waiting_room = Room.query.filter(
+        Room.competition_id == competition.id,
+        Room.status == 'waiting',
+        Room.player1_id.isnot(None),
+        Room.player2_id.is_(None),
+        Room.player1_id != user.id
+    ).order_by(Room.created_at.asc(), Room.id.asc()).first()
+    if waiting_room:
+        return waiting_room
+
+    empty_room = Room.query.filter(
+        Room.competition_id == competition.id,
+        Room.status == 'waiting',
+        Room.player1_id.is_(None),
+        Room.player2_id.is_(None)
+    ).order_by(Room.created_at.asc(), Room.id.asc()).first()
+    if empty_room:
+        return empty_room
+
+    wave = db.session.get(CompetitionWave, source_room.wave_id) if source_room and source_room.wave_id else None
+    room = create_competition_room(
+        competition.challenge_id,
+        competition=competition,
+        wave=wave,
+        is_public=(competition.room_visibility == 'public'),
+        status='waiting'
+    )
+    if wave:
+        wave.rooms_created = (wave.rooms_created or 0) + 1
+    db.session.flush()
+    return room
+
 def pair_players_for_rooms(players, pairing_method='ordered'):
     ordered_players = list(players or [])
     if pairing_method == 'seeded':
@@ -1807,6 +1923,36 @@ def build_my_assigned_rooms(admin_id):
     if not room_ids:
         return []
     return Room.query.filter(Room.id.in_(sorted(set(room_ids)))).order_by(Room.created_at.desc()).all()
+
+def build_admin_assignment_warnings(admin_id):
+    watched_room_ids = {
+        int(info.get('room_id'))
+        for info in connected_users.values()
+        if info.get('user_id') == admin_id and info.get('role') == 'admin' and info.get('room_id')
+    }
+    warnings = []
+    assignments = CompetitionAdminAssignment.query.filter_by(admin_id=admin_id).all()
+    for assignment in assignments:
+        query = Room.query.filter_by(competition_id=assignment.competition_id)
+        if assignment.wave_id:
+            query = query.filter_by(wave_id=assignment.wave_id)
+        rooms = query.order_by(Room.created_at.asc(), Room.id.asc()).all()
+        start = assignment.room_range_start or 1
+        end = assignment.room_range_end or len(rooms)
+        assigned = [
+            room for index, room in enumerate(rooms, start=1)
+            if start <= index <= end and room.status in {'waiting', 'running', 'paused'}
+        ]
+        if assigned and not any(room.id in watched_room_ids for room in assigned):
+            competition = db.session.get(Competition, assignment.competition_id)
+            warnings.append({
+                'assignment': assignment,
+                'competition': competition,
+                'room_count': len(assigned),
+                'range': f'{start}-{end}',
+                'message': f'You are assigned to {len(assigned)} active room(s) in range {start}-{end}, but you are not watching any of them right now.'
+            })
+    return warnings
 
 def qualification_rows(competition_id=None, wave_id=None, limit=None):
     query = Room.query
@@ -3604,6 +3750,7 @@ def admin_panel():
         for competition in competitions
     }
     my_assigned_rooms = build_my_assigned_rooms(user.id)
+    my_assignment_warnings = build_admin_assignment_warnings(user.id)
     open_disputes = DisputeCase.query.filter(DisputeCase.status.in_(['open', 'review'])).order_by(DisputeCase.created_at.desc()).limit(80).all()
     admin_users = User.query.filter_by(role='admin').order_by(User.username.asc()).all()
 
@@ -3664,6 +3811,7 @@ def admin_panel():
                          competition_room_counts=competition_room_counts,
                          competition_leaderboards=competition_leaderboards,
                          my_assigned_rooms=my_assigned_rooms,
+                         my_assignment_warnings=my_assignment_warnings,
                          open_disputes=open_disputes,
                          admin_users=admin_users,
                          site_content=get_site_content(),
@@ -4283,7 +4431,7 @@ def create_challenge():
 
     if challenge_type not in {'image', 'html'}:
         return jsonify({'success': False, 'error': 'Invalid challenge type'}), 400
-    if launch_mode not in {'challenge_only', 'single_room', 'bulk_rooms', 'qualification', 'bracket', 'qualifier_bracket'}:
+    if launch_mode not in {'challenge_only', 'single_room', 'bulk_rooms', 'auto_pair_live', 'qualification', 'bracket', 'qualifier_bracket'}:
         return jsonify({'success': False, 'error': 'Invalid launch mode'}), 400
     if not title:
         return jsonify({'success': False, 'error': 'Challenge name is required'}), 400
@@ -4379,7 +4527,7 @@ def create_challenge():
             created_by=session['user_id'],
             format=challenge_usage_to_format(launch_mode),
             stage=stage_type or 'practice',
-            status='scheduled' if launch_mode in {'qualification', 'qualifier_bracket', 'bulk_rooms'} else (stage_type or 'practice'),
+            status='scheduled' if launch_mode in {'qualification', 'qualifier_bracket', 'bulk_rooms', 'auto_pair_live'} else (stage_type or 'practice'),
             max_participants=max_participants,
             room_mode=room_mode,
             players_per_wave=players_per_wave,
@@ -4393,15 +4541,15 @@ def create_challenge():
             advance_rule=advance_rule or 'top_32',
             fair_play_strictness=fair_play_strictness
         )
-        if launch_mode in {'bulk_rooms', 'qualification', 'qualifier_bracket'}:
+        if launch_mode in {'bulk_rooms', 'auto_pair_live', 'qualification', 'qualifier_bracket'}:
             wave = create_wave_record(
                 competition,
                 wave_name or 'Wave A',
                 challenge_id=new_challenge.id,
-                status='live' if auto_start else 'scheduled',
+                status='live' if auto_start and launch_mode != 'auto_pair_live' else 'scheduled',
                 start_at=start_at,
                 end_at=end_at,
-                players_expected=len(ordered_bulk_players)
+                players_expected=len(ordered_bulk_players) if ordered_bulk_players else max_participants
             )
         add_competition_assignments(competition, parse_admin_assignment_lines(assignment_lines), wave=wave)
 
@@ -4416,6 +4564,19 @@ def create_challenge():
             is_public=room_is_public
         )
         rooms_created.append(new_room)
+    elif launch_mode == 'auto_pair_live':
+        new_room = create_competition_room(
+            new_challenge.id,
+            competition=competition,
+            wave=wave,
+            status='waiting',
+            is_public=room_is_public
+        )
+        rooms_created.append(new_room)
+        if wave:
+            wave.rooms_created = 1
+        if auto_start:
+            set_auto_pair_competition_live(competition, wave=wave)
     elif launch_mode in {'bulk_rooms', 'qualification', 'qualifier_bracket'}:
         if room_mode == 'solo':
             for player in ordered_bulk_players:
@@ -4494,23 +4655,18 @@ def room_action(room_id):
     
     if action == 'start':
         if room.status == 'waiting' or room.status == 'paused':
-            room.status = 'running'
-            room.started_by = session['user_id']
-            tournament_match = TournamentMatch.query.filter_by(room_id=room.id).first()
-            if tournament_match and tournament_match.status == 'waiting':
-                tournament_match.status = 'live'
-            db.session.commit()
-            challenge = room.challenge
-            if room.id not in room_timers or room_timers.get(room.id, 0) <= 0:
-                room_timers[room.id] = challenge.time_limit
-            socketio.emit('challenge_started', {
-                'time_limit': challenge.time_limit,
-                'challenge_title': challenge.title,
-                'room_id': room.id
-            }, room=str(room_id))
-            thread = threading.Thread(target=run_room_timer, args=(room_id,))
-            thread.daemon = True
-            thread.start()
+            competition = db.session.get(Competition, room.competition_id) if room.competition_id else None
+            if is_auto_pair_competition(competition) and not (room.player1_id and room.player2_id):
+                wave = db.session.get(CompetitionWave, room.wave_id) if room.wave_id else None
+                set_auto_pair_competition_live(competition, wave=wave)
+                room.status = 'waiting'
+                room.started_by = session['user_id']
+                db.session.commit()
+                socketio.emit('system_announcement', {
+                    'message': 'Auto-pair competition is live. Players will be matched in pairs and each room starts when both players arrive.'
+                }, room=str(room_id))
+            else:
+                start_room_match(room, started_by=session['user_id'])
     elif action == 'pause':
         if room.status == 'running':
             room.status = 'paused'
@@ -5327,6 +5483,7 @@ def room_invite(room_code):
         flash('That match invite is no longer available.', 'warning')
         return redirect(url_for('dashboard'))
 
+    original_room = room
     role = 'spectator'
     if user.role == 'admin':
         role = 'admin'
@@ -5334,6 +5491,27 @@ def room_invite(room_code):
         role = 'player1'
     elif room.player2_id == user.id:
         role = 'player2'
+    elif is_auto_pair_room(room):
+        target_room = find_or_create_auto_pair_room(room, user)
+        if not target_room:
+            flash('This competition is already full.', 'warning')
+            return redirect(url_for('dashboard'))
+        room = target_room
+        if not room.player1_id:
+            room.player1_id = user.id
+            role = 'player1'
+        elif not room.player2_id and room.player1_id != user.id:
+            room.player2_id = user.id
+            role = 'player2'
+        if room.player1_id and room.player2_id and room.status == 'waiting':
+            competition = db.session.get(Competition, room.competition_id) if room.competition_id else None
+            if is_auto_pair_competition(competition) and competition.status == 'live':
+                db.session.commit()
+                emit_room_players(room, username=user.username)
+                start_room_match(room, started_by=room.started_by or competition.created_by)
+                socketio.emit('system_announcement', {'message': 'Your partner joined. Match started automatically.'}, room=str(room.id))
+                return redirect(url_for('arena', room_id=room.id, role=role))
+        db.session.commit()
     elif room.status == 'waiting' and not room.player1_id:
         room.player1_id = user.id
         db.session.commit()
@@ -5343,11 +5521,11 @@ def room_invite(room_code):
         db.session.commit()
         role = 'player2'
 
-    socketio.emit('player_joined', {
-        'player1': room.player1.username if room.player1 else None,
-        'player2': room.player2.username if room.player2 else None,
-        'username': user.username
-    }, room=str(room.id))
+    emit_room_players(room, username=user.username)
+    if original_room.id != room.id:
+        socketio.emit('system_announcement', {
+            'message': f'{user.username} was moved into the next auto-pair room and is waiting for a partner.'
+        }, room=str(original_room.id))
     return redirect(url_for('arena', room_id=room.id, role=role))
 
 @app.route('/admin/room/<int:room_id>/share-email', methods=['POST'])
@@ -5392,19 +5570,29 @@ def join_room_route():
     if user.role != 'admin':
         provided_code = str(data.get('room_code') or data.get('match_room_id') or '').strip().upper()
         expected_code = (room.room_code or '').strip().upper()
-        if provided_code != expected_code:
+        accepted_codes = {expected_code}
+        if is_auto_pair_room(room):
+            accepted_codes.update(auto_pair_competition_codes(room.competition_id))
+        if provided_code not in accepted_codes:
             return jsonify({
                 'success': False,
                 'error': 'Enter the correct match room ID to join as a player'
             }), 403
-    
-    if room.status != 'waiting':
-        print(f"Room status is {room.status}, cannot join")
-        return jsonify({'success': False, 'error': 'Room already started'}), 400
-    
+
+    if is_auto_pair_room(room):
+        target_room = find_or_create_auto_pair_room(room, user)
+        if not target_room:
+            return jsonify({'success': False, 'error': 'This competition is already full'}), 400
+        room = target_room
+        room_id = room.id
+
     if room.player1_id == user.id or room.player2_id == user.id:
         print(f"User {user.username} already in room")
         return jsonify({'success': True, 'room_id': room_id, 'role': 'player'})
+
+    if room.status != 'waiting':
+        print(f"Room status is {room.status}, cannot join")
+        return jsonify({'success': False, 'error': 'Room already started'}), 400
     
     if not room.player1_id:
         room.player1_id = user.id
@@ -5416,13 +5604,15 @@ def join_room_route():
         print("Room is full")
         return jsonify({'success': False, 'error': 'Room is full'}), 400
     
+    should_auto_start = False
+    competition = None
+    if room.player1_id and room.player2_id and is_auto_pair_room(room):
+        competition = db.session.get(Competition, room.competition_id) if room.competition_id else None
+        should_auto_start = bool(is_auto_pair_competition(competition) and competition.status == 'live')
+
     db.session.commit()
     
-    socketio.emit('player_joined', {
-        'player1': room.player1.username if room.player1 else None,
-        'player2': room.player2.username if room.player2 else None,
-        'username': user.username
-    }, room=str(room_id))
+    emit_room_players(room, username=user.username)
     
     socketio.emit('chat_message', {
         'username': 'SYSTEM',
@@ -5430,6 +5620,12 @@ def join_room_route():
         'is_system': True,
         'timestamp': datetime.now(timezone.utc).isoformat()
     }, room=str(room_id))
+
+    if should_auto_start:
+        start_room_match(room, started_by=room.started_by or (competition.created_by if competition else None))
+        socketio.emit('system_announcement', {'message': 'Your partner joined. Match started automatically.'}, room=str(room.id))
+    elif is_auto_pair_room(room) and not room.player2_id:
+        socketio.emit('system_announcement', {'message': 'Waiting for a partner. The match starts automatically when the second player joins.'}, room=str(room.id))
     
     return jsonify({'success': True, 'room_id': room_id, 'role': 'player'})
 

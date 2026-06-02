@@ -191,7 +191,7 @@
             <div class="editor-overlay" id="editor-overlay">
                 <div class="overlay-content">
                     <i class="fas fa-hourglass-half"></i>
-                    <span>Waiting for admin to start the challenge...</span>
+                    <span>{% if room.competition_id and room.status == 'waiting' and (not room.player1_id or not room.player2_id) %}Waiting for a partner. The match starts automatically when both players are here.{% else %}Waiting for admin to start the challenge...{% endif %}</span>
                 </div>
             </div>
             <div class="editor-statusbar">
@@ -396,6 +396,23 @@
                 </div>
                 <div id="online-users-list" class="online-users-list">
                     <div class="spectator-placeholder">Connecting...</div>
+                </div>
+            </div>
+            <div class="sidebar-card player-docket-card">
+                <div class="sidebar-card-header">
+                    <i class="fas fa-clipboard-list"></i> PLAYER DOCKET
+                </div>
+                <div id="player-docket-list" class="online-users-list">
+                    <div class="online-user">
+                        <span class="online-dot"></span>
+                        <span id="docket-player1">{{ player1_username or 'Waiting for Player 1' }}</span>
+                        <small>Player 1</small>
+                    </div>
+                    <div class="online-user">
+                        <span class="online-dot"></span>
+                        <span id="docket-player2">{{ player2_username or 'Waiting for Player 2' }}</span>
+                        <small>Player 2</small>
+                    </div>
                 </div>
             </div>
             <div class="sidebar-card">

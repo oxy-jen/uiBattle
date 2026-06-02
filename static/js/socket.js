@@ -76,7 +76,7 @@ socket.onAny((event, ...args) => {
 // Player joined/left handlers
 socket.on('player_joined', (data) => {
     console.log('ðŸ‘¤ player_joined event:', data);
-    showToast(`${data.username} joined the arena!`, 'info');
+    showToast(data.message || `${data.username} joined the arena!`, 'info');
     if (window.ARENA_CONFIG) {
         window.ARENA_CONFIG.player1Username = data.player1 || window.ARENA_CONFIG.player1Username || '';
         window.ARENA_CONFIG.player2Username = data.player2 || window.ARENA_CONFIG.player2Username || '';
@@ -85,6 +85,15 @@ socket.on('player_joined', (data) => {
     const p2El = document.getElementById('p2-username');
     if (p1El && data.player1) p1El.textContent = data.player1;
     if (p2El && data.player2) p2El.textContent = data.player2;
+    const docketP1 = document.getElementById('docket-player1');
+    const docketP2 = document.getElementById('docket-player2');
+    if (docketP1) docketP1.textContent = data.player1 || 'Waiting for Player 1';
+    if (docketP2) docketP2.textContent = data.player2 || 'Waiting for Player 2';
+    const overlay = document.getElementById('editor-overlay');
+    const overlaySpan = overlay?.querySelector('.overlay-content span');
+    if (overlaySpan && data.player1 && !data.player2) {
+        overlaySpan.textContent = 'Waiting for a partner. The match starts automatically when both players are here.';
+    }
 });
 
 socket.on('player_left', (data) => {
