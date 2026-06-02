@@ -3972,6 +3972,55 @@ def admin_broadcast_email():
         'message': f'Email broadcast sent to {sent} user(s).'
     })
 
+@app.route('/admin/player/create', methods=['POST'])
+@admin_required
+def admin_create_player():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    email_raw = (data.get('email') or '').strip()
+    email = valid_email(email_raw) if email_raw else None
+    password = data.get('password') or ''
+    role = 'admin' if data.get('role') == 'admin' else 'player'
+    mark_verified = bool(data.get('email_verified', True))
+    generated_password = False
+
+    if not username:
+        return jsonify({'success': False, 'error': 'Player name is required'}), 400
+    if email_raw and email is None:
+        return jsonify({'success': False, 'error': 'Enter a valid email address or leave it blank'}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({'success': False, 'error': 'Username already exists'}), 400
+    if email and User.query.filter_by(email=email).first():
+        return jsonify({'success': False, 'error': 'Email already exists'}), 400
+
+    if not password:
+        password = f"Temp-{secrets.token_urlsafe(10)}-A1"
+        generated_password = True
+    elif not password_is_strong(password):
+        return jsonify({'success': False, 'error': 'Use at least 12 characters with uppercase, lowercase, and a number'}), 400
+
+    new_user = User(username=username, email=email, role=role)
+    new_user.set_password(password)
+    db.session.add(new_user)
+    db.session.commit()
+
+    if email and mark_verified:
+        profiles = load_profile_store()
+        profile = profiles.setdefault(str(new_user.id), {})
+        profile['email_verified'] = True
+        profile.pop('email_verification_hash', None)
+        profile.pop('email_verification_expires_at', None)
+        save_profile_store(profiles)
+
+    return jsonify({
+        'success': True,
+        'user': new_user.to_dict(),
+        'email': new_user.email or '',
+        'generated_password': generated_password,
+        'temporary_password': password if generated_password else '',
+        'message': f'{role.title()} {username} created.'
+    })
+
 @app.route('/admin/chat/<int:message_id>/flag', methods=['POST'])
 @admin_required
 def admin_flag_chat_message(message_id):

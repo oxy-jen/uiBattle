@@ -678,8 +678,40 @@
                     <option value="admin">Admins</option>
                     <option value="player">Regular Players</option>
                 </select>
+                <button type="button" class="btn-primary" onclick="toggleAddPlayerPanel()"><i class="fas fa-user-plus"></i> Add Player</button>
                 <button onclick="refreshPlayers()" class="btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>
             </div>
+
+            <form id="admin-add-player-form" class="admin-add-player-panel" hidden>
+                <div>
+                    <strong><i class="fas fa-user-plus"></i> Add Player</strong>
+                    <span>Create a student account immediately for events, rooms, or tournaments.</span>
+                </div>
+                <label>
+                    Username
+                    <input type="text" id="new-player-username" maxlength="80" autocomplete="off" required>
+                </label>
+                <label>
+                    Email
+                    <input type="email" id="new-player-email" maxlength="255" autocomplete="off" placeholder="Optional">
+                </label>
+                <label>
+                    Password
+                    <input type="text" id="new-player-password" autocomplete="off" placeholder="Leave blank to generate">
+                </label>
+                <label>
+                    Role
+                    <select id="new-player-role">
+                        <option value="player" selected>Player</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </label>
+                <label class="check-row">
+                    <input type="checkbox" id="new-player-email-verified" checked>
+                    <span>Mark email verified</span>
+                </label>
+                <button type="submit" class="btn-primary"><i class="fas fa-plus"></i> Create Account</button>
+            </form>
             
             <div class="players-table-container">
                 <table class="players-table">
@@ -1277,8 +1309,13 @@
                 <h3><i class="fas fa-broadcast-tower"></i> System Broadcast</h3>
                 <div class="form-group">
                     <label>Target Room (optional)</label>
-                    <input type="number" id="broadcast-room-id" placeholder="Leave empty for all rooms">
-                    <small>Specific room ID or broadcast to all active rooms</small>
+                    <select id="broadcast-room-id">
+                        <option value="">All active rooms</option>
+                        {% for room in rooms %}
+                        <option value="{{ room.id }}">{{ room.room_code }} - {{ room.challenge.title if room.challenge else 'No challenge' }} ({{ room.status }})</option>
+                        {% endfor %}
+                    </select>
+                    <small>Choose one room, or leave set to all active rooms.</small>
                 </div>
                 <div class="form-group">
                     <label>Announcement Message</label>
@@ -1301,6 +1338,21 @@
                     <button onclick="broadcastMessage()" class="btn-primary"><i class="fas fa-paper-plane"></i> Send Broadcast</button>
                     <button onclick="broadcastToAll()" class="btn-secondary"><i class="fas fa-globe"></i> Broadcast to All</button>
                     <button onclick="emailBroadcastToAll()" class="btn-secondary"><i class="fas fa-envelope-open-text"></i> Email Everyone</button>
+                </div>
+                <div class="voice-broadcast-panel">
+                    <div>
+                        <h4><i class="fas fa-microphone-lines"></i> Voice Broadcast</h4>
+                        <p class="section-subtitle">Use the Target Room field above for one room, or broadcast microphone audio to all active rooms.</p>
+                    </div>
+                    <div class="broadcast-actions">
+                        <button type="button" id="voice-broadcast-room-btn" class="btn-secondary" onclick="toggleAdminVoiceBroadcast('room')">
+                            <i class="fas fa-microphone"></i> Voice Target Room
+                        </button>
+                        <button type="button" id="voice-broadcast-all-btn" class="btn-primary" onclick="toggleAdminVoiceBroadcast('all')">
+                            <i class="fas fa-bullhorn"></i> Voice All Active Rooms
+                        </button>
+                    </div>
+                    <small id="voice-broadcast-status" class="help-text">Microphone permission is requested only when you start broadcasting.</small>
                 </div>
             </div>
         </div>
@@ -3587,6 +3639,60 @@ textarea {
     padding: 8px;
 }
 
+.admin-add-player-panel,
+.voice-broadcast-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    align-items: end;
+    margin: 12px 0 18px;
+    padding: 14px;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--panel-glass);
+}
+
+.admin-add-player-panel[hidden] {
+    display: none;
+}
+
+.admin-add-player-panel > div,
+.voice-broadcast-panel > div:first-child {
+    align-self: center;
+}
+
+.admin-add-player-panel strong,
+.voice-broadcast-panel h4 {
+    display: block;
+    margin: 0 0 4px;
+    color: var(--text-primary);
+}
+
+.admin-add-player-panel span,
+.voice-broadcast-panel p {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.admin-add-player-panel label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.voice-broadcast-panel {
+    margin-top: 18px;
+}
+
+.voice-broadcast-panel .broadcast-actions {
+    align-self: center;
+}
+
+.voice-broadcast-panel .active {
+    box-shadow: 0 0 0 2px rgba(239,68,68,0.3);
+}
+
 @media (max-width: 1100px) {
     .admin-live-players,
     .admin-live-code-tabs {
@@ -4720,6 +4826,164 @@ window.emailBroadcastToAll = async () => {
         showToast(`Email sent to ${data.sent} user(s). Failed: ${data.failed}. Skipped: ${data.skipped}.`, 'success');
     } catch (err) {
         showToast(err.message || 'Could not send email broadcast', 'error');
+    }
+};
+
+window.toggleAddPlayerPanel = () => {
+    const panel = document.getElementById('admin-add-player-form');
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) document.getElementById('new-player-username')?.focus();
+};
+
+document.getElementById('admin-add-player-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const payload = {
+        username: document.getElementById('new-player-username')?.value.trim(),
+        email: document.getElementById('new-player-email')?.value.trim(),
+        password: document.getElementById('new-player-password')?.value,
+        role: document.getElementById('new-player-role')?.value || 'player',
+        email_verified: Boolean(document.getElementById('new-player-email-verified')?.checked)
+    };
+    if (!payload.username) {
+        showToast('Enter a username for the new player', 'warning');
+        return;
+    }
+    if (button) {
+        button.disabled = true;
+        button.dataset.originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating';
+    }
+    try {
+        const res = await fetch('/admin/player/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not create player');
+        const passwordNote = data.generated_password ? ` Temporary password: ${data.temporary_password}` : '';
+        showToast(`${data.message || 'Account created.'}${passwordNote}`, 'success');
+        setTimeout(() => location.reload(), 1600);
+    } catch (err) {
+        showToast(err.message || 'Could not create player', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = button.dataset.originalText || '<i class="fas fa-plus"></i> Create Account';
+        }
+    }
+});
+
+let adminVoiceRecorder = null;
+let adminVoiceStream = null;
+let adminVoiceTargets = [];
+let adminVoiceMode = '';
+
+function activeAdminRoomIds() {
+    return Array.from(document.querySelectorAll('#rooms-tbody tr[data-room-id]'))
+        .filter((row) => row.dataset.status !== 'ended')
+        .map((row) => Number(row.dataset.roomId))
+        .filter(Boolean);
+}
+
+function supportedAdminAudioMime() {
+    const options = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', ''];
+    return options.find((type) => !type || MediaRecorder.isTypeSupported(type)) || '';
+}
+
+function setAdminVoiceButtons(active) {
+    const roomBtn = document.getElementById('voice-broadcast-room-btn');
+    const allBtn = document.getElementById('voice-broadcast-all-btn');
+    const activeBtn = adminVoiceMode === 'room' ? roomBtn : allBtn;
+    [roomBtn, allBtn].forEach((btn) => {
+        if (!btn) return;
+        btn.classList.toggle('active', active && btn === activeBtn);
+        btn.disabled = active && btn !== activeBtn;
+    });
+    if (roomBtn) roomBtn.innerHTML = active && adminVoiceMode === 'room'
+        ? '<i class="fas fa-stop"></i> Stop Target Room'
+        : '<i class="fas fa-microphone"></i> Voice Target Room';
+    if (allBtn) allBtn.innerHTML = active && adminVoiceMode === 'all'
+        ? '<i class="fas fa-stop"></i> Stop All Rooms'
+        : '<i class="fas fa-bullhorn"></i> Voice All Active Rooms';
+}
+
+function setAdminVoiceStatus(message) {
+    const status = document.getElementById('voice-broadcast-status');
+    if (status) status.textContent = message;
+}
+
+function emitAdminVoice(eventName, payload = {}) {
+    if (typeof io === 'undefined') return;
+    const socket = getAdminLiveSocket?.() || io();
+    adminVoiceTargets.forEach((roomId) => {
+        socket.emit(eventName, {room_id: roomId, ...payload});
+    });
+}
+
+async function startAdminVoiceBroadcast(mode) {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        showToast('This browser cannot record microphone broadcasts.', 'error');
+        return;
+    }
+    const targetRoom = Number(document.getElementById('broadcast-room-id')?.value || 0);
+    adminVoiceTargets = mode === 'room' ? [targetRoom].filter(Boolean) : activeAdminRoomIds();
+    if (!adminVoiceTargets.length) {
+        showToast(mode === 'room' ? 'Choose a target room first' : 'No active rooms are available for voice broadcast', 'warning');
+        return;
+    }
+    try {
+        adminVoiceMode = mode;
+        adminVoiceStream = await navigator.mediaDevices.getUserMedia({
+            audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true},
+            video: false
+        });
+        const mimeType = supportedAdminAudioMime();
+        adminVoiceRecorder = new MediaRecorder(adminVoiceStream, mimeType ? {mimeType} : undefined);
+        adminVoiceRecorder.ondataavailable = (event) => {
+            if (!event.data || event.data.size === 0) return;
+            const reader = new FileReader();
+            reader.onload = () => emitAdminVoice('voice_broadcast_chunk', {chunk: reader.result});
+            reader.readAsDataURL(event.data);
+        };
+        adminVoiceRecorder.onstop = () => {
+            emitAdminVoice('voice_broadcast_end');
+            adminVoiceStream?.getTracks().forEach((track) => track.stop());
+            adminVoiceStream = null;
+            adminVoiceRecorder = null;
+            adminVoiceTargets = [];
+            const previousMode = adminVoiceMode;
+            adminVoiceMode = '';
+            setAdminVoiceButtons(false);
+            setAdminVoiceStatus(previousMode === 'all' ? 'Voice broadcast ended for all rooms.' : 'Voice broadcast ended for the target room.');
+        };
+        emitAdminVoice('voice_broadcast_start');
+        adminVoiceRecorder.start(900);
+        setAdminVoiceButtons(true);
+        setAdminVoiceStatus(`Broadcasting to ${adminVoiceTargets.length} room(s).`);
+        showToast(`Voice broadcast started for ${adminVoiceTargets.length} room(s)`, 'success');
+    } catch (err) {
+        console.error('Admin voice broadcast error:', err);
+        setAdminVoiceButtons(false);
+        setAdminVoiceStatus('Microphone broadcast could not start. Check browser site permissions.');
+        showToast('Microphone broadcast could not start. Check site microphone permission.', 'error');
+    }
+}
+
+function stopAdminVoiceBroadcast() {
+    if (adminVoiceRecorder && adminVoiceRecorder.state !== 'inactive') {
+        adminVoiceRecorder.stop();
+    }
+}
+
+window.toggleAdminVoiceBroadcast = (mode) => {
+    if (adminVoiceRecorder && adminVoiceRecorder.state !== 'inactive') {
+        stopAdminVoiceBroadcast();
+    } else {
+        startAdminVoiceBroadcast(mode);
     }
 };
 
