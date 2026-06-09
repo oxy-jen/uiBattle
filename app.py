@@ -1,5 +1,6 @@
 ﻿from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask import flash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -69,7 +70,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 from models import (
     db, User, Challenge, Room, Submission, ChatMessage,
-    Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard,
+    Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard, RoomAccess,
     Competition, CompetitionWave, CompetitionAdminAssignment, DisputeCase
 )
 from moderation_terms import (
@@ -296,6 +297,55 @@ def role_for_user_in_room(user, room):
     if room.player2_id == user.id:
         return 'player2'
     return 'spectator'
+
+
+def get_room_access(room, user):
+    if not room or not user:
+        return None
+    return RoomAccess.query.filter_by(room_id=room.id, user_id=user.id).first()
+
+
+def record_room_access(room, user, role, status='active', granted_by=None, reason=None):
+    if not room or not user or user.role == 'admin':
+        return None
+    access = get_room_access(room, user)
+    if not access:
+        access = RoomAccess(room_id=room.id, user_id=user.id)
+        db.session.add(access)
+    access.role = role
+    access.status = status
+    access.granted_by = granted_by
+    access.reason = (reason or '')[:240] or access.reason
+    return access
+
+
+def room_access_is_suspended(room, user):
+    if not room or not user or user.role == 'admin':
+        return False
+    access = get_room_access(room, user)
+    if access and access.status in {'suspended', 'blocked'}:
+        return True
+    return DisputeCase.query.filter(
+        DisputeCase.room_id == room.id,
+        DisputeCase.player_id == user.id,
+        ((DisputeCase.type == 'disqualification') | (DisputeCase.status == 'disqualified'))
+    ).first() is not None
+
+
+def room_access_redirect_or_error(room, user, requested_role, json_response=False):
+    if not room or not user or user.role == 'admin':
+        return None
+    if room_access_is_suspended(room, user):
+        message = 'You were removed from this match by an admin.'
+        return (jsonify({'success': False, 'error': message}), 403) if json_response else redirect(url_for('dashboard'))
+    access = get_room_access(room, user)
+    is_player = is_room_player(user, room)
+    if requested_role == 'spectator' and (is_player or (access and access.role == 'player' and access.status == 'active')):
+        return (jsonify({'success': True, 'room_id': room.id, 'role': 'player', 'redirect': url_for('arena', room_id=room.id)}), 200) if json_response else redirect(url_for('arena', room_id=room.id))
+    if requested_role == 'player' and access and access.role == 'spectator' and access.status == 'active' and not is_player:
+        message = 'You are locked as a spectator for this match. Ask an admin to grant player access.'
+        return (jsonify({'success': False, 'error': message}), 403) if json_response else redirect(url_for('arena', room_id=room.id))
+    return None
 
 
 def socket_room_context(data):
@@ -4763,6 +4813,7 @@ def kick_player():
     
     room = db.session.get(Room, room_id)
     kicked = False
+    target_user = User.query.filter_by(username=username).first()
     if room:
         if room.player1 and room.player1.username == username:
             room.player1_id = None
@@ -4770,6 +4821,8 @@ def kick_player():
         elif room.player2 and room.player2.username == username:
             room.player2_id = None
             kicked = True
+        if target_user:
+            record_room_access(room, target_user, 'player', status='suspended', granted_by=session.get('user_id'), reason='Removed by admin')
     
     if room_id in room_spectators and username in room_spectators[room_id]:
         room_spectators[room_id].discard(username)
@@ -4783,6 +4836,48 @@ def kick_player():
     
     socketio.emit('kicked', {'message': 'You were removed by the admin'}, room=f"user_{username}")
     return jsonify({'success': True, 'removed': kicked})
+
+@app.route('/admin/room/<int:room_id>/grant-player', methods=['POST'])
+@admin_required
+def admin_grant_room_player(room_id):
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    room = db.session.get(Room, room_id)
+    user = User.query.filter_by(username=username).first()
+    if not room or not user:
+        return jsonify({'success': False, 'error': 'Room or user not found'}), 404
+    if user.role == 'admin':
+        return jsonify({'success': False, 'error': 'Admins already have room access'}), 400
+    if room.status != 'waiting':
+        return jsonify({'success': False, 'error': 'Player access can only be granted before the match starts'}), 400
+    if room.player1_id and room.player2_id and user.id not in {room.player1_id, room.player2_id}:
+        return jsonify({'success': False, 'error': 'This room already has two players'}), 400
+
+    if room.player1_id == user.id or room.player2_id == user.id:
+        role = 'player1' if room.player1_id == user.id else 'player2'
+    elif not room.player1_id:
+        room.player1_id = user.id
+        role = 'player1'
+    elif not room.player2_id:
+        room.player2_id = user.id
+        role = 'player2'
+    else:
+        return jsonify({'success': False, 'error': 'This room is full'}), 400
+
+    record_room_access(room, user, 'player', status='active', granted_by=session.get('user_id'), reason='Player access granted by admin')
+    if room.id in room_spectators and username in room_spectators[room.id]:
+        room_spectators[room.id].discard(username)
+        if not room_spectators[room.id]:
+            del room_spectators[room.id]
+        emit_spectator_list(room.id)
+    db.session.commit()
+    emit_room_players(room, username=username, message=f'{username} was granted player access by admin.')
+    socketio.emit('room_access_granted', {
+        'room_id': room.id,
+        'role': role,
+        'redirect': url_for('arena', room_id=room.id)
+    }, room=f"user_{username}")
+    return jsonify({'success': True, 'role': role})
 
 @app.route('/admin/tournament/create', methods=['POST'])
 @admin_required
@@ -5278,6 +5373,9 @@ def arena(room_id):
     
     if not room:
         return redirect(url_for('dashboard'))
+    if room_access_is_suspended(room, user):
+        flash('You were removed from this match by an admin.', 'warning')
+        return redirect(url_for('dashboard'))
     
     challenge = room.challenge
     player1_username = room.player1.username if room.player1 else None
@@ -5293,6 +5391,9 @@ def arena(room_id):
         user_role = 'player2'
     elif user.role == 'admin':
         user_role = 'admin'
+    elif not get_room_access(room, user):
+        record_room_access(room, user, 'spectator')
+        db.session.commit()
     
     return render_template('arena.html',
                          room=room,
@@ -5531,6 +5632,9 @@ def room_invite(room_code):
     if not room or room.status == 'ended':
         flash('That match invite is no longer available.', 'warning')
         return redirect(url_for('dashboard'))
+    access_response = room_access_redirect_or_error(room, user, 'player')
+    if access_response:
+        return access_response
 
     original_room = room
     role = 'spectator'
@@ -5549,9 +5653,11 @@ def room_invite(room_code):
         if not room.player1_id:
             room.player1_id = user.id
             role = 'player1'
+            record_room_access(room, user, 'player')
         elif not room.player2_id and room.player1_id != user.id:
             room.player2_id = user.id
             role = 'player2'
+            record_room_access(room, user, 'player')
         if room.player1_id and room.player2_id and room.status == 'waiting':
             competition = db.session.get(Competition, room.competition_id) if room.competition_id else None
             if is_auto_pair_competition(competition) and competition.status == 'live':
@@ -5563,10 +5669,12 @@ def room_invite(room_code):
         db.session.commit()
     elif room.status == 'waiting' and not room.player1_id:
         room.player1_id = user.id
+        record_room_access(room, user, 'player')
         db.session.commit()
         role = 'player1'
     elif room.status == 'waiting' and not room.player2_id and room.player1_id != user.id:
         room.player2_id = user.id
+        record_room_access(room, user, 'player')
         db.session.commit()
         role = 'player2'
 
@@ -5608,12 +5716,17 @@ def join_room_route():
     if not room:
         print(f"Room {room_id} not found")
         return jsonify({'success': False, 'error': 'Room not found'}), 400
+    access_response = room_access_redirect_or_error(room, user, 'spectator' if join_as == 'spectator' else 'player', json_response=True)
+    if access_response:
+        return access_response
     
     print(f"Room status: {room.status}, Player1: {room.player1_id}, Player2: {room.player2_id}")
 
     if join_as == 'spectator':
         if room.status == 'ended':
             return jsonify({'success': False, 'error': 'This match has ended'}), 400
+        record_room_access(room, user, 'spectator')
+        db.session.commit()
         return jsonify({'success': True, 'room_id': room_id, 'role': 'spectator'})
 
     if user.role != 'admin':
@@ -5637,6 +5750,8 @@ def join_room_route():
 
     if room.player1_id == user.id or room.player2_id == user.id:
         print(f"User {user.username} already in room")
+        record_room_access(room, user, 'player')
+        db.session.commit()
         return jsonify({'success': True, 'room_id': room_id, 'role': 'player'})
 
     if room.status != 'waiting':
@@ -5645,9 +5760,11 @@ def join_room_route():
     
     if not room.player1_id:
         room.player1_id = user.id
+        record_room_access(room, user, 'player')
         print(f"Assigned {user.username} as Player 1")
     elif not room.player2_id and room.player1_id != user.id:
         room.player2_id = user.id
+        record_room_access(room, user, 'player')
         print(f"Assigned {user.username} as Player 2")
     else:
         print("Room is full")
@@ -5686,8 +5803,14 @@ def spectate_room_route():
     room = db.session.get(Room, room_id)
     if not room:
         return jsonify({'success': False, 'error': 'Room not found'}), 400
+    user = get_current_user()
+    access_response = room_access_redirect_or_error(room, user, 'spectator', json_response=True)
+    if access_response:
+        return access_response
     if room.status == 'ended':
         return jsonify({'success': False, 'error': 'This match has ended'}), 400
+    record_room_access(room, user, 'spectator')
+    db.session.commit()
     return jsonify({'success': True, 'room_id': room_id, 'role': 'spectator'})
 
 @app.route('/room/list')
@@ -6183,6 +6306,9 @@ def handle_join_room(data):
         return
     if room.status == 'ended' and user_role != 'admin':
         emit('room_join_denied', {'message': 'This match has ended.'}, room=request.sid)
+        return
+    if room_access_is_suspended(room, user):
+        emit('room_join_denied', {'message': 'You were removed from this match by an admin.'}, room=request.sid)
         return
 
     room_id = room.id
@@ -6729,6 +6855,7 @@ def handle_admin_disqualify_player(data):
         })
     )
     db.session.add(submission)
+    record_room_access(room, player, 'player', status='suspended', granted_by=admin.id, reason=reason)
     if room.competition_id:
         db.session.add(DisputeCase(
             competition_id=room.competition_id,

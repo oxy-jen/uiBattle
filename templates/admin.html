@@ -307,6 +307,10 @@
                                 </select>
                             </div>
                         </div>
+                        <div class="competition-mode-hint" id="competition-mode-hint">
+                            <strong>Single 1v1 room</strong>
+                            <span>Create one waiting room. The first two eligible players become competitors; later viewers stay spectators.</span>
+                        </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Wave or group name</label>
@@ -654,6 +658,7 @@
                                         {% for name in current_spectators %}
                                         <span class="spectator-chip">
                                             <i class="fas fa-user"></i> {{ name }}
+                                            <button onclick="grantPlayerAccess(this, {{ room.id }}, '{{ name }}')" class="mini-action" title="Grant player access"><i class="fas fa-user-check"></i></button>
                                             <button onclick="kickPlayer(this, {{ room.id }}, '{{ name }}')" class="mini-action" title="Remove spectator"><i class="fas fa-user-slash"></i></button>
                                         </span>
                                         {% endfor %}
@@ -3333,6 +3338,26 @@ textarea {
     background: #101827;
 }
 
+.competition-mode-hint {
+    display: grid;
+    grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 12px 14px;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 8px;
+    background: rgba(14, 165, 233, 0.08);
+}
+
+.competition-mode-hint strong {
+    color: #e0f2fe;
+}
+
+.competition-mode-hint span {
+    color: #cbd5e1;
+    line-height: 1.45;
+}
+
 .challenge-builder-grid {
     display: grid;
     gap: 16px;
@@ -4024,14 +4049,33 @@ setChallengeType(document.getElementById('challenge-type')?.value || 'image');
 function updateCompetitionSetupUI() {
     const mode = document.getElementById('launch-mode')?.value || 'single_room';
     const needsParticipants = ['bulk_rooms', 'qualification', 'bracket', 'qualifier_bracket'].includes(mode);
+    const roomMode = document.getElementById('room-mode')?.value || '1v1';
     const isBulk = needsParticipants;
     document.querySelectorAll('.bulk-room-options').forEach((el) => {
         el.hidden = !isBulk;
     });
+    document.getElementById('players-per-wave')?.closest('.form-group')?.toggleAttribute('hidden', !['bulk_rooms', 'qualification', 'qualifier_bracket', 'auto_pair_live'].includes(mode));
+    document.getElementById('rooms-to-create')?.closest('.form-group')?.toggleAttribute('hidden', mode === 'challenge_only');
+    document.getElementById('pairing-method')?.closest('.form-group')?.toggleAttribute('hidden', !isBulk || roomMode === 'solo');
+    document.getElementById('advance-rule')?.closest('.form-group')?.toggleAttribute('hidden', !['qualification', 'bracket', 'qualifier_bracket'].includes(mode));
     const shareEmail = document.getElementById('share-with-email');
     if (shareEmail) {
         shareEmail.closest('.form-group').style.display = mode !== 'single_room' ? 'none' : '';
         if (mode !== 'single_room') shareEmail.checked = false;
+    }
+    const hints = {
+        single_room: ['Single 1v1 room', 'Create one room. A player already in this room returns to the arena, not spectator mode.'],
+        challenge_only: ['Challenge only', 'Save the task without creating rooms. Use it later for a wave, qualifier, or bracket.'],
+        bulk_rooms: ['Bulk rooms', 'Select players below. The room count is calculated from the roster and room mode.'],
+        auto_pair_live: ['Auto-pair live rooms', 'Create one lobby room. Players are placed into 1v1 rooms automatically until the max participant limit is reached.'],
+        qualification: ['Qualification stage', 'Create parallel score rooms for a wave and use the competition leaderboard to advance players.'],
+        bracket: ['Bracket tournament', 'Select exactly 4, 8, 16, 32, 64, or 128 players to create first-round rooms.'],
+        qualifier_bracket: ['Qualifier + bracket', 'Run qualifier rooms first, then advance top players into a bracket from the competition page.']
+    };
+    const hint = document.getElementById('competition-mode-hint');
+    if (hint) {
+        const [title, body] = hints[mode] || hints.single_room;
+        hint.innerHTML = `<strong>${title}</strong><span>${body}</span>`;
     }
     const submit = document.getElementById('create-challenge-submit');
     if (submit) {
@@ -4050,12 +4094,16 @@ function updateBulkRoomSummary() {
     const selected = Array.from(document.getElementById('bulk-participants')?.selectedOptions || []);
     const mode = document.getElementById('launch-mode')?.value || 'single_room';
     const roomMode = document.getElementById('room-mode')?.value || '1v1';
-    const rooms = roomMode === 'solo' ? selected.length : Math.floor(selected.length / 2);
+    let rooms = roomMode === 'solo' ? selected.length : Math.floor(selected.length / 2);
+    if (mode === 'single_room' || mode === 'auto_pair_live') rooms = 1;
+    if (mode === 'challenge_only') rooms = 0;
     const summary = document.getElementById('bulk-room-summary');
     const roomsInput = document.getElementById('rooms-to-create');
     if (roomsInput) roomsInput.value = String(rooms || 0);
     if (summary) {
-        summary.value = selected.length
+        summary.value = !['bulk_rooms', 'qualification', 'bracket', 'qualifier_bracket'].includes(mode)
+            ? (mode === 'challenge_only' ? 'No rooms will be created yet' : `${rooms} room will be created`)
+            : selected.length
             ? `${selected.length} players -> ${rooms} ${roomMode === 'solo' ? 'solo rooms' : '1v1 rooms'}${roomMode !== 'solo' && selected.length % 2 ? ' (one player unpaired)' : ''}${mode === 'bracket' ? ' bracket entrants' : ''}`
             : 'Select an even number of players';
     }
@@ -4063,7 +4111,10 @@ function updateBulkRoomSummary() {
 
 document.getElementById('launch-mode')?.addEventListener('change', updateCompetitionSetupUI);
 document.getElementById('bulk-participants')?.addEventListener('change', updateBulkRoomSummary);
-document.getElementById('room-mode')?.addEventListener('change', updateBulkRoomSummary);
+document.getElementById('room-mode')?.addEventListener('change', () => {
+    updateCompetitionSetupUI();
+    updateBulkRoomSummary();
+});
 updateCompetitionSetupUI();
 
 // Create challenge form
@@ -4273,6 +4324,38 @@ window.kickPlayer = async (button, roomId, username) => {
     } else {
         showToast(data.error || 'Failed to kick player', 'error');
         if (button) button.disabled = false;
+    }
+};
+
+window.grantPlayerAccess = async (button, roomId, username) => {
+    if (!username) {
+        showToast('Choose a spectator first', 'warning');
+        return;
+    }
+    const confirmed = await showConfirm(`Grant ${username} player access to this room?`, 'Grant player access');
+    if (!confirmed) return;
+    const original = button?.innerHTML;
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+    try {
+        const res = await fetch(`/admin/room/${roomId}/grant-player`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not grant player access');
+        showToast(`${username} granted ${data.role || 'player'} access`, 'success');
+        setTimeout(() => location.reload(), 700);
+    } catch (err) {
+        showToast(err.message || 'Could not grant player access', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = original || '<i class="fas fa-user-check"></i>';
+        }
     }
 };
 

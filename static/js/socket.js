@@ -651,6 +651,13 @@ socket.on('kicked', (data) => {
     }, 2000);
 });
 
+socket.on('room_access_granted', (data = {}) => {
+    showToast('Player access granted by admin.', 'success');
+    setTimeout(() => {
+        window.location.href = data.redirect || `/arena/${data.room_id}`;
+    }, 700);
+});
+
 socket.on('tournament_kick', (data) => {
     const message = data?.message || 'You were removed from the tournament by an admin.';
     showToast(`${message}${data?.admin_note ? ` Admin note: ${data.admin_note}` : ''}`, 'error');

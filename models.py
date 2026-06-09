@@ -90,6 +90,27 @@ class Room(db.Model):
     player1 = db.relationship('User', foreign_keys=[player1_id])
     player2 = db.relationship('User', foreign_keys=[player2_id])
 
+class RoomAccess(db.Model):
+    __tablename__ = 'room_access'
+
+    id = db.Column(db.Integer, primary_key=True)
+    room_id = db.Column(db.Integer, db.ForeignKey('rooms.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='spectator')
+    status = db.Column(db.String(20), nullable=False, default='active')
+    granted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    reason = db.Column(db.String(240), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('room_id', 'user_id', name='uq_room_access_room_user'),
+    )
+
+    room = db.relationship('Room', backref='access_records')
+    user = db.relationship('User', foreign_keys=[user_id], backref='room_access_records')
+    grant_admin = db.relationship('User', foreign_keys=[granted_by])
+
 class Competition(db.Model):
     __tablename__ = 'competitions'
 
