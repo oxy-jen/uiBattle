@@ -7106,17 +7106,9 @@ def initialize_runtime_database(create_dev_admin=False):
 
 initialize_runtime_database(create_dev_admin=False)
 
+# ========== MAIN ==========
 if __name__ == '__main__':
-    initialize_runtime_database(create_dev_admin=True)
-    
     port = int(os.environ.get('PORT', 5001))
-
-    print("\n" + "=" * 50)
-    print("UI BATTLE ARENA is starting...")
-    print(f"Open http://localhost:{port} in your browser")
-    print("=" * 50 + "\n")
-    
-    debug_mode = os.environ.get('FLASK_DEBUG') == '1'
-    socketio.run(app, host='0.0.0.0', port=port, debug=debug_mode, use_reloader=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=port, debug=True)
 
 
