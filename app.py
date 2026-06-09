@@ -2520,7 +2520,7 @@ def send_password_reset_email(user, code):
 
 def is_email_verified(user):
     if not user or not user.email:
-        return False
+        return bool(user and user.role == 'player')
     return bool(load_profile_store().get(str(user.id), {}).get('email_verified'))
 
 def create_email_verification_code(user):
@@ -3113,8 +3113,15 @@ def sync_users_by_id(user_ids):
 
 def delete_room_data(room):
     affected_user_ids = {room.player1_id, room.player2_id}
+    RoomAccess.query.filter_by(room_id=room.id).delete(synchronize_session=False)
+    MatchResult.query.filter_by(room_id=room.id).delete(synchronize_session=False)
     Submission.query.filter_by(room_id=room.id).delete()
     ChatMessage.query.filter_by(room_id=room.id).delete()
+    DisputeCase.query.filter_by(room_id=room.id).delete(synchronize_session=False)
+    TournamentMatch.query.filter_by(room_id=room.id).update(
+        {'room_id': None, 'status': 'waiting'},
+        synchronize_session=False
+    )
     room_timers.pop(room.id, None)
     room_preview_data.pop(room.id, None)
     room_spectators.pop(room.id, None)
