@@ -1426,12 +1426,23 @@ def room_score_payload(room):
     return rows
 
 def get_room_winner_id(room):
-    if not room or not room.player1_id or not room.player2_id:
+    if not room or not (room.player1_id or room.player2_id):
         return None
 
-    p1_sub = get_best_room_submission(room.id, room.player1_id)
-    p2_sub = get_best_room_submission(room.id, room.player2_id)
+    p1_sub = get_best_room_submission(room.id, room.player1_id) if room.player1_id else None
+    p2_sub = get_best_room_submission(room.id, room.player2_id) if room.player2_id else None
     if not p1_sub and not p2_sub:
+        return None
+
+    if room.player1_id and not room.player2_id:
+        return room.player1_id if p1_sub and not p1_sub.is_forfeit else None
+    if room.player2_id and not room.player1_id:
+        return room.player2_id if p2_sub and not p2_sub.is_forfeit else None
+    if p1_sub and p1_sub.is_forfeit and (not p2_sub or not p2_sub.is_forfeit):
+        return room.player2_id
+    if p2_sub and p2_sub.is_forfeit and (not p1_sub or not p1_sub.is_forfeit):
+        return room.player1_id
+    if p1_sub and p1_sub.is_forfeit and p2_sub and p2_sub.is_forfeit:
         return None
 
     p1_rank = submission_rank_tuple(p1_sub)

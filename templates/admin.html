@@ -346,6 +346,7 @@
                             <div class="form-group">
                                 <label>Number of rooms to create</label>
                                 <input type="number" id="rooms-to-create" name="rooms_to_create" min="0" max="2500" value="0" readonly>
+                                <small class="help-text" id="rooms-to-create-note">Calculated from the selected setup.</small>
                             </div>
                         </div>
                         <div class="form-row">
@@ -4094,23 +4095,49 @@ function updateBulkRoomSummary() {
     const selected = Array.from(document.getElementById('bulk-participants')?.selectedOptions || []);
     const mode = document.getElementById('launch-mode')?.value || 'single_room';
     const roomMode = document.getElementById('room-mode')?.value || '1v1';
-    let rooms = roomMode === 'solo' ? selected.length : Math.floor(selected.length / 2);
-    if (mode === 'single_room' || mode === 'auto_pair_live') rooms = 1;
+    const maxParticipants = Math.max(1, Number(document.getElementById('max-participants')?.value || 1));
+    const playersPerWave = Math.max(1, Number(document.getElementById('players-per-wave')?.value || 1));
+    let rooms = roomMode === 'solo' ? selected.length : Math.ceil(selected.length / 2);
+    let note = 'Calculated from selected participants.';
+    if (mode === 'single_room') {
+        rooms = 1;
+        note = 'Single room creates exactly one room.';
+    }
+    if (mode === 'auto_pair_live') {
+        rooms = roomMode === 'solo' ? maxParticipants : Math.ceil(maxParticipants / 2);
+        note = 'Auto-pair creates one lobby now, then opens waiting rooms as players arrive.';
+    }
+    if (mode === 'qualification' && !selected.length) {
+        rooms = roomMode === 'solo' ? playersPerWave : Math.ceil(playersPerWave / 2);
+        note = 'Select participants for exact rooms; this preview uses players per wave.';
+    }
+    if (mode === 'bulk_rooms' && !selected.length) {
+        rooms = 0;
+        note = 'Select players below to calculate bulk rooms.';
+    }
+    if (mode === 'bracket' && selected.length) {
+        rooms = Math.floor(selected.length / 2);
+        note = 'Bracket first round rooms from selected entrants.';
+    }
     if (mode === 'challenge_only') rooms = 0;
     const summary = document.getElementById('bulk-room-summary');
     const roomsInput = document.getElementById('rooms-to-create');
+    const roomsNote = document.getElementById('rooms-to-create-note');
     if (roomsInput) roomsInput.value = String(rooms || 0);
+    if (roomsNote) roomsNote.textContent = note;
     if (summary) {
         summary.value = !['bulk_rooms', 'qualification', 'bracket', 'qualifier_bracket'].includes(mode)
-            ? (mode === 'challenge_only' ? 'No rooms will be created yet' : `${rooms} room will be created`)
+            ? (mode === 'challenge_only' ? 'No rooms will be created yet' : `${rooms} planned ${rooms === 1 ? 'room' : 'rooms'}`)
             : selected.length
-            ? `${selected.length} players -> ${rooms} ${roomMode === 'solo' ? 'solo rooms' : '1v1 rooms'}${roomMode !== 'solo' && selected.length % 2 ? ' (one player unpaired)' : ''}${mode === 'bracket' ? ' bracket entrants' : ''}`
+            ? `${selected.length} players -> ${rooms} ${roomMode === 'solo' ? 'solo rooms' : '1v1 rooms'}${roomMode !== 'solo' && selected.length % 2 ? ' (one player waits for a partner)' : ''}${mode === 'bracket' ? ' bracket entrants' : ''}`
             : 'Select an even number of players';
     }
 }
 
 document.getElementById('launch-mode')?.addEventListener('change', updateCompetitionSetupUI);
 document.getElementById('bulk-participants')?.addEventListener('change', updateBulkRoomSummary);
+document.getElementById('max-participants')?.addEventListener('input', updateBulkRoomSummary);
+document.getElementById('players-per-wave')?.addEventListener('input', updateBulkRoomSummary);
 document.getElementById('room-mode')?.addEventListener('change', () => {
     updateCompetitionSetupUI();
     updateBulkRoomSummary();
