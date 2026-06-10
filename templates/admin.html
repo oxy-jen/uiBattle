@@ -400,6 +400,18 @@
                             <label>Admin assignments</label>
                             <textarea id="admin-assignments" name="admin_assignments" rows="3" placeholder="admin_id:role:room-range&#10;1:director:1-50&#10;2:fair_play:all"></textarea>
                             <small class="help-text">Use one line per admin: admin ID, role, and optional room range. Director sees everything; room admins can use My Assigned Rooms.</small>
+                            <div class="assignment-template-list">
+                                {% for task in admin_tasks[:6] %}
+                                {% if task.assigned_admin_id %}
+                                <button type="button"
+                                        class="assignment-template-btn"
+                                        data-assignment-template="{{ task.assigned_admin_id }}:{{ task.task_type }}:{% if task.room_range_start or task.room_range_end %}{{ task.room_range_start or 1 }}-{{ task.room_range_end or task.room_range_start or 1 }}{% else %}all{% endif %}:{{ task.title }}">
+                                    <i class="fas fa-user-shield"></i>
+                                    {{ task.assigned_admin.username if task.assigned_admin else 'Admin' }} · {{ task.title }}
+                                </button>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
                         </div>
                         <div class="form-row bulk-room-options" id="bulk-room-options" hidden>
                             <div class="form-group">
@@ -3140,6 +3152,24 @@
     opacity: 0.7;
 }
 
+.assignment-template-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.assignment-template-btn {
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    border-radius: 8px;
+    padding: 7px 9px;
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+}
+
 @media (max-width: 980px) {
     .assignment-center-grid,
     .assignment-center-grid.wide,
@@ -4435,6 +4465,17 @@ document.getElementById('room-mode')?.addEventListener('change', () => {
     updateBulkRoomSummary();
 });
 updateCompetitionSetupUI();
+
+document.querySelectorAll('.assignment-template-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+        const textarea = document.getElementById('admin-assignments');
+        const line = button.dataset.assignmentTemplate || '';
+        if (!textarea || !line) return;
+        const current = textarea.value.trim();
+        textarea.value = current ? `${current}\n${line}` : line;
+        showToast('Assignment added to this room setup', 'success');
+    });
+});
 
 // Create challenge form
 document.getElementById('create-challenge-form').addEventListener('submit', async (e) => {

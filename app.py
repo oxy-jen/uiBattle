@@ -1968,13 +1968,15 @@ def find_or_create_auto_pair_room(source_room, user):
         return existing
 
     current_players = competition_player_ids(competition.id)
-    max_participants = max(1, int(competition.max_participants or 1))
+    max_participants = max(2, int(competition.max_participants or 2))
     if len(current_players) >= max_participants:
         return None
 
+    # A 1v1 auto-pair room is reusable until both player slots are filled.
+    # Do not create the next room while the oldest room is still waiting for player 2.
     waiting_room = Room.query.filter(
         Room.competition_id == competition.id,
-        Room.status == 'waiting',
+        Room.status != 'ended',
         Room.player1_id.isnot(None),
         Room.player2_id.is_(None),
         Room.player1_id != user.id
@@ -1984,7 +1986,7 @@ def find_or_create_auto_pair_room(source_room, user):
 
     empty_room = Room.query.filter(
         Room.competition_id == competition.id,
-        Room.status == 'waiting',
+        Room.status != 'ended',
         Room.player1_id.is_(None),
         Room.player2_id.is_(None)
     ).order_by(Room.created_at.asc(), Room.id.asc()).first()
@@ -4838,7 +4840,7 @@ def create_challenge():
         new_room = create_competition_room(
             new_challenge.id,
             competition=competition,
-            status='running' if auto_start else 'waiting',
+            status='waiting',
             is_public=room_is_public
         )
         rooms_created.append(new_room)
@@ -4900,7 +4902,8 @@ def create_challenge():
     db.session.commit()
     if auto_start and rooms_created:
         for room in rooms_created:
-            start_room_timer_if_needed(room)
+            if room.status == 'running':
+                start_room_timer_if_needed(room)
 
     invite_stats = {'sent': 0, 'failed': 0, 'skipped': 0, 'total': 0}
     if share_with_email and new_room and launch_mode == 'single_room':
@@ -5923,6 +5926,8 @@ def room_invite(room_code):
             flash('This competition is already full.', 'warning')
             return redirect(url_for('dashboard'))
         room = target_room
+        if not (room.player1_id and room.player2_id) and room.status != 'waiting':
+            room.status = 'waiting'
         if not room.player1_id:
             room.player1_id = user.id
             role = 'player1'
@@ -6020,6 +6025,8 @@ def join_room_route():
             return jsonify({'success': False, 'error': 'This competition is already full'}), 400
         room = target_room
         room_id = room.id
+        if not (room.player1_id and room.player2_id) and room.status != 'waiting':
+            room.status = 'waiting'
 
     if room.player1_id == user.id or room.player2_id == user.id:
         print(f"User {user.username} already in room")

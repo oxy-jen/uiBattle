@@ -318,6 +318,14 @@
                     <div class="cam-container">
                         <video id="cam-feed" autoplay muted playsinline></video>
                         <div id="remote-cams" class="remote-cams"></div>
+                        <div class="call-controls" id="call-controls" hidden>
+                            <button type="button" id="toggle-video-btn" class="call-control-btn" title="Turn camera off" aria-label="Turn camera off">
+                                <i class="fas fa-video"></i>
+                            </button>
+                            <button type="button" id="toggle-audio-btn" class="call-control-btn" title="Mute microphone" aria-label="Mute microphone">
+                                <i class="fas fa-microphone"></i>
+                            </button>
+                        </div>
                         <div id="cam-placeholder" class="cam-placeholder">
                             <i class="fas fa-video"></i>
                             <p>Camera feed will appear here</p>

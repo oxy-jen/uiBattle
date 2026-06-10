@@ -1791,6 +1791,9 @@ async function setupCamera() {
     const camPlaceholder = getElement('cam-placeholder');
     const recBadge = getElement('rec-badge');
     const enableBtn = getElement('enable-cam-btn');
+    const callControls = getElement('call-controls');
+    const toggleAudioBtn = getElement('toggle-audio-btn');
+    const toggleVideoBtn = getElement('toggle-video-btn');
     
     if (!camFeed) return;
 
@@ -1850,6 +1853,37 @@ async function setupCamera() {
             return navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         }
     }
+
+    function updateCallControls(stream) {
+        const activeStream = stream || window.arenaLocalStream;
+        if (!activeStream) {
+            if (callControls) callControls.hidden = true;
+            return;
+        }
+        if (callControls) callControls.hidden = false;
+        const audioTrack = activeStream.getAudioTracks()[0];
+        const videoTrack = activeStream.getVideoTracks()[0];
+        if (toggleAudioBtn) {
+            const muted = !audioTrack || !audioTrack.enabled;
+            toggleAudioBtn.classList.toggle('is-muted', muted);
+            toggleAudioBtn.innerHTML = muted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
+            toggleAudioBtn.title = muted ? 'Unmute microphone' : 'Mute microphone';
+            toggleAudioBtn.setAttribute('aria-label', toggleAudioBtn.title);
+        }
+        if (toggleVideoBtn) {
+            const off = !videoTrack || !videoTrack.enabled;
+            toggleVideoBtn.classList.toggle('is-off', off);
+            toggleVideoBtn.innerHTML = off ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
+            toggleVideoBtn.title = off ? 'Turn camera on' : 'Turn camera off';
+            toggleVideoBtn.setAttribute('aria-label', toggleVideoBtn.title);
+        }
+    }
+
+    async function ensureMediaStream() {
+        if (window.arenaLocalStream) return window.arenaLocalStream;
+        await enableCamera();
+        return window.arenaLocalStream;
+    }
     
     async function enableCamera() {
         try {
@@ -1858,10 +1892,12 @@ async function setupCamera() {
                 throw new Error(supportMessage);
             }
             const stream = await requestMediaStream();
+            window.arenaLocalStream = stream;
             camFeed.srcObject = stream;
             if (camPlaceholder) camPlaceholder.style.display = 'none';
             if (recBadge) recBadge.style.display = 'inline-flex';
             camFeed.style.display = 'block';
+            updateCallControls(stream);
             if (window.ArenaMedia?.start) {
                 window.ArenaMedia.start(stream);
             }
@@ -1901,6 +1937,32 @@ async function setupCamera() {
         enableBtn.addEventListener('click', enableCamera);
     } else {
         enableCamera();
+    }
+    if (toggleAudioBtn) {
+        toggleAudioBtn.addEventListener('click', async () => {
+            const stream = await ensureMediaStream();
+            const track = stream?.getAudioTracks()[0];
+            if (!track) {
+                showToast('No microphone track is available.', 'warning');
+                return;
+            }
+            track.enabled = !track.enabled;
+            updateCallControls(stream);
+            showToast(track.enabled ? 'Microphone unmuted' : 'Microphone muted', 'info');
+        });
+    }
+    if (toggleVideoBtn) {
+        toggleVideoBtn.addEventListener('click', async () => {
+            const stream = await ensureMediaStream();
+            const track = stream?.getVideoTracks()[0];
+            if (!track) {
+                showToast('No camera track is available.', 'warning');
+                return;
+            }
+            track.enabled = !track.enabled;
+            updateCallControls(stream);
+            showToast(track.enabled ? 'Camera on' : 'Camera off', 'info');
+        });
     }
     window.requestArenaMedia = enableCamera;
 }

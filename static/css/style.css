@@ -2152,6 +2152,43 @@ li.CodeMirror-hint-active {
   font-size: 11px;
 }
 
+.call-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 6;
+  display: flex;
+  gap: 10px;
+  transform: translateX(-50%);
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.call-controls[hidden] {
+  display: none;
+}
+
+.call-control-btn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f8fafc;
+  color: #020617;
+  cursor: pointer;
+  font-size: 17px;
+}
+
+.call-control-btn.is-muted,
+.call-control-btn.is-off {
+  background: #ef4444;
+  color: #fff;
+}
+
 .cam-container.has-remote .cam-placeholder {
   display: none !important;
 }
