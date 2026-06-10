@@ -716,6 +716,11 @@
                     <input type="checkbox" id="new-player-email-verified" checked>
                     <span>Mark email verified</span>
                 </label>
+                <div class="admin-created-login-card" id="created-player-login-card" hidden>
+                    <strong><i class="fas fa-key"></i> Login details</strong>
+                    <span>Give these details only to the student.</span>
+                    <code id="created-player-login-text"></code>
+                </div>
                 <button type="submit" class="btn-primary"><i class="fas fa-plus"></i> Create Account</button>
             </form>
             
@@ -3707,6 +3712,27 @@ textarea {
     font-size: 13px;
 }
 
+.admin-created-login-card {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 5px;
+    padding: 10px 12px;
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    border-radius: 8px;
+    background: rgba(22, 163, 74, 0.12);
+}
+
+.admin-created-login-card[hidden] {
+    display: none;
+}
+
+.admin-created-login-card code {
+    display: block;
+    white-space: normal;
+    word-break: break-word;
+    color: #dcfce7;
+}
+
 .voice-broadcast-panel {
     margin-top: 18px;
 }
@@ -4314,16 +4340,23 @@ window.deleteRoom = async (button, roomId) => {
     const confirmed = await showConfirm('Delete this room? All data will be lost.', 'Delete room');
     if (!confirmed) return;
     if (button) button.disabled = true;
-    const res = await fetch(`/admin/room/${roomId}/delete`, {
-        method: 'DELETE',
-        headers: {'Content-Type': 'application/json'}
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
+    try {
+        const res = await fetch(`/admin/room/${roomId}/delete`, {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const text = await res.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (parseError) {
+            data = {success: false, error: text || `Server returned ${res.status}`};
+        }
+        if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete room');
         showToast('Room deleted', 'success');
         setTimeout(() => location.reload(), 900);
-    } else {
-        showToast(data.error || 'Failed to delete room', 'error');
+    } catch (err) {
+        showToast(err.message || 'Failed to delete room', 'error');
         if (button) button.disabled = false;
     }
 };
@@ -4975,8 +5008,14 @@ document.getElementById('admin-add-player-form')?.addEventListener('submit', asy
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || 'Could not create player');
         const passwordNote = data.generated_password ? ` Temporary password: ${data.temporary_password}` : '';
+        const loginCard = document.getElementById('created-player-login-card');
+        const loginText = document.getElementById('created-player-login-text');
+        if (loginCard && loginText) {
+            loginText.textContent = `Username: ${payload.username}${data.temporary_password ? ` | Password: ${data.temporary_password}` : ' | Password: the password you entered'}`;
+            loginCard.hidden = false;
+        }
         showToast(`${data.message || 'Account created.'}${passwordNote}`, 'success');
-        setTimeout(() => location.reload(), 1600);
+        setTimeout(() => location.reload(), 4500);
     } catch (err) {
         showToast(err.message || 'Could not create player', 'error');
     } finally {

@@ -5374,11 +5374,16 @@ def delete_room(room_id):
     room = db.session.get(Room, room_id)
     if not room:
         return jsonify({'success': False, 'error': 'Room not found'}), 404
-    
-    affected_user_ids = delete_room_data(room)
-    sync_users_by_id(affected_user_ids)
-    db.session.commit()
-    
+
+    try:
+        affected_user_ids = delete_room_data(room)
+        sync_users_by_id(affected_user_ids)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Room delete failed for room %s', room_id)
+        return jsonify({'success': False, 'error': 'Could not delete room because related match data could not be cleared.'}), 500
+
     return jsonify({'success': True})
 
 # ========== ARENA & GAMEPLAY ROUTES ==========
@@ -7110,5 +7115,4 @@ initialize_runtime_database(create_dev_admin=False)
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     socketio.run(app, host='0.0.0.0', port=port, debug=True)
-
 
