@@ -71,7 +71,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 from models import (
     db, User, Challenge, Room, Submission, ChatMessage,
     Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard, RoomAccess,
-    Competition, CompetitionWave, CompetitionAdminAssignment, DisputeCase
+    Competition, CompetitionWave, CompetitionAdminAssignment, AdminTask, DisputeCase
 )
 from moderation_terms import (
     BAD_LANGUAGE_TERMS,
@@ -1822,6 +1822,59 @@ def add_competition_assignments(competition, assignments, wave=None):
         added.append(assignment)
     return added
 
+def rooms_for_assignment_scope(competition_id=None, wave_id=None, room_id=None, range_start=None, range_end=None):
+    if room_id:
+        room = db.session.get(Room, room_id)
+        return [room] if room else []
+    query = Room.query
+    if competition_id:
+        query = query.filter_by(competition_id=competition_id)
+    if wave_id:
+        query = query.filter_by(wave_id=wave_id)
+    rooms = query.order_by(Room.created_at.asc(), Room.id.asc()).all()
+    start = range_start or 1
+    end = range_end or len(rooms)
+    return [
+        room for index, room in enumerate(rooms, start=1)
+        if start <= index <= end
+    ]
+
+def serialize_admin_task(task):
+    if not task:
+        return {}
+    assigned_rooms = rooms_for_assignment_scope(
+        competition_id=task.competition_id,
+        wave_id=task.wave_id,
+        room_id=task.room_id,
+        range_start=task.room_range_start,
+        range_end=task.room_range_end
+    )
+    return {
+        'id': task.id,
+        'title': task.title,
+        'description': task.description or '',
+        'task_type': task.task_type,
+        'priority': task.priority,
+        'status': task.status,
+        'competition_id': task.competition_id,
+        'competition_name': task.competition.name if task.competition else '',
+        'wave_id': task.wave_id,
+        'wave_name': task.wave.name if task.wave else '',
+        'room_id': task.room_id,
+        'room_code': task.room.room_code if task.room else '',
+        'room_range_start': task.room_range_start,
+        'room_range_end': task.room_range_end,
+        'room_count': len(assigned_rooms),
+        'assigned_admin_id': task.assigned_admin_id,
+        'assigned_admin_name': task.assigned_admin.username if task.assigned_admin else '',
+        'created_by': task.created_by,
+        'creator_name': task.creator.username if task.creator else '',
+        'due_at': task.due_at or '',
+        'created_at': task.created_at.isoformat() if task.created_at else '',
+        'acknowledged': bool(task.acknowledged_at),
+        'completed': bool(task.completed_at)
+    }
+
 def create_competition_room(challenge_id, competition=None, wave=None, player1_id=None, player2_id=None, is_public=False, status='waiting'):
     room = Room(
         room_code=generate_room_code(),
@@ -1981,6 +2034,19 @@ def build_my_assigned_rooms(admin_id):
         for index, room in enumerate(rooms, start=1):
             if start <= index <= end:
                 room_ids.append(room.id)
+    tasks = AdminTask.query.filter(
+        AdminTask.assigned_admin_id == admin_id,
+        AdminTask.status.in_(['open', 'acknowledged', 'active'])
+    ).all()
+    for task in tasks:
+        for room in rooms_for_assignment_scope(
+            competition_id=task.competition_id,
+            wave_id=task.wave_id,
+            room_id=task.room_id,
+            range_start=task.room_range_start,
+            range_end=task.room_range_end
+        ):
+            room_ids.append(room.id)
     if not room_ids:
         return []
     return Room.query.filter(Room.id.in_(sorted(set(room_ids)))).order_by(Room.created_at.desc()).all()
@@ -1994,11 +2060,8 @@ def build_admin_assignment_warnings(admin_id):
     warnings = []
     assignments = CompetitionAdminAssignment.query.filter_by(admin_id=admin_id).all()
     for assignment in assignments:
-        query = Room.query.filter_by(competition_id=assignment.competition_id)
-        if assignment.wave_id:
-            query = query.filter_by(wave_id=assignment.wave_id)
-        rooms = query.order_by(Room.created_at.asc(), Room.id.asc()).all()
         start = assignment.room_range_start or 1
+        rooms = rooms_for_assignment_scope(assignment.competition_id, assignment.wave_id)
         end = assignment.room_range_end or len(rooms)
         assigned = [
             room for index, room in enumerate(rooms, start=1)
@@ -2013,7 +2076,72 @@ def build_admin_assignment_warnings(admin_id):
                 'range': f'{start}-{end}',
                 'message': f'You are assigned to {len(assigned)} active room(s) in range {start}-{end}, but you are not watching any of them right now.'
             })
+    tasks = AdminTask.query.filter(
+        AdminTask.assigned_admin_id == admin_id,
+        AdminTask.status.in_(['open', 'acknowledged', 'active'])
+    ).order_by(AdminTask.created_at.asc()).all()
+    now_label = datetime.now().strftime('%Y-%m-%dT%H:%M')
+    for task in tasks:
+        task_rooms = [
+            room for room in rooms_for_assignment_scope(
+                competition_id=task.competition_id,
+                wave_id=task.wave_id,
+                room_id=task.room_id,
+                range_start=task.room_range_start,
+                range_end=task.room_range_end
+            )
+            if room.status in {'waiting', 'running', 'paused'}
+        ]
+        if task.status == 'open':
+            warnings.append({
+                'task': task,
+                'competition': task.competition,
+                'room_count': len(task_rooms),
+                'range': f'{task.room_range_start or 1}-{task.room_range_end or len(task_rooms) or 1}',
+                'message': f'You have not acknowledged task "{task.title}".'
+            })
+        if task.due_at and task.due_at < now_label and task.status != 'completed':
+            warnings.append({
+                'task': task,
+                'competition': task.competition,
+                'room_count': len(task_rooms),
+                'range': f'{task.room_range_start or 1}-{task.room_range_end or len(task_rooms) or 1}',
+                'message': f'Task "{task.title}" is overdue.'
+            })
+        if task_rooms and not any(room.id in watched_room_ids for room in task_rooms):
+            warnings.append({
+                'task': task,
+                'competition': task.competition,
+                'room_count': len(task_rooms),
+                'range': f'{task.room_range_start or 1}-{task.room_range_end or len(task_rooms)}',
+                'message': f'Task "{task.title}" covers {len(task_rooms)} active room(s), but you are not watching them.'
+            })
     return warnings
+
+def build_assignment_center_warnings():
+    warnings = []
+    assigned_competition_ids = {
+        item.competition_id
+        for item in CompetitionAdminAssignment.query.all()
+        if item.competition_id
+    }
+    for competition in Competition.query.order_by(Competition.created_at.desc()).all():
+        active_room_count = Room.query.filter(
+            Room.competition_id == competition.id,
+            Room.status.in_(['waiting', 'running', 'paused'])
+        ).count()
+        if active_room_count and competition.id not in assigned_competition_ids:
+            warnings.append({
+                'level': 'warning',
+                'message': f'{competition.name} has {active_room_count} active room(s) with no admin assignment.'
+            })
+    now_label = datetime.now().strftime('%Y-%m-%dT%H:%M')
+    for task in AdminTask.query.filter(AdminTask.status != 'completed').order_by(AdminTask.created_at.desc()).limit(80).all():
+        if not task.assigned_admin_id:
+            warnings.append({'level': 'warning', 'message': f'Task "{task.title}" has no assigned admin.'})
+        if task.due_at and task.due_at < now_label:
+            warnings.append({'level': 'danger', 'message': f'Task "{task.title}" is overdue.'})
+    return warnings[:20]
 
 def qualification_rows(competition_id=None, wave_id=None, limit=None):
     query = Room.query
@@ -3077,12 +3205,14 @@ def clear_created_platform_data():
         'match_results': MatchResult.query.delete(synchronize_session=False),
         'tournament_participants': TournamentParticipant.query.delete(synchronize_session=False),
         'tournament_matches': TournamentMatch.query.delete(synchronize_session=False),
+        'admin_tasks': AdminTask.query.delete(synchronize_session=False),
         'competition_admin_assignments': CompetitionAdminAssignment.query.delete(synchronize_session=False),
         'dispute_cases': DisputeCase.query.delete(synchronize_session=False),
         'competition_waves': CompetitionWave.query.delete(synchronize_session=False),
         'award_cards': AwardCard.query.delete(synchronize_session=False),
         'submissions': Submission.query.delete(synchronize_session=False),
         'chat_messages': ChatMessage.query.delete(synchronize_session=False),
+        'room_access': RoomAccess.query.delete(synchronize_session=False),
         'rooms': Room.query.delete(synchronize_session=False),
         'competitions': Competition.query.delete(synchronize_session=False),
         'tournaments': Tournament.query.delete(synchronize_session=False),
@@ -3118,6 +3248,10 @@ def delete_room_data(room):
     Submission.query.filter_by(room_id=room.id).delete()
     ChatMessage.query.filter_by(room_id=room.id).delete()
     DisputeCase.query.filter_by(room_id=room.id).delete(synchronize_session=False)
+    AdminTask.query.filter_by(room_id=room.id).update(
+        {'room_id': None, 'status': 'open'},
+        synchronize_session=False
+    )
     TournamentMatch.query.filter_by(room_id=room.id).update(
         {'room_id': None, 'status': 'waiting'},
         synchronize_session=False
@@ -3819,8 +3953,29 @@ def admin_panel():
     }
     my_assigned_rooms = build_my_assigned_rooms(user.id)
     my_assignment_warnings = build_admin_assignment_warnings(user.id)
+    assignment_center_warnings = build_assignment_center_warnings()
+    admin_tasks = AdminTask.query.order_by(AdminTask.created_at.desc()).limit(200).all()
+    my_admin_tasks = AdminTask.query.filter_by(assigned_admin_id=user.id).order_by(AdminTask.created_at.desc()).limit(80).all()
     open_disputes = DisputeCase.query.filter(DisputeCase.status.in_(['open', 'review'])).order_by(DisputeCase.created_at.desc()).limit(80).all()
     admin_users = User.query.filter_by(role='admin').order_by(User.username.asc()).all()
+    watched_rooms_by_admin = {}
+    for info in connected_users.values():
+        if info.get('role') == 'admin' and info.get('user_id') and info.get('room_id'):
+            watched_rooms_by_admin.setdefault(int(info['user_id']), set()).add(int(info['room_id']))
+    admin_status_rows = []
+    for admin_user in admin_users:
+        active_task_count = AdminTask.query.filter(
+            AdminTask.assigned_admin_id == admin_user.id,
+            AdminTask.status.in_(['open', 'acknowledged', 'active'])
+        ).count()
+        watched = sorted(watched_rooms_by_admin.get(admin_user.id, set()))
+        admin_status_rows.append({
+            'user': admin_user,
+            'online': bool(watched),
+            'watched_room_ids': watched,
+            'watched_count': len(watched),
+            'active_task_count': active_task_count
+        })
 
     total_matches = Submission.query.count()
     avg_accuracy = db.session.query(func.avg(Submission.accuracy)).scalar() or 0
@@ -3880,6 +4035,12 @@ def admin_panel():
                          competition_leaderboards=competition_leaderboards,
                          my_assigned_rooms=my_assigned_rooms,
                          my_assignment_warnings=my_assignment_warnings,
+                         assignment_center_warnings=assignment_center_warnings,
+                         admin_tasks=admin_tasks,
+                         my_admin_tasks=my_admin_tasks,
+                         admin_task_rows=[serialize_admin_task(task) for task in admin_tasks],
+                         my_admin_task_rows=[serialize_admin_task(task) for task in my_admin_tasks],
+                         admin_status_rows=admin_status_rows,
                          open_disputes=open_disputes,
                          admin_users=admin_users,
                          site_content=get_site_content(),
@@ -5099,6 +5260,95 @@ def admin_competition_assignment(competition_id):
     db.session.commit()
     return jsonify({'success': True, 'competition': serialize_competition(competition)})
 
+@app.route('/admin/task/create', methods=['POST'])
+@admin_required
+def admin_task_create():
+    data = request.get_json(silent=True) or request.form
+    title = (data.get('title') or '').strip()[:160]
+    if not title:
+        return jsonify({'success': False, 'error': 'Task title is required'}), 400
+    assigned_admin_id = parse_positive_int(data.get('assigned_admin_id') or data.get('admin_id'), 0, 1) or None
+    if assigned_admin_id:
+        assigned_admin = db.session.get(User, assigned_admin_id)
+        if not assigned_admin or assigned_admin.role != 'admin':
+            return jsonify({'success': False, 'error': 'Select a valid assigned admin'}), 400
+    competition_id = parse_positive_int(data.get('competition_id'), 0, 0) or None
+    wave_id = parse_positive_int(data.get('wave_id'), 0, 0) or None
+    room_id = parse_positive_int(data.get('room_id'), 0, 0) or None
+    competition = db.session.get(Competition, competition_id) if competition_id else None
+    if competition_id and not competition:
+        return jsonify({'success': False, 'error': 'Competition not found'}), 404
+    if wave_id and not CompetitionWave.query.filter_by(id=wave_id, competition_id=competition_id).first():
+        return jsonify({'success': False, 'error': 'Wave not found for this competition'}), 404
+    room = db.session.get(Room, room_id) if room_id else None
+    if room_id and not room:
+        return jsonify({'success': False, 'error': 'Room not found'}), 404
+    if room and competition_id and room.competition_id != competition_id:
+        return jsonify({'success': False, 'error': 'Room does not belong to the selected competition'}), 400
+
+    room_range_start = parse_positive_int(data.get('room_range_start'), 0, 0) or None
+    room_range_end = parse_positive_int(data.get('room_range_end'), 0, 0) or None
+    task = AdminTask(
+        title=title,
+        description=(data.get('description') or '').strip()[:1200] or None,
+        task_type=(data.get('task_type') or 'room_watch').strip()[:40],
+        priority=(data.get('priority') or 'normal').strip()[:20],
+        status='open',
+        competition_id=competition_id,
+        wave_id=wave_id,
+        room_id=room_id,
+        room_range_start=room_range_start,
+        room_range_end=room_range_end,
+        assigned_admin_id=assigned_admin_id,
+        created_by=session.get('user_id'),
+        due_at=(data.get('due_at') or '').strip()[:80] or None
+    )
+    db.session.add(task)
+
+    assignment = None
+    if competition and assigned_admin_id:
+        assignment = CompetitionAdminAssignment(
+            competition_id=competition.id,
+            wave_id=wave_id,
+            admin_id=assigned_admin_id,
+            role=task.task_type or 'room_admin',
+            room_range_start=room_range_start,
+            room_range_end=room_range_end,
+            notes=f'Task: {title}'
+        )
+        db.session.add(assignment)
+    db.session.commit()
+    if assigned_admin_id:
+        socketio.emit('admin_task_assigned', serialize_admin_task(task), room=f"user_{task.assigned_admin.username}")
+    return jsonify({
+        'success': True,
+        'task': serialize_admin_task(task),
+        'assignment_id': assignment.id if assignment else None
+    })
+
+@app.route('/admin/task/<int:task_id>/status', methods=['POST'])
+@admin_required
+def admin_task_status(task_id):
+    task = db.session.get(AdminTask, task_id)
+    if not task:
+        return jsonify({'success': False, 'error': 'Task not found'}), 404
+    user = get_current_user()
+    if task.assigned_admin_id and task.assigned_admin_id != user.id and user.role != 'admin':
+        return jsonify({'success': False, 'error': 'You cannot update this task'}), 403
+    data = request.get_json(silent=True) or request.form
+    status = (data.get('status') or '').strip()
+    if status not in {'open', 'acknowledged', 'active', 'completed', 'missed'}:
+        return jsonify({'success': False, 'error': 'Invalid task status'}), 400
+    task.status = status
+    if status in {'acknowledged', 'active'} and not task.acknowledged_at:
+        task.acknowledged_at = datetime.now(timezone.utc)
+    if status == 'completed':
+        task.completed_at = datetime.now(timezone.utc)
+    if status != 'completed':
+        task.completed_at = None
+    db.session.commit()
+    return jsonify({'success': True, 'task': serialize_admin_task(task)})
+
 @app.route('/admin/dispute/<int:case_id>/resolve', methods=['POST'])
 @admin_required
 def admin_resolve_dispute(case_id):
@@ -6259,6 +6509,9 @@ def get_user_stats_api(user_id):
 @socketio.on('connect')
 def handle_connect():
     print(f"Ã¢Å“â€¦ Client connected: {request.sid}")
+    user = socket_current_user()
+    if user:
+        join_room(f"user_{user.username}")
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -6749,7 +7002,7 @@ def handle_admin_watch_room(data):
     if not room:
         return
     join_room(str(room_id))
-    connected_users[request.sid] = {'username': session_user.username, 'room_id': room_id, 'role': 'admin'}
+    connected_users[request.sid] = {'username': session_user.username, 'room_id': room_id, 'role': 'admin', 'user_id': session_user.id}
     emit('admin_watch_ready', {
         'room_id': room_id,
         'player1': room.player1.username if room.player1 else '',
@@ -7115,4 +7368,3 @@ initialize_runtime_database(create_dev_admin=False)
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     socketio.run(app, host='0.0.0.0', port=port, debug=True)
-

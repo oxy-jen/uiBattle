@@ -14,6 +14,7 @@
             <a href="#" data-section="challenges"><i class="fas fa-code-branch"></i> Manage Challenges</a>
             <a href="#" data-section="certificates"><i class="fas fa-certificate"></i> Certificates</a>
             <a href="#" data-section="competitions"><i class="fas fa-trophy"></i> Competitions</a>
+            <a href="#" data-section="assignments"><i class="fas fa-user-shield"></i> Assignments</a>
             <a href="{{ url_for('admin_competition_guide') }}"><i class="fas fa-book-open"></i> Admin Guide</a>
             <a href="#" data-section="moderation"><i class="fas fa-comments"></i> Chat Moderation</a>
             <a href="#" data-section="broadcast"><i class="fas fa-broadcast-tower"></i> Broadcast</a>
@@ -961,6 +962,155 @@
             </div>
         </div>
         
+        <!-- Assignments Section -->
+        <div id="section-assignments" class="admin-section">
+            <div class="section-header">
+                <div>
+                    <h3><i class="fas fa-user-shield"></i> Admin Assignment Center</h3>
+                    <p class="section-subtitle">Create tasks, assign admins to rooms or waves, and monitor whether assignments are being watched.</p>
+                </div>
+                <button type="button" class="btn-secondary" onclick="joinAllAdminLiveRooms()"><i class="fas fa-satellite-dish"></i> Connect Live Feeds</button>
+            </div>
+
+            <div class="assignment-center-grid">
+                <section class="assignment-panel">
+                    <h4><i class="fas fa-user-tie"></i> Admins Available</h4>
+                    <div class="assignment-admin-list">
+                        {% for row in admin_status_rows|default([]) %}
+                        <article class="assignment-admin-card">
+                            <strong>{{ row.user.username }} <small>#{{ row.user.id }}</small></strong>
+                            <span class="{{ 'status-online' if row.online else 'status-offline' }}">{{ 'Watching' if row.online else 'Not watching' }}</span>
+                            <em>{{ row.watched_count }} room(s) watched · {{ row.active_task_count }} active task(s)</em>
+                        </article>
+                        {% else %}
+                        <p class="section-subtitle">No admin accounts yet.</p>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <section class="assignment-panel">
+                    <h4><i class="fas fa-door-open"></i> Rooms Available</h4>
+                    <div class="assignment-room-list">
+                        {% for room in rooms[:24] %}
+                        <article class="assignment-room-card">
+                            <strong>{{ room.room_code }}</strong>
+                            <span>{{ room.status|upper }} · {{ room.challenge.title if room.challenge else 'No challenge' }}</span>
+                            <em>{{ room.player1.username if room.player1 else 'Open' }} vs {{ room.player2.username if room.player2 else 'Open' }}</em>
+                        </article>
+                        {% else %}
+                        <p class="section-subtitle">No rooms available.</p>
+                        {% endfor %}
+                    </div>
+                </section>
+            </div>
+
+            <div class="assignment-center-grid wide">
+                <form id="admin-task-form" class="assignment-panel assignment-task-form">
+                    <h4><i class="fas fa-list-check"></i> Create Assignment Task</h4>
+                    <label>Task title <input name="title" maxlength="160" required placeholder="Watch qualifier rooms 1-20"></label>
+                    <label>Task type
+                        <select name="task_type">
+                            <option value="room_watch">Watch rooms</option>
+                            <option value="fair_play">Fair-play review</option>
+                            <option value="camera_check">Camera / microphone check</option>
+                            <option value="login_support">Login support</option>
+                            <option value="dispute_review">Dispute review</option>
+                            <option value="broadcast">Broadcast instructions</option>
+                            <option value="certificate_review">Certificate review</option>
+                        </select>
+                    </label>
+                    <label>Assign admin
+                        <select name="assigned_admin_id" required>
+                            <option value="">Choose admin</option>
+                            {% for admin_user in admin_users|default([]) %}
+                            <option value="{{ admin_user.id }}">{{ admin_user.username }} (#{{ admin_user.id }})</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>Competition
+                        <select name="competition_id">
+                            <option value="">Any competition</option>
+                            {% for competition in competitions|default([]) %}
+                            <option value="{{ competition.id }}">{{ competition.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>Specific room
+                        <select name="room_id">
+                            <option value="">Room range or no specific room</option>
+                            {% for room in rooms %}
+                            <option value="{{ room.id }}">{{ room.room_code }} · {{ room.status }} · {{ room.challenge.title if room.challenge else 'No challenge' }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <div class="assignment-range-row">
+                        <label>Rooms from <input type="number" name="room_range_start" min="1" placeholder="1"></label>
+                        <label>to <input type="number" name="room_range_end" min="1" placeholder="20"></label>
+                    </div>
+                    <label>Priority
+                        <select name="priority">
+                            <option value="normal">Normal</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+                    </label>
+                    <label>Due time <input type="datetime-local" name="due_at"></label>
+                    <label class="assignment-notes">Instructions <textarea name="description" rows="3" placeholder="What should this admin check or complete?"></textarea></label>
+                    <button type="submit" class="btn-primary"><i class="fas fa-plus"></i> Create and Assign Task</button>
+                </form>
+
+                <section class="assignment-panel">
+                    <h4><i class="fas fa-triangle-exclamation"></i> Assignment Warnings</h4>
+                    {% for warning in assignment_center_warnings|default([]) %}
+                    <div class="assignment-warning">
+                        <i class="fas fa-triangle-exclamation"></i>
+                        <span>{{ warning.message }}</span>
+                    </div>
+                    {% else %}
+                    <p class="section-subtitle">No assignment warnings right now.</p>
+                    {% endfor %}
+                </section>
+            </div>
+
+            <div class="assignment-center-grid wide">
+                <section class="assignment-panel">
+                    <h4><i class="fas fa-clipboard-check"></i> My Tasks</h4>
+                    <div class="assignment-task-list">
+                        {% for task in my_admin_tasks|default([]) %}
+                        <article class="assignment-task-card status-{{ task.status }}">
+                            <strong>{{ task.title }}</strong>
+                            <span>{{ task.task_type|replace('_', ' ')|title }} · {{ task.priority|title }} · {{ task.status|title }}</span>
+                            <em>{{ task.competition.name if task.competition else 'Any competition' }}{% if task.room %} · {{ task.room.room_code }}{% elif task.room_range_start or task.room_range_end %} · rooms {{ task.room_range_start or 1 }}-{{ task.room_range_end or 'end' }}{% endif %}</em>
+                            {% if task.description %}<p>{{ task.description }}</p>{% endif %}
+                            <div class="assignment-task-actions">
+                                <button type="button" class="btn-secondary" data-task-status="{{ task.id }}" data-status="acknowledged"><i class="fas fa-check"></i> Acknowledge</button>
+                                <button type="button" class="btn-secondary" data-task-status="{{ task.id }}" data-status="active"><i class="fas fa-play"></i> Active</button>
+                                <button type="button" class="btn-primary" data-task-status="{{ task.id }}" data-status="completed"><i class="fas fa-flag-checkered"></i> Complete</button>
+                            </div>
+                        </article>
+                        {% else %}
+                        <p class="section-subtitle">No tasks assigned to you yet.</p>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <section class="assignment-panel">
+                    <h4><i class="fas fa-table-list"></i> Assignment Board</h4>
+                    <div class="assignment-board">
+                        {% for task in admin_tasks|default([]) %}
+                        <article class="assignment-board-row status-{{ task.status }}">
+                            <strong>{{ task.title }}</strong>
+                            <span>{{ task.assigned_admin.username if task.assigned_admin else 'Unassigned' }} · {{ task.status|title }} · {{ task.priority|title }}</span>
+                            <em>{{ task.competition.name if task.competition else 'Any competition' }}{% if task.room %} · {{ task.room.room_code }}{% elif task.room_range_start or task.room_range_end %} · rooms {{ task.room_range_start or 1 }}-{{ task.room_range_end or 'end' }}{% endif %}</em>
+                        </article>
+                        {% else %}
+                        <p class="section-subtitle">No admin tasks created yet.</p>
+                        {% endfor %}
+                    </div>
+                </section>
+            </div>
+        </div>
+
         <!-- Competitions Section -->
         <div id="section-competitions" class="admin-section">
             <div class="competitions-header">
@@ -2881,6 +3031,122 @@
     color: var(--text-primary);
     border-radius: 6px;
     padding: 10px;
+}
+
+.assignment-center-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.assignment-center-grid.wide {
+    grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+}
+
+.assignment-panel {
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    padding: 16px;
+    background: var(--panel-glass);
+}
+
+.assignment-panel h4 {
+    margin: 0 0 12px;
+    color: var(--text-primary);
+}
+
+.assignment-admin-list,
+.assignment-room-list,
+.assignment-task-list,
+.assignment-board {
+    display: grid;
+    gap: 10px;
+    max-height: 420px;
+    overflow: auto;
+}
+
+.assignment-admin-card,
+.assignment-room-card,
+.assignment-task-card,
+.assignment-board-row {
+    display: grid;
+    gap: 5px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.28);
+}
+
+.assignment-admin-card span,
+.assignment-room-card span,
+.assignment-task-card span,
+.assignment-board-row span,
+.assignment-admin-card em,
+.assignment-room-card em,
+.assignment-task-card em,
+.assignment-board-row em {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-style: normal;
+}
+
+.status-online {
+    color: #86efac !important;
+    font-weight: 800;
+}
+
+.status-offline {
+    color: #fca5a5 !important;
+    font-weight: 800;
+}
+
+.assignment-task-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.assignment-task-form h4,
+.assignment-task-form .assignment-notes,
+.assignment-task-form button,
+.assignment-range-row {
+    grid-column: 1 / -1;
+}
+
+.assignment-task-form label,
+.assignment-range-row label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.assignment-range-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.assignment-task-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.assignment-task-card.status-completed,
+.assignment-board-row.status-completed {
+    opacity: 0.7;
+}
+
+@media (max-width: 980px) {
+    .assignment-center-grid,
+    .assignment-center-grid.wide,
+    .assignment-task-form,
+    .assignment-range-row {
+        grid-template-columns: 1fr;
+    }
 }
 
 .tournament-players-select {
@@ -5492,6 +5758,58 @@ document.querySelectorAll('.advance-bracket-form').forEach((form) => {
     });
 });
 
+document.getElementById('admin-task-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const payload = Object.fromEntries(new FormData(form).entries());
+    if (button) {
+        button.disabled = true;
+        button.dataset.originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating';
+    }
+    try {
+        const res = await fetch('/admin/task/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not create assignment task');
+        showToast('Assignment task created', 'success');
+        setTimeout(() => location.reload(), 900);
+    } catch (err) {
+        showToast(err.message || 'Could not create assignment task', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = button.dataset.originalText || '<i class="fas fa-plus"></i> Create and Assign Task';
+        }
+    }
+});
+
+document.querySelectorAll('[data-task-status]').forEach((button) => {
+    button.addEventListener('click', async () => {
+        const taskId = button.dataset.taskStatus;
+        const status = button.dataset.status;
+        button.disabled = true;
+        try {
+            const res = await fetch(`/admin/task/${taskId}/status`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status})
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Could not update task');
+            showToast(`Task marked ${status}`, 'success');
+            setTimeout(() => location.reload(), 700);
+        } catch (err) {
+            showToast(err.message || 'Could not update task', 'error');
+            button.disabled = false;
+        }
+    });
+});
+
 document.querySelectorAll('.assignment-form').forEach((form) => {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -5845,6 +6163,7 @@ window.showAdminSection = (section) => {
         panel.classList.toggle('active', panel.id === `section-${section}`);
     });
     if (section === 'live-arena') joinAllAdminLiveRooms();
+    if (section === 'assignments') getAdminLiveSocket();
     if (section === 'moderation') loadModerationMessages();
 };
 
@@ -5854,7 +6173,11 @@ const adminWatchedRooms = new Set();
 function getAdminLiveSocket() {
     if (adminLiveSocket || typeof io === 'undefined') return adminLiveSocket;
     adminLiveSocket = io();
-    adminLiveSocket.on('connect', () => joinAllAdminLiveRooms());
+    adminLiveSocket.on('connect', () => {
+        if (document.getElementById('section-live-arena')?.classList.contains('active')) {
+            joinAllAdminLiveRooms();
+        }
+    });
     adminLiveSocket.on('admin_watch_ready', (data) => {
         (data?.previews || []).forEach(preview => {
             renderAdminLivePreview({...preview, room_id: data.room_id});
@@ -5874,6 +6197,9 @@ function getAdminLiveSocket() {
     adminLiveSocket.on('admin_right_click_attempt', renderAdminRightClickIncident);
     adminLiveSocket.on('admin_right_click_action_result', (data) => {
         showToast(data?.message || 'Admin action completed.', data?.success === false ? 'error' : 'success');
+    });
+    adminLiveSocket.on('admin_task_assigned', (task) => {
+        showToast(`New admin task: ${task?.title || 'Assignment task'}`, 'info');
     });
     return adminLiveSocket;
 }

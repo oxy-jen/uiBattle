@@ -175,6 +175,34 @@ class CompetitionAdminAssignment(db.Model):
     wave = db.relationship('CompetitionWave', backref='admin_assignments')
     admin = db.relationship('User', foreign_keys=[admin_id])
 
+class AdminTask(db.Model):
+    __tablename__ = 'admin_tasks'
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    task_type = db.Column(db.String(40), default='room_watch')
+    priority = db.Column(db.String(20), default='normal')
+    status = db.Column(db.String(20), default='open')
+    competition_id = db.Column(db.Integer, db.ForeignKey('competitions.id'), nullable=True)
+    wave_id = db.Column(db.Integer, db.ForeignKey('competition_waves.id'), nullable=True)
+    room_id = db.Column(db.Integer, db.ForeignKey('rooms.id'), nullable=True)
+    room_range_start = db.Column(db.Integer, nullable=True)
+    room_range_end = db.Column(db.Integer, nullable=True)
+    assigned_admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    due_at = db.Column(db.String(80), nullable=True)
+    acknowledged_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    competition = db.relationship('Competition', backref='admin_tasks')
+    wave = db.relationship('CompetitionWave', backref='admin_tasks')
+    room = db.relationship('Room', backref='admin_tasks')
+    assigned_admin = db.relationship('User', foreign_keys=[assigned_admin_id], backref='assigned_admin_tasks')
+    creator = db.relationship('User', foreign_keys=[created_by])
+
 class DisputeCase(db.Model):
     __tablename__ = 'dispute_cases'
 
