@@ -2405,7 +2405,11 @@ function initCollapseEditor() {
 
     window.addEventListener('resize', () => queueArenaLayoutSync(120));
     initArenaResizers(arenaMain);
-    if (USER_ROLE !== 'spectator') {
+    if (USER_ROLE !== 'spectator' && CHALLENGE_TYPE === 'website_arena') {
+        arenaRoot?.classList.remove('chat-open');
+        arenaMain?.classList.add('sidebar-collapsed');
+        sidebar?.classList.add('collapsed');
+    } else if (USER_ROLE !== 'spectator') {
         arenaRoot?.classList.add('chat-open');
         arenaMain?.classList.remove('sidebar-collapsed');
         sidebar?.classList.remove('collapsed');
@@ -2802,6 +2806,7 @@ function initPanelSizing() {
     const cameraPanel = centerPanel.querySelector('.cam-panel');
     const cameraCompactBtn = getElement('toggle-camera-compact');
     const focusClasses = ['expand-output', 'expand-target', 'expand-diff'];
+    const websiteSizingEnabled = CHALLENGE_TYPE === 'website_arena';
 
     function refreshVisibleSurfaces() {
         setTimeout(() => {
@@ -2826,7 +2831,65 @@ function initPanelSizing() {
         focusClasses.forEach((className) => centerPanel.classList.remove(className));
     }
 
+    function clearWebsiteSizing() {
+        centerPanel.classList.remove('website-focus-half', 'website-focus-full');
+        document.body.classList.remove('website-panel-fullscreen');
+        centerPanel.querySelectorAll('.panel-expanded').forEach((expandedPanel) => {
+            expandedPanel.classList.remove('panel-expanded');
+            expandedPanel.dataset.websiteExpandLevel = '';
+        });
+        buttons.forEach((btn) => {
+            btn.classList.remove('active');
+            btn.innerHTML = '<i class="fas fa-up-right-and-down-left-from-center"></i>';
+            btn.title = `Focus ${btn.dataset.panelSize} view`;
+            btn.setAttribute('aria-label', btn.title);
+        });
+        centerPanel.classList.remove('has-expanded-panel');
+        clearFocusClasses();
+    }
+
+    function setWebsiteExpanded(panel, button) {
+        const currentLevel = panel.dataset.websiteExpandLevel || '';
+        const nextLevel = panel.classList.contains('panel-expanded')
+            ? (currentLevel === 'half' ? 'full' : '')
+            : 'half';
+
+        clearWebsiteSizing();
+
+        if (!nextLevel) {
+            syncCameraButton();
+            refreshVisibleSurfaces();
+            return;
+        }
+
+        panel.classList.remove('panel-collapsed');
+        panel.classList.add('panel-expanded');
+        panel.dataset.websiteExpandLevel = nextLevel;
+        centerPanel.classList.add('has-expanded-panel', `expand-${button.dataset.panelSize}`);
+        centerPanel.classList.toggle('website-focus-half', nextLevel === 'half');
+        centerPanel.classList.toggle('website-focus-full', nextLevel === 'full');
+        document.body.classList.toggle('website-panel-fullscreen', nextLevel === 'full');
+        centerPanel.classList.remove('camera-compact');
+
+        button.classList.add('active');
+        button.innerHTML = nextLevel === 'half'
+            ? '<i class="fas fa-maximize"></i>'
+            : '<i class="fas fa-down-left-and-up-right-to-center"></i>';
+        button.title = nextLevel === 'half'
+            ? `Expand ${button.dataset.panelSize} to full screen`
+            : 'Restore arena grid';
+        button.setAttribute('aria-label', button.title);
+
+        syncCameraButton();
+        refreshVisibleSurfaces();
+    }
+
     function setExpanded(panel, button) {
+        if (websiteSizingEnabled) {
+            setWebsiteExpanded(panel, button);
+            return;
+        }
+
         const isExpanded = panel.classList.contains('panel-expanded');
         centerPanel.querySelectorAll('.panel-expanded').forEach((expandedPanel) => {
             expandedPanel.classList.remove('panel-expanded');
@@ -2835,6 +2898,7 @@ function initPanelSizing() {
             btn.classList.remove('active');
             btn.innerHTML = '<i class="fas fa-up-right-and-down-left-from-center"></i>';
             btn.title = `Focus ${btn.dataset.panelSize} view`;
+            btn.setAttribute('aria-label', btn.title);
         });
         clearFocusClasses();
 
@@ -2847,6 +2911,7 @@ function initPanelSizing() {
             button.classList.add('active');
             button.innerHTML = '<i class="fas fa-down-left-and-up-right-to-center"></i>';
             button.title = 'Restore arena grid';
+            button.setAttribute('aria-label', button.title);
         } else {
             centerPanel.classList.remove('has-expanded-panel');
         }
@@ -2878,8 +2943,11 @@ function initPanelSizing() {
                 btn.classList.remove('active');
                 btn.innerHTML = '<i class="fas fa-up-right-and-down-left-from-center"></i>';
                 btn.title = `Focus ${btn.dataset.panelSize} view`;
+                btn.setAttribute('aria-label', btn.title);
             });
             centerPanel.classList.remove('has-expanded-panel');
+            centerPanel.classList.remove('website-focus-half', 'website-focus-full');
+            document.body.classList.remove('website-panel-fullscreen');
             clearFocusClasses();
             centerPanel.classList.toggle('camera-compact');
             syncCameraButton();
@@ -2900,7 +2968,17 @@ function initPanelSizing() {
                 btn.classList.remove('active');
                 btn.innerHTML = '<i class="fas fa-up-right-and-down-left-from-center"></i>';
                 btn.title = `Focus ${btn.dataset.panelSize} view`;
+                btn.setAttribute('aria-label', btn.title);
             });
+            syncCameraButton();
+            refreshVisibleSurfaces();
+        });
+    }
+
+    if (websiteSizingEnabled) {
+        window.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || !centerPanel.classList.contains('has-expanded-panel')) return;
+            clearWebsiteSizing();
             syncCameraButton();
             refreshVisibleSurfaces();
         });
