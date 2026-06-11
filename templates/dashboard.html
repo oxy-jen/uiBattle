@@ -62,8 +62,8 @@
                     <div class="room-card" data-room-id="{{ room.id }}" data-room-public="{{ 'true' if room.is_public else 'false' }}" data-room-code="{{ room.room_code if room.is_public else '' }}">
                         <div class="room-header">
                             <span class="room-code">{{ room.room_code if room.is_public else 'Private match' }}</span>
-                            <span class="room-type-badge {% if room.challenge_type == 'html' %}html-type{% else %}image-type{% endif %}">
-                                {% if room.challenge_type == 'html' %}<i class="fas fa-code"></i> HTML{% else %}<i class="fas fa-image"></i> IMAGE{% endif %}
+                            <span class="room-type-badge {% if room.challenge_type in ['html', 'website_arena'] %}html-type{% else %}image-type{% endif %}">
+                                {% if room.challenge_type == 'website_arena' %}<i class="fas fa-window-restore"></i> WEBSITE{% elif room.challenge_type == 'html' %}<i class="fas fa-code"></i> HTML{% else %}<i class="fas fa-image"></i> IMAGE{% endif %}
                             </span>
                         </div>
                         <div class="room-title">{{ room.challenge_title }}</div>

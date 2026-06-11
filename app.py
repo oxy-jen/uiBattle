@@ -980,14 +980,15 @@ def ensure_schema_upgrades():
 
     challenge_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(challenges)")).fetchall()}
     challenge_additions = {
-        'challenge_type': "ALTER TABLE challenges ADD COLUMN challenge_type VARCHAR(10) DEFAULT 'image'",
+        'challenge_type': "ALTER TABLE challenges ADD COLUMN challenge_type VARCHAR(30) DEFAULT 'image'",
         'target_html': 'ALTER TABLE challenges ADD COLUMN target_html TEXT',
         'target_css': 'ALTER TABLE challenges ADD COLUMN target_css TEXT',
         'target_js': 'ALTER TABLE challenges ADD COLUMN target_js TEXT',
         'starter_html': 'ALTER TABLE challenges ADD COLUMN starter_html TEXT',
         'starter_css': 'ALTER TABLE challenges ADD COLUMN starter_css TEXT',
         'starter_js': 'ALTER TABLE challenges ADD COLUMN starter_js TEXT',
-        'html_locked': 'ALTER TABLE challenges ADD COLUMN html_locked BOOLEAN DEFAULT 1'
+        'html_locked': 'ALTER TABLE challenges ADD COLUMN html_locked BOOLEAN DEFAULT 1',
+        'website_config': 'ALTER TABLE challenges ADD COLUMN website_config TEXT'
     }
     for column, ddl in challenge_additions.items():
         if column not in challenge_columns:
@@ -1232,7 +1233,7 @@ def deterministic_submission_score(challenge, html_code, css_code, js_code='', v
     visual_similarity = safe_visual_hint(visual_hint)
     js_penalty = 0 if not js_code.strip() else min(6, len(js_code.strip()) / 600)
 
-    if challenge_type == 'html' and (target_html or target_css):
+    if challenge_type in {'html', 'website_arena'} and (target_html or target_css):
         if visual_similarity is not None:
             score = (visual_similarity * 52) + (property_similarity * 25) + (html_similarity * 10) + (css_similarity * 5) + (quality * 0.08) - js_penalty
         else:
@@ -1252,7 +1253,7 @@ def deterministic_submission_score(challenge, html_code, css_code, js_code='', v
         'visual_match': round((visual_similarity or 0) * 100, 1),
         'code_quality': quality,
         'style_groups': property_groups,
-        'scoring_mode': 'visual-output-target' if visual_similarity is not None else ('target-code' if challenge_type == 'html' and (target_html or target_css) else 'visual-code-rubric')
+        'scoring_mode': 'visual-output-target' if visual_similarity is not None else ('target-code' if challenge_type in {'html', 'website_arena'} and (target_html or target_css) else 'visual-code-rubric')
     }
     return round(max(0, min(100, score)), 1), details
 
@@ -4709,7 +4710,7 @@ def create_challenge():
         return jsonify({'success': False, 'error': 'Invalid time limit'}), 400
     description = request.form.get('description', '')
 
-    if challenge_type not in {'image', 'html'}:
+    if challenge_type not in {'image', 'html', 'website_arena'}:
         return jsonify({'success': False, 'error': 'Invalid challenge type'}), 400
     if launch_mode not in {'challenge_only', 'single_room', 'bulk_rooms', 'auto_pair_live', 'qualification', 'bracket', 'qualifier_bracket'}:
         return jsonify({'success': False, 'error': 'Invalid launch mode'}), 400
@@ -4782,6 +4783,13 @@ def create_challenge():
         starter_css = request.form.get('starter_css', '')
         starter_js = request.form.get('starter_js', '')
         html_locked = request.form.get('html_locked') == 'true'
+        website_config = {}
+        if challenge_type == 'website_arena':
+            raw_website_config = request.form.get('website_config') or '{}'
+            try:
+                website_config = json.loads(raw_website_config)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': 'Invalid website setup'}), 400
 
         if not target_html:
             return jsonify({'success': False, 'error': 'Target HTML is required'}), 400
@@ -4793,6 +4801,8 @@ def create_challenge():
         new_challenge.starter_css = starter_css
         new_challenge.starter_js = starter_js
         new_challenge.html_locked = html_locked
+        if challenge_type == 'website_arena':
+            new_challenge.website_config = json.dumps(website_config)
     
     db.session.add(new_challenge)
     db.session.flush()
@@ -6490,7 +6500,7 @@ def get_user_stats_api(user_id):
     submissions = [event['submission'] for event in record['events'] if event['submission'] and not event['submission'].is_forfeit]
 
     image_count = sum(1 for s in submissions if s.challenge and s.challenge.challenge_type == 'image')
-    html_count = sum(1 for s in submissions if s.challenge and s.challenge.challenge_type == 'html')
+    html_count = sum(1 for s in submissions if s.challenge and s.challenge.challenge_type in {'html', 'website_arena'})
     
     return jsonify({
         'success': True,

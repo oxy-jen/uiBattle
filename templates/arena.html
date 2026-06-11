@@ -1,7 +1,7 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="arena-root {% if user_role == 'spectator' %}spectator-mode{% elif user_role == 'admin' %}admin-mode{% endif %}">
+<div class="arena-root {% if challenge.challenge_type == 'website_arena' %}website-arena-mode{% endif %} {% if user_role == 'spectator' %}spectator-mode{% elif user_role == 'admin' %}admin-mode{% endif %}">
     <!-- JINJA + JS CONSTANTS -->
     <script>
         window.ARENA_CONFIG = {
@@ -20,6 +20,7 @@
             starterHtml: {{ (challenge.starter_html if challenge.starter_html is not none else (challenge.target_html or '')) | tojson }},
             starterCss: {{ (challenge.starter_css or '') | tojson }},
             starterJs: {{ (challenge.starter_js or '') | tojson }},
+            websiteConfig: {{ (challenge.website_config or '{}') | tojson }},
             targetImageUrl: {{ url_for('static', filename='uploads/' + challenge.target_image_path) | tojson if challenge.target_image_path else 'null' }},
             player1Username: "{{ player1_username or '' }}",
             player2Username: "{{ player2_username or '' }}",
@@ -47,8 +48,8 @@
         <div class="nav-center">
             <span class="room-code">{{ room.room_code if room.is_public or user.role == 'admin' else 'Private match' }}</span>
             <span class="challenge-title">{{ challenge.title }}</span>
-            <span class="challenge-type-badge {% if challenge.challenge_type == 'html' %}html-badge{% else %}image-badge{% endif %}">
-                {% if challenge.challenge_type == 'html' %}<i class="fas fa-code"></i> HTML{% else %}<i class="fas fa-image"></i> IMAGE{% endif %}
+            <span class="challenge-type-badge {% if challenge.challenge_type in ['html', 'website_arena'] %}html-badge{% else %}image-badge{% endif %}">
+                {% if challenge.challenge_type == 'website_arena' %}<i class="fas fa-window-restore"></i> WEBSITE / HYBRID{% elif challenge.challenge_type == 'html' %}<i class="fas fa-code"></i> HTML{% else %}<i class="fas fa-image"></i> IMAGE{% endif %}
             </span>
         </div>
         <div class="nav-right">
@@ -161,6 +162,17 @@
                     <i class="fab fa-js"></i> JavaScript
                 </button>
             </div>
+            {% if challenge.challenge_type == 'website_arena' %}
+            <div class="website-arena-sidebar" id="website-arena-sidebar">
+                <div class="website-arena-sidebar-head">
+                    <span><i class="fas fa-folder-tree"></i> Pages</span>
+                    <span id="website-target-mode-label">Hybrid target</span>
+                </div>
+                <div class="website-page-list" id="website-page-list"></div>
+                <div class="website-requirements" id="website-requirements"></div>
+                <div class="website-preview-size-row" id="website-preview-size-row"></div>
+            </div>
+            {% endif %}
             <div class="editor-container">
                 <div id="html-editor" class="code-editor"></div>
                 <div id="css-editor" class="code-editor" style="display:none;"></div>
@@ -213,7 +225,7 @@
                 <!-- OUTPUT PANEL -->
                 <div class="panel output-panel">
                     <div class="panel-header">
-                        <span><i class="fas fa-desktop"></i> OUTPUT (YOUR CODE)</span>
+                    <span><i class="fas fa-desktop"></i> {% if challenge.challenge_type == 'website_arena' %}WEBSITE PREVIEW{% else %}OUTPUT (YOUR CODE){% endif %}</span>
                         <div class="panel-header-actions">
                             <span class="live-badge"><span class="live-dot"></span> LIVE</span>
                             <div class="surface-zoom-controls" data-zoom-panel="output" aria-label="Output zoom controls">
@@ -240,7 +252,7 @@
                 <!-- TARGET PANEL -->
                 <div class="panel target-panel">
                     <div class="panel-header">
-                        <span><i class="fas fa-bullseye"></i> TARGET UI</span>
+                        <span><i class="fas fa-bullseye"></i> {% if challenge.challenge_type == 'website_arena' %}WEBSITE TARGET{% else %}TARGET UI{% endif %}</span>
                         <div class="panel-header-actions">
                             <i class="fas fa-eye"></i>
                             <div class="surface-zoom-controls" data-zoom-panel="target" aria-label="Target zoom controls">

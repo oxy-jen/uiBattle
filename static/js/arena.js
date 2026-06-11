@@ -40,6 +40,8 @@ const TARGET_JS_RAW = getElement('target-js-data')?.value || arenaConfig.targetJ
 const STARTER_HTML_RAW = getElement('starter-html-data')?.value || arenaConfig.starterHtml || '';
 const STARTER_CSS_RAW = getElement('starter-css-data')?.value || arenaConfig.starterCss || '';
 const STARTER_JS_RAW = getElement('starter-js-data')?.value || arenaConfig.starterJs || '';
+const WEBSITE_CONFIG_RAW = arenaConfig.websiteConfig || '{}';
+const HTML_LIKE_CHALLENGE_TYPES = ['html', 'website_arena'];
 const PLAYER_ROLES = ['player1', 'player2'];
 const IS_PLAYER_ROLE = PLAYER_ROLES.includes(USER_ROLE);
 const IS_OBSERVER_ROLE = USER_ROLE === 'admin' || USER_ROLE === 'spectator';
@@ -93,6 +95,7 @@ let TARGET_JS = TARGET_JS_RAW;
 let STARTER_HTML = STARTER_HTML_RAW;
 let STARTER_CSS = STARTER_CSS_RAW;
 let STARTER_JS = STARTER_JS_RAW;
+let WEBSITE_CONFIG = {};
 try {
     if (TARGET_HTML_RAW && TARGET_HTML_RAW.startsWith('"')) {
         TARGET_HTML = JSON.parse(TARGET_HTML_RAW);
@@ -112,7 +115,12 @@ try {
     if (STARTER_JS_RAW && STARTER_JS_RAW.startsWith('"')) {
         STARTER_JS = JSON.parse(STARTER_JS_RAW);
     }
+    WEBSITE_CONFIG = typeof WEBSITE_CONFIG_RAW === 'string' ? JSON.parse(WEBSITE_CONFIG_RAW || '{}') : (WEBSITE_CONFIG_RAW || {});
 } catch(e) {}
+
+function isHtmlLikeChallenge(type = CHALLENGE_TYPE) {
+    return HTML_LIKE_CHALLENGE_TYPES.includes(type);
+}
 
 function getActiveEditor() {
     if (currentTab === 'css') return cssEditor;
@@ -687,7 +695,7 @@ function initEditors() {
     jsEditor = CodeMirror(jsEditorElem, getEditorOptions('javascript'));
     
     // Set initial content based on challenge type
-    if (CHALLENGE_TYPE === 'html') {
+    if (isHtmlLikeChallenge()) {
         htmlEditor.setValue(STARTER_HTML || '');
         if (HTML_LOCKED) {
             htmlEditor.setOption('readOnly', true);
@@ -710,7 +718,7 @@ function initEditors() {
     const savedCss = getFromLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_css`);
     const savedJs = getFromLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_js`);
     
-    if (savedHtml && (!HTML_LOCKED || CHALLENGE_TYPE !== 'html')) htmlEditor.setValue(savedHtml);
+    if (savedHtml && (!HTML_LOCKED || !isHtmlLikeChallenge())) htmlEditor.setValue(savedHtml);
     if (savedCss) cssEditor.setValue(savedCss);
     if (savedJs) jsEditor.setValue(savedJs);
 
@@ -870,7 +878,7 @@ function updatePreview() {
 
 function getScorableCode() {
     if (!htmlEditor || !cssEditor || !jsEditor) return '';
-    if (CHALLENGE_TYPE === 'html' && HTML_LOCKED) {
+    if (isHtmlLikeChallenge() && HTML_LOCKED) {
         return `${cssEditor.getValue()}\n${jsEditor.getValue()}`.trim();
     }
     return `${htmlEditor.getValue()}\n${cssEditor.getValue()}\n${jsEditor.getValue()}`.trim();
@@ -1038,7 +1046,7 @@ function initTarget() {
     const targetImg = getElement('target-image');
     const targetFrame = getElement('target-frame');
     
-    if (CHALLENGE_TYPE === 'html') {
+    if (isHtmlLikeChallenge()) {
         if (targetImg) targetImg.style.display = 'none';
         if (targetFrame) {
             targetFrame.style.display = 'block';
@@ -1058,7 +1066,7 @@ function initTarget() {
             targetFrame.srcdoc = targetDoc;
         }
         const typeLabel = getElement('target-type-label');
-        if (typeLabel) typeLabel.textContent = 'HTML Target';
+        if (typeLabel) typeLabel.textContent = CHALLENGE_TYPE === 'website_arena' ? 'Website Target' : 'HTML Target';
     } else {
         if (targetFrame) targetFrame.style.display = 'none';
         if (targetImg && TARGET_IMAGE_URL) {
@@ -1190,6 +1198,46 @@ function readScoreCache() {
     } catch (error) {
         return {};
     }
+}
+
+function initWebsiteArenaWorkspace() {
+    if (CHALLENGE_TYPE !== 'website_arena') return;
+    const pageList = getElement('website-page-list');
+    const requirements = getElement('website-requirements');
+    const previewSizes = getElement('website-preview-size-row');
+    const targetMode = getElement('website-target-mode-label');
+    const pageNames = Array.isArray(WEBSITE_CONFIG.page_names) && WEBSITE_CONFIG.page_names.length ? WEBSITE_CONFIG.page_names : ['Home'];
+    const sections = Array.isArray(WEBSITE_CONFIG.required_sections) ? WEBSITE_CONFIG.required_sections : [];
+    const sizes = Array.isArray(WEBSITE_CONFIG.preview_sizes) ? WEBSITE_CONFIG.preview_sizes : ['desktop', 'tablet', 'mobile'];
+
+    if (targetMode) {
+        targetMode.textContent = String(WEBSITE_CONFIG.target_mode || 'hybrid').replace(/_/g, ' ');
+    }
+    if (pageList) {
+        pageList.innerHTML = pageNames.map((name, index) => `
+            <button type="button" class="website-page-chip${index === 0 ? ' active' : ''}" data-page-index="${index}">
+                <i class="fas fa-file-code"></i><span>${escapeHtml(name)}</span>
+            </button>
+        `).join('');
+    }
+    if (requirements) {
+        requirements.innerHTML = sections.length
+            ? sections.map((section) => `<span><i class="fas fa-check"></i>${escapeHtml(section)}</span>`).join('')
+            : '<span><i class="fas fa-check"></i>custom brief</span>';
+    }
+    if (previewSizes) {
+        previewSizes.innerHTML = sizes.map((size) => `<button type="button" data-preview-size="${escapeHtml(size)}">${escapeHtml(size)}</button>`).join('');
+    }
+}
+
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
 }
 
 function writeScoreCache(hash, accuracy) {
@@ -2112,12 +2160,12 @@ function initMediaSettings() {
 async function resetCode() {
     const confirmed = await showConfirm('Reset your code? This cannot be undone.', 'Reset code');
     if (!confirmed) return;
-    if (CHALLENGE_TYPE === 'html' && HTML_LOCKED) {
+    if (isHtmlLikeChallenge() && HTML_LOCKED) {
         // Only reset CSS and JS
         cssEditor.setValue(STARTER_CSS || '');
         jsEditor.setValue(STARTER_JS || '');
         showToast('CSS and JS reset to the admin starter code. HTML structure preserved.', 'info');
-    } else if (CHALLENGE_TYPE === 'html') {
+    } else if (isHtmlLikeChallenge()) {
         htmlEditor.setValue(STARTER_HTML || '');
         cssEditor.setValue(STARTER_CSS || '');
         jsEditor.setValue(STARTER_JS || '');
@@ -3050,6 +3098,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initArenaInspectGuards();
     initEditors();
     initTarget();
+    initWebsiteArenaWorkspace();
     initDiffToggle();
     setupCamera();
     initMediaSettings();
@@ -3154,7 +3203,7 @@ function startStatusPolling() {
                     
                     const challengeType = document.getElementById('challenge-type')?.value || window.ARENA_CONFIG?.challengeType;
                     const htmlLocked = document.getElementById('html-locked')?.value === 'true' || window.ARENA_CONFIG?.htmlLocked === true;
-                    if (!(challengeType === 'html' && htmlLocked)) {
+                    if (!(['html', 'website_arena'].includes(challengeType) && htmlLocked)) {
                         if (window.htmlEditor) window.htmlEditor.setOption('readOnly', false);
                     }
                 }

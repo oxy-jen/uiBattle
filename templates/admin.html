@@ -229,6 +229,7 @@
                 <div class="challenge-type-toggle">
                     <button class="type-btn active" data-type="image"><i class="fas fa-image"></i> IMAGE CHALLENGE</button>
                     <button class="type-btn" data-type="html"><i class="fas fa-code"></i> HTML CHALLENGE</button>
+                    <button class="type-btn" data-type="website_arena"><i class="fas fa-window-restore"></i> WEBSITE / HYBRID</button>
                 </div>
                 
                 <form id="create-challenge-form" enctype="multipart/form-data" novalidate>
@@ -504,6 +505,72 @@
                                 </div>
                             </div>
 
+                            <div id="website-fields" class="admin-code-section website-builder-options" style="display:none;">
+                                <div class="panel-title-row">
+                                    <div>
+                                        <h3><i class="fas fa-sitemap"></i> Website / Hybrid Setup</h3>
+                                        <small class="help-text">Adds multi-section page requirements while keeping preview, target, diff, timer, chat, camera, scoring, and admin monitoring shared.</small>
+                                    </div>
+                                    <span class="panel-pill">website_arena</span>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Number of pages</label>
+                                        <input type="number" id="website-page-count" min="1" max="6" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Page names</label>
+                                        <input type="text" id="website-page-names" value="Home" placeholder="Home, About, Contact">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Required sections</label>
+                                    <div class="website-check-grid">
+                                        <label><input type="checkbox" name="website_required_sections" value="navbar" checked> Navbar</label>
+                                        <label><input type="checkbox" name="website_required_sections" value="hero" checked> Hero</label>
+                                        <label><input type="checkbox" name="website_required_sections" value="gallery"> Gallery</label>
+                                        <label><input type="checkbox" name="website_required_sections" value="form"> Form</label>
+                                        <label><input type="checkbox" name="website_required_sections" value="footer" checked> Footer</label>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Allowed assets</label>
+                                        <input type="text" id="website-assets" value="images, logos, videos" placeholder="images, logos, videos">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Allowed files</label>
+                                        <input type="text" id="website-files" value="HTML, CSS, JS, assets" placeholder="HTML, CSS, JS, assets">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Target mode</label>
+                                        <select id="website-target-mode">
+                                            <option value="hybrid" selected>Hybrid target with screenshot + requirements</option>
+                                            <option value="screenshot">Screenshot target</option>
+                                            <option value="live">Live rendered target</option>
+                                            <option value="brief">Written brief</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Preview sizes</label>
+                                        <input type="text" id="website-preview-sizes" value="desktop, tablet, mobile" placeholder="desktop, tablet, mobile">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Scoring weights</label>
+                                    <div class="website-weight-grid">
+                                        <label>Visual match <input type="number" id="weight-visual" value="30" min="0" max="100"></label>
+                                        <label>Responsiveness <input type="number" id="weight-responsive" value="20" min="0" max="100"></label>
+                                        <label>Completeness <input type="number" id="weight-complete" value="20" min="0" max="100"></label>
+                                        <label>Required sections <input type="number" id="weight-sections" value="15" min="0" max="100"></label>
+                                        <label>Code quality <input type="number" id="weight-quality" value="10" min="0" max="100"></label>
+                                        <label>Accessibility <input type="number" id="weight-a11y" value="5" min="0" max="100"></label>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div id="html-preview" class="preview-frame builder-preview">
                                 <div class="preview-header"><i class="fas fa-desktop"></i> Target Output Preview</div>
                                 <iframe id="preview-iframe" sandbox="allow-scripts" style="width:100%;height:300px;border:none;background:#fff;"></iframe>
@@ -548,8 +615,8 @@
                         <tr data-room-id="{{ room.id }}" data-status="{{ room.status }}">
                             <td class="room-code-cell">{{ room.room_code }}</td>
                             <td>{{ room.challenge.title if room.challenge else '—' }}</td>
-                            <td><span class="badge {% if room.challenge.challenge_type == 'html' %}html-badge{% else %}image-badge{% endif %}">
-                                {{ room.challenge.challenge_type|upper if room.challenge else '—' }}
+                            <td><span class="badge {% if room.challenge and room.challenge.challenge_type in ['html', 'website_arena'] %}html-badge{% else %}image-badge{% endif %}">
+                                {% if room.challenge and room.challenge.challenge_type == 'website_arena' %}WEBSITE{% else %}{{ room.challenge.challenge_type|upper if room.challenge else '—' }}{% endif %}
                             </span></td>
                             <td>{{ room.player1.username if room.player1 else 'Empty' }}</td>
                             <td>{{ room.player2.username if room.player2 else 'Empty' }}</td>
@@ -938,8 +1005,8 @@
                             <td>{{ challenge.id }}</td>
                             <td class="challenge-title">{{ challenge.title }}</td>
                             <td>
-                                <span class="badge {% if challenge.challenge_type == 'html' %}html-badge{% else %}image-badge{% endif %}">
-                                    {% if challenge.challenge_type == 'html' %}<i class="fas fa-code"></i> HTML{% else %}<i class="fas fa-image"></i> IMAGE{% endif %}
+                                <span class="badge {% if challenge.challenge_type in ['html', 'website_arena'] %}html-badge{% else %}image-badge{% endif %}">
+                                    {% if challenge.challenge_type == 'website_arena' %}<i class="fas fa-window-restore"></i> WEBSITE{% elif challenge.challenge_type == 'html' %}<i class="fas fa-code"></i> HTML{% else %}<i class="fas fa-image"></i> IMAGE{% endif %}
                                 </span>
                             </td>
                             <td>{{ challenge.difficulty }}</td>
@@ -3614,7 +3681,7 @@ textarea {
 
 .challenge-type-toggle {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     padding: 4px;
     gap: 4px;
     border: 1px solid #243042;
@@ -3638,6 +3705,40 @@ textarea {
     border-color: #243042;
     border-radius: 8px;
     background: #101827;
+}
+
+.website-builder-options {
+    display: grid;
+    gap: 16px;
+    padding: 16px;
+}
+
+.website-check-grid,
+.website-weight-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.website-check-grid label,
+.website-weight-grid label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid #243042;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #dbeafe;
+}
+
+.website-check-grid label {
+    justify-content: flex-start;
+}
+
+.website-weight-grid input {
+    max-width: 76px;
 }
 
 .competition-mode-hint {
@@ -3787,7 +3888,10 @@ textarea {
     #create-challenge-form .competition-setup-panel .form-row:nth-of-type(3),
     #create-challenge-form .competition-setup-panel .form-row:nth-of-type(6),
     #create-challenge-form .competition-setup-panel .bulk-room-options,
-    .code-editor-grid {
+    .code-editor-grid,
+    .website-check-grid,
+    .website-weight-grid,
+    .challenge-type-toggle {
         grid-template-columns: 1fr;
     }
 }
@@ -4321,7 +4425,8 @@ function setChallengeType(type) {
     document.querySelectorAll('.type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
     document.getElementById('challenge-type').value = type;
     document.getElementById('image-fields').style.display = type === 'image' ? 'block' : 'none';
-    document.getElementById('html-fields').style.display = type === 'html' ? 'block' : 'none';
+    document.getElementById('html-fields').style.display = type === 'html' || type === 'website_arena' ? 'block' : 'none';
+    document.getElementById('website-fields').style.display = type === 'website_arena' ? 'grid' : 'none';
 
     const imageInput = document.getElementById('target-image');
     if (imageInput) imageInput.required = type === 'image';
@@ -4356,6 +4461,32 @@ function renderAdminTargetPreview() {
 </head>
 <body>${html}<script>${js}<\/script></body>
 </html>`;
+}
+
+function splitListValue(value) {
+    return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function collectWebsiteConfig() {
+    const sections = Array.from(document.querySelectorAll('input[name="website_required_sections"]:checked')).map((input) => input.value);
+    return {
+        layout_mode: 'website_arena',
+        page_count: Math.max(1, Number(document.getElementById('website-page-count')?.value || 1)),
+        page_names: splitListValue(document.getElementById('website-page-names')?.value || 'Home'),
+        required_sections: sections,
+        allowed_assets: splitListValue(document.getElementById('website-assets')?.value),
+        target_mode: document.getElementById('website-target-mode')?.value || 'hybrid',
+        scoring_weights: {
+            visual_match: Number(document.getElementById('weight-visual')?.value || 0),
+            responsiveness: Number(document.getElementById('weight-responsive')?.value || 0),
+            layout_completeness: Number(document.getElementById('weight-complete')?.value || 0),
+            required_sections: Number(document.getElementById('weight-sections')?.value || 0),
+            code_quality: Number(document.getElementById('weight-quality')?.value || 0),
+            accessibility: Number(document.getElementById('weight-a11y')?.value || 0)
+        },
+        preview_sizes: splitListValue(document.getElementById('website-preview-sizes')?.value),
+        allowed_files: splitListValue(document.getElementById('website-files')?.value)
+    };
 }
 
 initAdminEditors();
@@ -4552,6 +4683,14 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
         formData.append('starter_css', adminStarterCssEditor ? adminStarterCssEditor.getValue() : '');
         formData.append('starter_js', adminStarterJsEditor ? adminStarterJsEditor.getValue() : '');
         formData.append('html_locked', document.getElementById('html-locked').checked ? 'true' : 'false');
+        if (challengeType === 'website_arena') {
+            const websiteConfig = collectWebsiteConfig();
+            if (!websiteConfig.page_names.length) {
+                showToast('Add at least one website page name', 'error');
+                return;
+            }
+            formData.append('website_config', JSON.stringify(websiteConfig));
+        }
     }
     
     const submitButton = e.submitter || e.target.querySelector('button[type="submit"]');

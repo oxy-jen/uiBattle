@@ -3079,6 +3079,64 @@ li.CodeMirror-hint-active {
   background: linear-gradient(135deg, #0f172a 0%, #111827 52%, #18212f 100%);
 }
 
+.arena-root.website-arena-mode .arena-main {
+  --editor-width: 460px;
+}
+
+.website-arena-sidebar {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.website-arena-sidebar-head,
+.website-preview-size-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.website-arena-sidebar-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #cbd5e1;
+}
+
+.website-page-list,
+.website-requirements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.website-page-chip,
+.website-preview-size-row button,
+.website-requirements span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.9);
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.website-page-chip.active,
+.website-preview-size-row button:first-child {
+  border-color: rgba(34, 211, 238, 0.65);
+  background: rgba(8, 145, 178, 0.28);
+}
+
 .arena-navbar {
   flex: 0 0 64px;
   min-height: 64px;
@@ -4343,6 +4401,11 @@ li.CodeMirror-hint-active {
     height: auto;
     min-height: 100dvh;
     overflow: visible;
+  }
+
+  .website-arena-sidebar {
+    max-height: 160px;
+    overflow: auto;
   }
 
   .arena-navbar,

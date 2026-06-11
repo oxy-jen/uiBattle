@@ -55,7 +55,7 @@ class Challenge(db.Model):
     difficulty = db.Column(db.String(10), default='Medium')
     time_limit = db.Column(db.Integer, default=120)
     
-    challenge_type = db.Column(db.String(10), default='image')
+    challenge_type = db.Column(db.String(30), default='image')
     
     target_image_path = db.Column(db.String(200), nullable=True)
     target_html = db.Column(db.Text, nullable=True)
@@ -65,6 +65,7 @@ class Challenge(db.Model):
     starter_css = db.Column(db.Text, nullable=True)
     starter_js = db.Column(db.Text, nullable=True)
     html_locked = db.Column(db.Boolean, default=True)
+    website_config = db.Column(db.Text, nullable=True)
     
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

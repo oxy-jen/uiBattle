@@ -118,7 +118,7 @@ function setEditorPausedState(isPaused) {
     if (window.cssEditor) window.cssEditor.setOption('readOnly', shouldLock);
     if (window.jsEditor) window.jsEditor.setOption('readOnly', shouldLock);
     if (window.htmlEditor) {
-        window.htmlEditor.setOption('readOnly', shouldLock || (challengeType === 'html' && htmlLocked));
+        window.htmlEditor.setOption('readOnly', shouldLock || (['html', 'website_arena'].includes(challengeType) && htmlLocked));
     }
 
     ['submit-btn', 'reset-code-btn'].forEach((id) => {
@@ -217,7 +217,7 @@ socket.on('challenge_started', function(data) {
             console.log('âœ… JS editor unlocked');
         }
         
-        if (!(challengeType === 'html' && htmlLocked)) {
+        if (!(['html', 'website_arena'].includes(challengeType) && htmlLocked)) {
             if (window.htmlEditor) {
                 window.htmlEditor.setOption('readOnly', false);
                 console.log('âœ… HTML editor unlocked');
