@@ -9,13 +9,14 @@
     {% set seo_title = seo_title|default(default_seo_title) %}
     {% set seo_description = seo_description|default(default_seo_description) %}
     {% set seo_image = seo_image|default(url_for('static', filename='site-icon.svg', _external=True)) %}
-    {% set seo_canonical = seo_canonical|default(request.url_root.rstrip('/') ~ request.path) %}
+    {% set base_domain = 'https://uibattlearena.top' %}
+    {% set seo_canonical = seo_canonical|default(base_domain ~ request.path) %}
     {% set seo_robots = seo_robots|default('index, follow' if request.endpoint in seo_public_endpoints else 'noindex, nofollow') %}
     <title>{{ seo_title }}</title>
     <meta name="description" content="{{ seo_description }}">
     <meta name="keywords" content="UI Battle Arena, uibattlearena, frontend coding competition, HTML CSS JavaScript battle, website design competition, UI challenge arena, live coding tournament, web design battle">
     <meta name="robots" content="{{ seo_robots }}">
-    <link rel="canonical" href="{{ seo_canonical }}">
+    <link rel="canonical" href="{{ g.canonical_base }}">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="UI Battle Arena">
     <meta property="og:title" content="{{ seo_title }}">
@@ -27,17 +28,24 @@
     <meta name="twitter:description" content="{{ seo_description }}">
     <meta name="twitter:image" content="{{ seo_image }}">
     <script type="application/ld+json">
-    {{ {
-        '@context': 'https://schema.org',
-        '@type': 'WebApplication',
-        'name': 'UI Battle Arena',
-        'alternateName': ['uibattlearena', 'UIBattleArena'],
-        'url': request.url_root.rstrip('/'),
-        'applicationCategory': 'EducationalApplication',
-        'operatingSystem': 'Web',
-        'description': default_seo_description
-    } | tojson }}
-    </script>
+        {
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "UI Battle Arena",
+          "alternateName": ["uibattlearena", "UIBattleArena"],
+          "url": "https://uibattlearena.top",
+          "applicationCategory": "GameApplication",
+          "operatingSystem": "Web",
+          "description": "UI Battle Arena is a competitive platform for frontend coding battles and UI design challenges.",
+          "potentialAction": {
+            "@type": "ViewAction",
+            "target": [
+              "https://uibattlearena.top",
+              "https://ui-battle-arena.onrender.com"
+            ]
+          }
+        }
+        </script>
     <meta name="csrf-token" content="{{ csrf_token }}">
     <script>
         window.UIBA_CSRF_TOKEN = "{{ csrf_token }}";

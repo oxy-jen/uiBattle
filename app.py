@@ -1,4 +1,4 @@
-﻿from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
+﻿from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory,g
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask import flash
 from flask_sqlalchemy import SQLAlchemy
@@ -3359,12 +3359,29 @@ def inject_current_profile():
     }
     return context
 
+from urllib.parse import urljoin, urlparse
+
 @app.before_request
 def ensure_runtime_schema():
     ensure_schema_upgrades()
+
     csrf_response = verify_csrf_request()
     if csrf_response:
         return csrf_response
+
+    # FORCE CANONICAL DOMAIN (SEO CONTROL LAYER)
+    base = "https://uibattlearena.top"
+
+    # remove query params for clean SEO URLs
+    clean_path = urlparse(request.full_path).path
+
+    # build canonical URL safely
+    g.canonical_base = urljoin(base, clean_path)
+
+    # safety enforcement (hard override if wrong domain accessed)
+    if request.host != "uibattlearena.top":
+        g.canonical_base = urljoin(base, clean_path)
+        g.canonical_base = urljoin(base, clean_path).rstrip("/")
 
 def run_room_timer(room_id):
     with app.app_context():
