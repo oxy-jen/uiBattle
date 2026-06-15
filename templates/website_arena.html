@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="website-tool-arena arena-root website-arena-mode {% if user_role == 'spectator' %}spectator-mode{% elif user_role == 'admin' %}admin-mode{% endif %}">
+    <script>
+        window.ARENA_CONFIG = {
+            roomId: {{ room.id }},
+            roomCode: {{ room.room_code|tojson if room.is_public or user.role == 'admin' else 'null' }},
+            roomCodePublic: {{ 'true' if room.is_public else 'false' }},
+            challengeId: {{ challenge.id }},
+            currentUsername: {{ user.username|tojson }},
+            userRole: {{ user_role|tojson }},
+            timeLimit: {{ challenge.time_limit }},
+            challengeType: {{ challenge.challenge_type|tojson }},
+            htmlLocked: {{ 'true' if challenge.html_locked else 'false' }},
+            targetHtml: {{ challenge.target_html | tojson if challenge.target_html else 'null' }},
+            targetCss: {{ challenge.target_css | tojson if challenge.target_css else 'null' }},
+            targetJs: {{ (challenge.target_js or '') | tojson }},
+            starterHtml: {{ (challenge.starter_html if challenge.starter_html is not none else (challenge.target_html or '')) | tojson }},
+            starterCss: {{ (challenge.starter_css or '') | tojson }},
+            starterJs: {{ (challenge.starter_js or '') | tojson }},
+            websiteConfig: {{ (challenge.website_config or '{}') | tojson }},
+            targetImageUrl: {{ url_for('static', filename='uploads/' + challenge.target_image_path) | tojson if challenge.target_image_path else 'null' }},
+            player1Username: {{ (player1_username or '')|tojson }},
+            player2Username: {{ (player2_username or '')|tojson }},
+            adminName: {{ admin_username|tojson }},
+            challengeTitle: {{ challenge.title|tojson }},
+            challengeDifficulty: {{ challenge.difficulty|tojson }},
+            initialScores: {
+                {{ (player1_username or 'player1')|tojson }}: {{ p1_accuracy|default(0) }},
+                {{ (player2_username or 'player2')|tojson }}: {{ p2_accuracy|default(0) }}
+            }
+        };
+    </script>
+
+    <input type="hidden" id="room-id" value="{{ room.id }}">
+    <input type="hidden" id="challenge-id" value="{{ challenge.id }}">
+    <input type="hidden" id="current-username" value="{{ user.username }}">
+    <input type="hidden" id="user-role" value="{{ user_role }}">
+    <input type="hidden" id="challenge-type" value="{{ challenge.challenge_type }}">
+    <input type="hidden" id="html-locked" value="{{ 'true' if challenge.html_locked else 'false' }}">
+    <input type="hidden" id="challenge-time-limit" value="{{ challenge.time_limit }}">
+    <input type="hidden" id="p1-username-data" value="{{ player1_username or '' }}">
+    <input type="hidden" id="p2-username-data" value="{{ player2_username or '' }}">
+
+    <header class="website-tool-header">
+        <section class="website-player-card">
+            <span class="website-player-label">PLAYER 1</span>
+            <strong id="p1-username">{{ player1_username or 'Waiting...' }}</strong>
+            <div class="website-player-meter"><span id="p1-progress-fill" style="width:{{ p1_accuracy|default(0) }}%"></span></div>
+            <small><span id="p1-accuracy-label">{{ "%.1f"|format(p1_accuracy|default(0)) }}%</span> <span id="p1-status">Online</span></small>
+        </section>
+
+        <section class="website-clock-card">
+            <span>{{ challenge.title }}</span>
+            <strong id="timer-display">00:00</strong>
+            <em id="room-status">{{ room.status|upper }}</em>
+        </section>
+
+        <section class="website-player-card website-player-card-right">
+            <span class="website-player-label">PLAYER 2</span>
+            <strong id="p2-username">{{ player2_username or 'Waiting...' }}</strong>
+            <div class="website-player-meter"><span id="p2-progress-fill" style="width:{{ p2_accuracy|default(0) }}%"></span></div>
+            <small><span id="p2-status">Online</span> <span id="p2-accuracy-label">{{ "%.1f"|format(p2_accuracy|default(0)) }}%</span></small>
+        </section>
+    </header>
+
+    <main class="website-tool-main arena-main sidebar-collapsed">
+        <aside class="website-file-rail">
+            <div class="website-rail-brand"><i class="fas fa-crosshairs"></i></div>
+            <button type="button" title="Explorer"><i class="fas fa-folder-tree"></i></button>
+            <button type="button" title="Search"><i class="fas fa-search"></i></button>
+            <button type="button" title="Preview sizes"><i class="fas fa-display"></i></button>
+            <button type="button" title="Requirements"><i class="fas fa-list-check"></i></button>
+            <button type="button" id="toggle-chat-btn-nav" title="Chat"><i class="fas fa-comment-dots"></i></button>
+        </aside>
+
+        <section class="website-code-workbench editor-panel" id="editor-panel">
+            <div class="website-toolbar">
+                <div>
+                    <strong>Website Files</strong>
+                    <span id="website-target-mode-label">Hybrid target</span>
+                </div>
+                <button class="collapse-btn" id="collapse-editor-btn" type="button" title="Collapse editor"><i class="fas fa-chevron-left"></i></button>
+            </div>
+
+            <div class="website-arena-sidebar" id="website-arena-sidebar">
+                <div class="website-page-list" id="website-page-list"></div>
+                <div class="website-requirements" id="website-requirements"></div>
+                <div class="website-preview-size-row" id="website-preview-size-row"></div>
+            </div>
+
+            <nav class="editor-tabs">
+                <button class="tab-btn active" data-tab="html" id="tab-html-btn"><i class="fab fa-html5"></i> HTML</button>
+                <button class="tab-btn" data-tab="css" id="tab-css-btn"><i class="fab fa-css3-alt"></i> CSS</button>
+                <button class="tab-btn" data-tab="js" id="tab-js-btn"><i class="fab fa-js"></i> JS</button>
+            </nav>
+
+            <div class="editor-container">
+                <div id="html-editor" class="code-editor"></div>
+                <div id="css-editor" class="code-editor" style="display:none;"></div>
+                <div id="js-editor" class="code-editor" style="display:none;"></div>
+            </div>
+
+            <div class="editor-overlay" id="editor-overlay">
+                <div class="overlay-content">
+                    <i class="fas fa-hourglass-half"></i>
+                    <span>{% if room.competition_id and room.status == 'waiting' and (not room.player1_id or not room.player2_id) %}Waiting for a partner. The match starts automatically when both players are here.{% else %}Waiting for admin to start the challenge...{% endif %}</span>
+                </div>
+            </div>
+
+            <footer class="editor-statusbar">
+                <span id="cursor-position">Ln 1, Col 1</span>
+                <span class="separator">|</span>
+                <span id="editor-mode">HTML</span>
+                <span class="separator">|</span>
+                <button type="button" id="editor-shortcuts-btn" class="editor-shortcuts-btn"><i class="fas fa-keyboard"></i> Shortcuts</button>
+            </footer>
+        </section>
+
+        <section class="website-preview-station center-panel">
+            <div class="panel-row">
+                <article class="panel output-panel">
+                    <header class="panel-header">
+                        <span><i class="fas fa-desktop"></i> OUTPUT</span>
+                        <div class="panel-header-actions">
+                            <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+                            <div class="surface-zoom-controls" data-zoom-panel="output">
+                                <button type="button" class="surface-zoom-btn" data-zoom-action="out" title="Zoom out"><i class="fas fa-search-minus"></i></button>
+                                <span class="surface-zoom-value" data-zoom-value="output">100%</span>
+                                <button type="button" class="surface-zoom-btn" data-zoom-action="in" title="Zoom in"><i class="fas fa-search-plus"></i></button>
+                                <button type="button" class="surface-zoom-btn" data-zoom-action="fit" title="Fit"><i class="fas fa-compress"></i></button>
+                                <button type="button" class="surface-zoom-btn" data-zoom-action="reset" title="Reset"><i class="fas fa-rotate-left"></i></button>
+                            </div>
+                            <button type="button" class="panel-size-btn" data-panel-size="output" title="Focus output view" aria-label="Focus output view"><i class="fas fa-up-right-and-down-left-from-center"></i></button>
+                        </div>
+                    </header>
+                    <div class="surface-zoom-viewport" data-zoom-surface="output">
+                        <iframe id="output-frame" class="arena-iframe surface-zoom-content" sandbox="allow-scripts allow-same-origin" srcdoc="<!DOCTYPE html><html><body style='background:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;'><p>Your website will appear here...</p></body></html>"></iframe>
+                    </div>
+                    <footer class="panel-footer"><i class="fas fa-sync-alt" id="refresh-output" title="Refresh"></i></footer>
+                </article>
+
+                <article class="panel target-panel">
+                    <header class="panel-header">
+                        <span><i class="fas fa-bullseye"></i> TARGET</span>
+                        <div class="panel-header-actions">
+                            <div class="surface-zoom-controls" data-zoom-panel="target">
+                                <button type="button" class="surface-zoom-btn" data-zoom-action="out" title="Zoom out"><i class="fas fa-search-minus"></i></button>
+                                <span class="surface-zoom-value" data-zoom-value="target">100%</span>
+                                <button type="button" class="surface-zoom-btn" data-zoom-action="in" title="Zoom in"><i class="fas fa-search-plus"></i></button>
+                                <button type="button" class="surface-zoom-btn" data-zoom-action="fit" title="Fit"><i class="fas fa-compress"></i></button>
+                                <button type="button" class="surface-zoom-btn" data-zoom-action="reset" title="Reset"><i class="fas fa-rotate-left"></i></button>
+                            </div>
+                            <button type="button" class="panel-size-btn" data-panel-size="target" title="Focus target view" aria-label="Focus target view"><i class="fas fa-up-right-and-down-left-from-center"></i></button>
+                        </div>
+                    </header>
+                    <div class="surface-zoom-viewport" data-zoom-surface="target">
+                        <img id="target-image" class="target-image surface-zoom-content" style="display:none;" crossorigin="anonymous">
+                        <iframe id="target-frame" class="arena-iframe surface-zoom-content" sandbox="allow-scripts allow-same-origin" style="display:none;"></iframe>
+                    </div>
+                    <footer class="panel-footer"><span id="target-type-label">Website Target</span></footer>
+                </article>
+            </div>
+
+            <div class="panel-row">
+                <article class="panel diff-panel">
+                    <header class="panel-header">
+                        <span><i class="fas fa-chart-line"></i> DIFF</span>
+                        <span class="accuracy-badge" id="accuracy-badge">- % MATCH</span>
+                        <div class="diff-views">
+                            <button class="diff-view active" data-view="pixel" id="btn-pixel-view"><i class="fas fa-chart-bar"></i> Pixel</button>
+                            <button class="diff-view" data-view="slider" id="btn-slider-view"><i class="fas fa-arrows-alt-h"></i> Slider</button>
+                        </div>
+                        <button type="button" class="panel-size-btn" data-panel-size="diff" title="Focus diff view" aria-label="Focus diff view"><i class="fas fa-up-right-and-down-left-from-center"></i></button>
+                    </header>
+                    <canvas id="diff-canvas" class="diff-canvas"></canvas>
+                    <div id="slider-diff-container" class="slider-diff-container" style="display:none;">
+                        <div class="comparison-stack">
+                            <div class="comparison-layer comparison-target-layer"><canvas id="slider-target-canvas" class="slider-canvas slider-target-layer"></canvas><div class="comparison-layer-tag">TARGET</div></div>
+                            <div class="comparison-layer comparison-output-layer" id="slider-output-layer"><canvas id="slider-output-canvas" class="slider-canvas slider-output-layer"></canvas><div class="comparison-layer-tag">YOUR RESULT</div></div>
+                        </div>
+                        <div class="comparison-controls">
+                            <div class="comparison-mode-pills">
+                                <button type="button" class="comparison-mode-pill" data-compare-mode="overlay">OVERLAY</button>
+                                <button type="button" class="comparison-mode-pill" data-compare-mode="diff">DIFF</button>
+                                <button type="button" class="comparison-mode-pill active" data-compare-mode="opacity">OPACITY</button>
+                            </div>
+                            <input id="comparison-opacity-slider" class="comparison-opacity-slider" type="range" min="0" max="100" value="50">
+                        </div>
+                    </div>
+                    <footer class="panel-footer diff-footer"><span>Submit to compare the full page.</span></footer>
+                </article>
+
+                <article class="panel cam-panel">
+                    <header class="panel-header">
+                        <span><i class="fas fa-video"></i> CAM / EXTRA</span>
+                        <span class="rec-badge" id="rec-badge" style="display:none;"><span class="rec-dot"></span> REC</span>
+                        <button type="button" class="camera-compact-btn" id="toggle-camera-compact" title="Minimize camera" aria-label="Minimize camera"><i class="fas fa-circle-dot"></i></button>
+                    </header>
+                    <div class="cam-container">
+                        <video id="cam-feed" autoplay muted playsinline></video>
+                        <div id="remote-cams" class="remote-cams"></div>
+                        <div class="call-controls" id="call-controls" hidden>
+                            <button type="button" id="toggle-video-btn" class="call-control-btn" title="Turn camera off"><i class="fas fa-video"></i></button>
+                            <button type="button" id="toggle-audio-btn" class="call-control-btn" title="Mute microphone"><i class="fas fa-microphone"></i></button>
+                        </div>
+                        <div id="cam-placeholder" class="cam-placeholder">
+                            <i class="fas fa-video"></i>
+                            <p>Camera optional</p>
+                            <button type="button" id="enable-camera-btn">Enable Camera</button>
+                        </div>
+                    </div>
+                    <div class="remote-cam-list" id="remote-cam-list"></div>
+                </article>
+            </div>
+        </section>
+
+        <aside class="right-sidebar collapsed">
+            <div class="sidebar-drawer-header">
+                <strong>Room Tools</strong>
+                <button class="icon-btn" id="close-chat-drawer" type="button" aria-label="Close chat"><i class="fas fa-times"></i></button>
+            </div>
+            <section class="sidebar-card">
+                <div class="sidebar-card-header"><h3><i class="fas fa-info-circle"></i> Challenge</h3></div>
+                <div class="challenge-info">
+                    <div class="info-row"><span class="info-label">Mode:</span><span class="info-value">Website / Hybrid</span></div>
+                    <div class="info-row"><span class="info-label">Difficulty:</span><span class="info-value">{{ challenge.difficulty }}</span></div>
+                    <div class="info-row"><span class="info-label">Room:</span><span class="info-value">{{ room.room_code if room.is_public or user.role == 'admin' else 'Private match' }}</span></div>
+                    <p>{{ challenge.description }}</p>
+                </div>
+            </section>
+            <section class="sidebar-card chat-card">
+                <div class="sidebar-card-header"><h3><i class="fas fa-comments"></i> Chat</h3></div>
+                <div id="chat-messages" class="chat-messages"></div>
+                <div class="chat-input-wrapper">
+                    <input type="text" id="chat-input" placeholder="Message the room..." maxlength="500" autocomplete="off">
+                    <button id="send-chat" type="button" aria-label="Send message" title="Send message"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </section>
+        </aside>
+    </main>
+
+    <footer class="website-tool-actions action-bar">
+        <button id="collapse-editor-btn-bottom" class="action-btn-secondary"><i class="fas fa-chevron-left"></i> Editor</button>
+        <button id="toggle-sidebar-btn" class="action-btn-secondary"><i class="fas fa-columns"></i> Tools</button>
+        <button id="toggle-chat-btn" class="action-btn-secondary"><i class="fas fa-comment-dots"></i> Chat</button>
+        <button id="collapse-all-panels-btn" class="action-btn-secondary"><i class="fas fa-compress-alt"></i> Collapse</button>
+        <button id="expand-all-panels-btn" class="action-btn-secondary"><i class="fas fa-expand-alt"></i> Expand</button>
+        <button id="submit-btn" class="action-btn-primary" disabled><i class="fas fa-check-circle"></i> SUBMIT & CHECK</button>
+        <button id="reset-code-btn" class="action-btn-secondary"><i class="fas fa-undo-alt"></i> RESET</button>
+        <button id="forfeit-btn" class="action-btn-danger"><i class="fas fa-flag"></i> FORFEIT</button>
+        {% if user_role == 'admin' %}
+        <div class="admin-actions">
+            <button id="admin-pause" class="action-btn-warning"><i class="fas fa-pause"></i> PAUSE</button>
+            <button id="admin-resume" class="action-btn-success"><i class="fas fa-play"></i> RESUME</button>
+            <button id="admin-addtime" class="action-btn-info"><i class="fas fa-clock"></i> +30s</button>
+            <button id="admin-end" class="action-btn-danger"><i class="fas fa-stop"></i> END</button>
+        </div>
+        {% endif %}
+    </footer>
+</div>
+
+<script src="{{ url_for('static', filename='js/socket.js') }}?v=arena12"></script>
+<script src="{{ url_for('static', filename='js/arena.js') }}?v=website-arena1"></script>
+{% endblock %}

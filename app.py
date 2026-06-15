@@ -49,6 +49,7 @@ app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
 app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
+app.config['GOOGLE_REDIRECT_URI'] = os.environ.get('GOOGLE_REDIRECT_URI', '').strip()
 app.config['GOOGLE_DISCOVERY_AUTH_URL'] = 'https://accounts.google.com/o/oauth2/v2/auth'
 app.config['GOOGLE_TOKEN_URL'] = 'https://oauth2.googleapis.com/token'
 app.config['GOOGLE_USERINFO_URL'] = 'https://openidconnect.googleapis.com/v1/userinfo'
@@ -716,6 +717,9 @@ def serialize_admin_chat_message(chat_msg, admin_username=None):
 
 def google_oauth_configured():
     return bool(app.config['GOOGLE_CLIENT_ID'] and app.config['GOOGLE_CLIENT_SECRET'])
+
+def google_redirect_uri():
+    return app.config.get('GOOGLE_REDIRECT_URI') or url_for('google_callback', _external=True)
 
 def complete_login(user):
     session.pop('pending_2fa_user_id', None)
@@ -3616,7 +3620,7 @@ def google_login():
     session['google_oauth_state'] = state
     params = {
         'client_id': app.config['GOOGLE_CLIENT_ID'],
-        'redirect_uri': url_for('google_callback', _external=True),
+        'redirect_uri': google_redirect_uri(),
         'response_type': 'code',
         'scope': 'openid email profile',
         'state': state,
@@ -3639,7 +3643,7 @@ def google_callback():
             'code': code,
             'client_id': app.config['GOOGLE_CLIENT_ID'],
             'client_secret': app.config['GOOGLE_CLIENT_SECRET'],
-            'redirect_uri': url_for('google_callback', _external=True),
+            'redirect_uri': google_redirect_uri(),
             'grant_type': 'authorization_code'
         })
         access_token = token_data.get('access_token')
@@ -5681,7 +5685,8 @@ def arena(room_id):
         record_room_access(room, user, 'spectator')
         db.session.commit()
     
-    return render_template('arena.html',
+    arena_template = 'website_arena.html' if challenge and challenge.challenge_type == 'website_arena' else 'arena.html'
+    return render_template(arena_template,
                          room=room,
                          challenge=challenge,
                          user=user,
