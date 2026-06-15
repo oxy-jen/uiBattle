@@ -3,7 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>UI BATTLE ARENA</title>
+    {% set default_seo_title = 'UI Battle Arena - Live Frontend Coding Battles and Website Design Competitions' %}
+    {% set default_seo_description = 'UI Battle Arena is a live frontend coding competition platform for HTML, CSS, JavaScript, UI recreation, website design battles, tournaments, scoring, spectators, chat, and admin monitoring.' %}
+    {% set seo_public_endpoints = ['login_page', 'about_page', 'support_page', 'terms_page', 'contact_page', 'help_page', 'competition_guide_page', 'shortcuts_page', 'feedback_page', 'report_page', 'maintenance_page'] %}
+    {% set seo_title = seo_title|default(default_seo_title) %}
+    {% set seo_description = seo_description|default(default_seo_description) %}
+    {% set seo_image = seo_image|default(url_for('static', filename='site-icon.svg', _external=True)) %}
+    {% set seo_canonical = seo_canonical|default(request.url_root.rstrip('/') ~ request.path) %}
+    {% set seo_robots = seo_robots|default('index, follow' if request.endpoint in seo_public_endpoints else 'noindex, nofollow') %}
+    <title>{{ seo_title }}</title>
+    <meta name="description" content="{{ seo_description }}">
+    <meta name="keywords" content="UI Battle Arena, uibattlearena, frontend coding competition, HTML CSS JavaScript battle, website design competition, UI challenge arena, live coding tournament, web design battle">
+    <meta name="robots" content="{{ seo_robots }}">
+    <link rel="canonical" href="{{ seo_canonical }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="UI Battle Arena">
+    <meta property="og:title" content="{{ seo_title }}">
+    <meta property="og:description" content="{{ seo_description }}">
+    <meta property="og:url" content="{{ seo_canonical }}">
+    <meta property="og:image" content="{{ seo_image }}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{{ seo_title }}">
+    <meta name="twitter:description" content="{{ seo_description }}">
+    <meta name="twitter:image" content="{{ seo_image }}">
+    <script type="application/ld+json">
+    {{ {
+        '@context': 'https://schema.org',
+        '@type': 'WebApplication',
+        'name': 'UI Battle Arena',
+        'alternateName': ['uibattlearena', 'UIBattleArena'],
+        'url': request.url_root.rstrip('/'),
+        'applicationCategory': 'EducationalApplication',
+        'operatingSystem': 'Web',
+        'description': default_seo_description
+    } | tojson }}
+    </script>
     <meta name="csrf-token" content="{{ csrf_token }}">
     <script>
         window.UIBA_CSRF_TOKEN = "{{ csrf_token }}";

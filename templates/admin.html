@@ -559,6 +559,11 @@
                                     </div>
                                 </div>
                                 <div class="form-group">
+                                    <label>Website Target Screenshot</label>
+                                    <input type="file" id="website-target-screenshot" accept="image/*">
+                                    <small class="help-text">Used by screenshot and hybrid target modes. Live mode uses the target HTML/CSS/JS above.</small>
+                                </div>
+                                <div class="form-group">
                                     <label>Scoring weights</label>
                                     <div class="website-weight-grid">
                                         <label>Visual match <input type="number" id="weight-visual" value="30" min="0" max="100"></label>
@@ -4672,9 +4677,32 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
     } else {
         const targetHtml = adminTargetHtmlEditor ? adminTargetHtmlEditor.getValue().trim() : '';
         const starterHtml = adminStarterHtmlEditor ? adminStarterHtmlEditor.getValue().trim() : '';
-        if (!targetHtml) {
+        const websiteConfig = challengeType === 'website_arena' ? collectWebsiteConfig() : null;
+        const websiteScreenshot = document.getElementById('website-target-screenshot')?.files?.[0] || null;
+        const targetMode = websiteConfig?.target_mode || 'live';
+        if (challengeType !== 'website_arena' && !targetHtml) {
             showToast('Please add target HTML for the rendered target', 'error');
             return;
+        }
+        if (challengeType === 'website_arena') {
+            if (!websiteConfig.page_names.length) {
+                showToast('Add at least one website page name', 'error');
+                return;
+            }
+            if (targetMode === 'live' && !targetHtml) {
+                showToast('Live website targets need target HTML/CSS/JS.', 'error');
+                return;
+            }
+            if (targetMode === 'screenshot' && !websiteScreenshot) {
+                showToast('Screenshot target mode needs a website target screenshot.', 'error');
+                return;
+            }
+            if (targetMode === 'hybrid' && !targetHtml && !websiteScreenshot) {
+                showToast('Hybrid target mode needs target HTML or a screenshot.', 'error');
+                return;
+            }
+            if (websiteScreenshot) formData.append('target_image', websiteScreenshot);
+            formData.append('website_config', JSON.stringify(websiteConfig));
         }
         formData.append('target_html', targetHtml);
         formData.append('target_css', adminTargetCssEditor ? adminTargetCssEditor.getValue() : '');
@@ -4683,14 +4711,6 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
         formData.append('starter_css', adminStarterCssEditor ? adminStarterCssEditor.getValue() : '');
         formData.append('starter_js', adminStarterJsEditor ? adminStarterJsEditor.getValue() : '');
         formData.append('html_locked', document.getElementById('html-locked').checked ? 'true' : 'false');
-        if (challengeType === 'website_arena') {
-            const websiteConfig = collectWebsiteConfig();
-            if (!websiteConfig.page_names.length) {
-                showToast('Add at least one website page name', 'error');
-                return;
-            }
-            formData.append('website_config', JSON.stringify(websiteConfig));
-        }
     }
     
     const submitButton = e.submitter || e.target.querySelector('button[type="submit"]');

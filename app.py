@@ -50,6 +50,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
 app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
 app.config['GOOGLE_REDIRECT_URI'] = os.environ.get('GOOGLE_REDIRECT_URI', '').strip()
+app.config['SITE_URL'] = os.environ.get('SITE_URL', '').strip().rstrip('/')
 app.config['GOOGLE_DISCOVERY_AUTH_URL'] = 'https://accounts.google.com/o/oauth2/v2/auth'
 app.config['GOOGLE_TOKEN_URL'] = 'https://oauth2.googleapis.com/token'
 app.config['GOOGLE_USERINFO_URL'] = 'https://openidconnect.googleapis.com/v1/userinfo'
@@ -3022,6 +3023,75 @@ def site_page_url(page_key):
     }.get(page_key)
     return url_for(endpoint) if endpoint else '#'
 
+PUBLIC_SEO_ENDPOINTS = [
+    'login_page',
+    'about_page',
+    'support_page',
+    'terms_page',
+    'contact_page',
+    'help_page',
+    'competition_guide_page',
+    'shortcuts_page',
+    'maintenance_page'
+]
+
+PUBLIC_SEO_STATIC_PATHS = {
+    'feedback_page': '/feedback',
+    'report_page': '/report'
+}
+
+def site_origin():
+    return app.config.get('SITE_URL') or request.url_root.rstrip('/')
+
+def absolute_url_for(endpoint, **values):
+    path = url_for(endpoint, **values)
+    return f"{site_origin()}{path}"
+
+def seo_description_from_content(content, fallback):
+    text = re.sub(r'\s+', ' ', str(content or '')).strip()
+    if not text:
+        return fallback
+    return text[:157].rstrip() + ('...' if len(text) > 157 else '')
+
+def site_page_seo(page_key, site_content):
+    page = (site_content or {}).get(page_key, {})
+    title = str(page.get('hero_title') or page.get('nav_label') or 'UI Battle Arena').strip()
+    subtitle = str(page.get('hero_subtitle') or '').strip()
+    body = str(page.get('body') or '').strip()
+    return {
+        'seo_title': f'{title} | UI Battle Arena',
+        'seo_description': seo_description_from_content(subtitle or body, 'UI Battle Arena frontend coding battles, website design competitions, tournaments, scoring, and student support.'),
+        'seo_canonical': absolute_url_for({
+            'about': 'about_page',
+            'support': 'support_page',
+            'terms': 'terms_page',
+            'contact': 'contact_page',
+            'help': 'help_page',
+            'competition_guide': 'competition_guide_page',
+            'feedback': 'feedback_page',
+            'report': 'report_page'
+        }.get(page_key, 'login_page'), _external=True)
+    }
+
+def public_sitemap_entries():
+    now = datetime.now(timezone.utc).date().isoformat()
+    entries = []
+    for endpoint in PUBLIC_SEO_ENDPOINTS:
+        entries.append({
+            'loc': absolute_url_for(endpoint),
+            'lastmod': now,
+            'priority': '1.0' if endpoint == 'login_page' else '0.7',
+            'changefreq': 'weekly'
+        })
+    for endpoint, path in PUBLIC_SEO_STATIC_PATHS.items():
+        entries.append({
+            'loc': site_origin() + path,
+            'lastmod': now,
+            'priority': '0.5',
+            'changefreq': 'monthly'
+        })
+    return entries
+
 def contact_href(item):
     item = item if isinstance(item, dict) else {}
     url = str(item.get('url') or '').strip()
@@ -3377,7 +3447,10 @@ def login_page():
         google_oauth_enabled=google_oauth_configured(),
         pending_two_factor=bool(session.get('pending_2fa_user_id') or session.get('pending_email_otp_user_id') or session.get('pending_email_verification_user_id')),
         pending_email_code=bool(session.get('pending_email_otp_user_id') or session.get('pending_email_verification_user_id')),
-        pending_can_use_qr_setup=bool(session.get('pending_email_otp_user_id'))
+        pending_can_use_qr_setup=bool(session.get('pending_email_otp_user_id')),
+        seo_title='UI Battle Arena - Frontend Coding Battles, UI Challenges, and Website Design Competitions',
+        seo_description='Compete in UI Battle Arena with live HTML, CSS, JavaScript, website design, screenshot recreation, tournaments, scoring, chat, spectators, and admin monitoring.',
+        seo_canonical=absolute_url_for('login_page')
     )
 
 @app.route('/auth/login', methods=['POST'])
@@ -3708,31 +3781,43 @@ def logout():
 
 @app.route('/maintenance')
 def maintenance_page():
-    return render_template('maintenance.html', site_content=get_site_content())
+    return render_template(
+        'maintenance.html',
+        site_content=get_site_content(),
+        seo_title='Maintenance | UI Battle Arena',
+        seo_description='UI Battle Arena maintenance updates and platform availability for frontend coding battles and website design competitions.',
+        seo_canonical=absolute_url_for('maintenance_page')
+    )
 
 @app.route('/about')
 def about_page():
-    return render_template('site_page.html', page_key='about', site_content=get_site_content())
+    site_content = get_site_content()
+    return render_template('site_page.html', page_key='about', site_content=site_content, **site_page_seo('about', site_content))
 
 @app.route('/support')
 def support_page():
-    return render_template('site_page.html', page_key='support', site_content=get_site_content())
+    site_content = get_site_content()
+    return render_template('site_page.html', page_key='support', site_content=site_content, **site_page_seo('support', site_content))
 
 @app.route('/terms')
 def terms_page():
-    return render_template('site_page.html', page_key='terms', site_content=get_site_content())
+    site_content = get_site_content()
+    return render_template('site_page.html', page_key='terms', site_content=site_content, **site_page_seo('terms', site_content))
 
 @app.route('/contact')
 def contact_page():
-    return render_template('site_page.html', page_key='contact', site_content=get_site_content())
+    site_content = get_site_content()
+    return render_template('site_page.html', page_key='contact', site_content=site_content, **site_page_seo('contact', site_content))
 
 @app.route('/help')
 def help_page():
-    return render_template('site_page.html', page_key='help', site_content=get_site_content())
+    site_content = get_site_content()
+    return render_template('site_page.html', page_key='help', site_content=site_content, **site_page_seo('help', site_content))
 
 @app.route('/competition-guide')
 def competition_guide_page():
-    return render_template('site_page.html', page_key='competition_guide', site_content=get_site_content())
+    site_content = get_site_content()
+    return render_template('site_page.html', page_key='competition_guide', site_content=site_content, **site_page_seo('competition_guide', site_content))
 
 @app.route('/admin/competition-guide')
 @admin_required
@@ -3810,7 +3895,15 @@ def shortcuts_page():
         {'label': 'VS Code keyboard shortcuts', 'url': 'https://code.visualstudio.com/docs/getstarted/keybindings'},
         {'label': 'VS Code default keybindings', 'url': 'https://code.visualstudio.com/docs/reference/default-keybindings'}
     ]
-    return render_template('shortcuts.html', shortcut_groups=shortcut_groups, sources=sources, site_content=get_site_content())
+    return render_template(
+        'shortcuts.html',
+        shortcut_groups=shortcut_groups,
+        sources=sources,
+        site_content=get_site_content(),
+        seo_title='Editor Shortcuts | UI Battle Arena',
+        seo_description='Keyboard shortcuts for faster HTML, CSS, and JavaScript coding inside UI Battle Arena frontend competitions.',
+        seo_canonical=absolute_url_for('shortcuts_page')
+    )
 
 @app.route('/helpline')
 def helpline_page():
@@ -3884,7 +3977,8 @@ def feedback_page():
         data = request.get_json(silent=True) or request.form or {}
         payload, status = store_and_notify_site_message('feedback', data)
         return jsonify(payload), status
-    return render_template('site_page.html', page_key='feedback', site_content=get_site_content())
+    site_content = get_site_content()
+    return render_template('site_page.html', page_key='feedback', site_content=site_content, **site_page_seo('feedback', site_content))
 
 @app.route('/report', methods=['GET', 'POST'])
 def report_page():
@@ -3893,7 +3987,46 @@ def report_page():
         data = dict(data)
         payload, status = store_and_notify_site_message('report', data)
         return jsonify(payload), status
-    return render_template('site_page.html', page_key='report', site_content=get_site_content())
+    site_content = get_site_content()
+    return render_template('site_page.html', page_key='report', site_content=site_content, **site_page_seo('report', site_content))
+
+@app.route('/robots.txt')
+def robots_txt():
+    sitemap_url = absolute_url_for('sitemap_xml')
+    lines = [
+        'User-agent: *',
+        'Allow: /',
+        'Disallow: /admin',
+        'Disallow: /arena/',
+        'Disallow: /dashboard',
+        'Disallow: /profile/',
+        'Disallow: /api/',
+        'Disallow: /auth/',
+        'Disallow: /submission/',
+        'Disallow: /room/',
+        f'Sitemap: {sitemap_url}',
+        ''
+    ]
+    return app.response_class('\n'.join(lines), mimetype='text/plain')
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    entries = public_sitemap_entries()
+    urlset = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+    ]
+    for entry in entries:
+        urlset.extend([
+            '  <url>',
+            f'    <loc>{html_lib.escape(entry["loc"])}</loc>',
+            f'    <lastmod>{entry["lastmod"]}</lastmod>',
+            f'    <changefreq>{entry["changefreq"]}</changefreq>',
+            f'    <priority>{entry["priority"]}</priority>',
+            '  </url>'
+        ])
+    urlset.append('</urlset>')
+    return app.response_class('\n'.join(urlset), mimetype='application/xml')
 
 # ========== DASHBOARD ==========
 @app.route('/dashboard')
@@ -4795,8 +4928,19 @@ def create_challenge():
             except (TypeError, ValueError):
                 return jsonify({'success': False, 'error': 'Invalid website setup'}), 400
 
-        if not target_html:
+        target_mode = str(website_config.get('target_mode') or 'live').strip().lower() if challenge_type == 'website_arena' else 'live'
+        website_file = request.files.get('target_image') if challenge_type == 'website_arena' else None
+        has_website_file = bool(website_file and website_file.filename)
+
+        if challenge_type != 'website_arena' and not target_html:
             return jsonify({'success': False, 'error': 'Target HTML is required'}), 400
+        if challenge_type == 'website_arena':
+            if target_mode == 'live' and not target_html:
+                return jsonify({'success': False, 'error': 'Live website targets need target HTML'}), 400
+            if target_mode == 'screenshot' and not has_website_file:
+                return jsonify({'success': False, 'error': 'Screenshot target mode needs an uploaded target screenshot'}), 400
+            if target_mode == 'hybrid' and not target_html and not has_website_file:
+                return jsonify({'success': False, 'error': 'Hybrid target mode needs target HTML or a screenshot'}), 400
         
         new_challenge.target_html = target_html
         new_challenge.target_css = target_css
@@ -4806,6 +4950,15 @@ def create_challenge():
         new_challenge.starter_js = starter_js
         new_challenge.html_locked = html_locked
         if challenge_type == 'website_arena':
+            if has_website_file:
+                if not allowed_file(website_file.filename):
+                    return jsonify({'success': False, 'error': 'Target screenshot must be an image file'}), 400
+                ext = website_file.filename.rsplit('.', 1)[1].lower()
+                filename = f"{uuid.uuid4().hex}.{ext}"
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                img = Image.open(website_file)
+                img.save(filepath)
+                new_challenge.target_image_path = filename
             new_challenge.website_config = json.dumps(website_config)
     
     db.session.add(new_challenge)
@@ -5527,6 +5680,7 @@ def challenge_details(challenge_id):
         'starter_css': challenge.starter_css or '',
         'starter_js': challenge.starter_js or '',
         'html_locked': challenge.html_locked,
+        'website_config': challenge.website_config or '{}',
         'is_active': challenge.is_active
     })
 

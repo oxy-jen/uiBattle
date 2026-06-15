@@ -122,6 +122,87 @@ function isHtmlLikeChallenge(type = CHALLENGE_TYPE) {
     return HTML_LIKE_CHALLENGE_TYPES.includes(type);
 }
 
+function getWebsiteTargetMode() {
+    return String(WEBSITE_CONFIG?.target_mode || 'live').toLowerCase();
+}
+
+function getWebsiteBriefHtml() {
+    const pageNames = Array.isArray(WEBSITE_CONFIG.page_names) && WEBSITE_CONFIG.page_names.length ? WEBSITE_CONFIG.page_names : ['Home'];
+    const sections = Array.isArray(WEBSITE_CONFIG.required_sections) ? WEBSITE_CONFIG.required_sections : [];
+    const assets = Array.isArray(WEBSITE_CONFIG.allowed_assets) ? WEBSITE_CONFIG.allowed_assets : [];
+    const files = Array.isArray(WEBSITE_CONFIG.allowed_files) ? WEBSITE_CONFIG.allowed_files : [];
+    const mode = getWebsiteTargetMode().replace(/_/g, ' ');
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #0f172a; background: #f8fafc; }
+        main { min-height: 100vh; padding: 32px; display: grid; align-content: start; gap: 22px; }
+        h1 { margin: 0; font-size: 32px; }
+        h2 { margin: 0 0 10px; font-size: 16px; text-transform: uppercase; letter-spacing: .08em; color: #475569; }
+        p { max-width: 780px; line-height: 1.55; }
+        .brief-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+        section { padding: 18px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; }
+        ul { margin: 0; padding-left: 18px; line-height: 1.7; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>${escapeHtml(arenaConfig.challengeTitle || 'Website brief')}</h1>
+        <p>${escapeHtml(arenaConfig.challengeDifficulty || 'Website')} challenge. Build a responsive multi-section website that follows the admin requirements and any visible screenshot or live target.</p>
+        <div class="brief-grid">
+            <section><h2>Target mode</h2><p>${escapeHtml(mode)}</p></section>
+            <section><h2>Pages</h2><ul>${pageNames.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>
+            <section><h2>Required sections</h2><ul>${(sections.length ? sections : ['custom brief']).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>
+            <section><h2>Allowed assets</h2><ul>${(assets.length ? assets : ['admin approved assets']).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>
+            <section><h2>Allowed files</h2><ul>${(files.length ? files : ['HTML', 'CSS', 'JS']).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>
+        </div>
+    </main>
+</body>
+</html>`;
+}
+
+function buildTargetFrameDocument() {
+    const guardScript = getPlayerInspectGuardScript();
+    return `<!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>${TARGET_CSS || ''}</style>
+            </head>
+            <body>
+                ${TARGET_HTML || ''}
+                ${guardScript}
+                <script>${TARGET_JS || ''}<\/script>
+            </body>
+            </html>`;
+}
+
+function hasLiveWebsiteTarget() {
+    return Boolean(String(TARGET_HTML || '').trim() || String(TARGET_CSS || '').trim() || String(TARGET_JS || '').trim());
+}
+
+function hasScreenshotWebsiteTarget() {
+    return Boolean(TARGET_IMAGE_URL);
+}
+
+function usesWebsiteScreenshotTarget() {
+    if (CHALLENGE_TYPE !== 'website_arena') return false;
+    const mode = getWebsiteTargetMode();
+    return hasScreenshotWebsiteTarget() && (mode === 'screenshot' || mode === 'hybrid');
+}
+
+function usesWebsiteBriefTarget() {
+    if (CHALLENGE_TYPE !== 'website_arena') return false;
+    const mode = getWebsiteTargetMode();
+    if (mode === 'brief') return true;
+    if (mode === 'screenshot') return !hasScreenshotWebsiteTarget();
+    if (mode === 'live') return !hasLiveWebsiteTarget();
+    if (mode === 'hybrid') return !hasScreenshotWebsiteTarget() && !hasLiveWebsiteTarget();
+    return !hasLiveWebsiteTarget() && !hasScreenshotWebsiteTarget();
+}
+
 function getActiveEditor() {
     if (currentTab === 'css') return cssEditor;
     if (currentTab === 'js') return jsEditor;
@@ -1045,35 +1126,50 @@ function switchTab(tab) {
 function initTarget() {
     const targetImg = getElement('target-image');
     const targetFrame = getElement('target-frame');
+    const typeLabel = getElement('target-type-label');
     
+    if (CHALLENGE_TYPE === 'website_arena') {
+        const mode = getWebsiteTargetMode();
+        if (targetImg) targetImg.style.display = 'none';
+        if (targetFrame) targetFrame.style.display = 'none';
+
+        if (usesWebsiteScreenshotTarget()) {
+            if (targetImg) {
+                targetImg.style.display = 'block';
+                targetImg.src = TARGET_IMAGE_URL;
+            }
+            if (typeLabel) typeLabel.textContent = mode === 'hybrid' ? 'Hybrid Screenshot Target' : 'Website Screenshot Target';
+            return;
+        }
+
+        if (!usesWebsiteBriefTarget() && targetFrame) {
+            targetFrame.style.display = 'block';
+            targetFrame.srcdoc = buildTargetFrameDocument();
+            if (typeLabel) typeLabel.textContent = mode === 'hybrid' ? 'Hybrid Live Target' : 'Website Live Target';
+            return;
+        }
+
+        if (targetFrame) {
+            targetFrame.style.display = 'block';
+            targetFrame.srcdoc = getWebsiteBriefHtml();
+        }
+        if (typeLabel) typeLabel.textContent = 'Website Brief';
+        return;
+    }
+
     if (isHtmlLikeChallenge()) {
         if (targetImg) targetImg.style.display = 'none';
         if (targetFrame) {
             targetFrame.style.display = 'block';
-            const guardScript = getPlayerInspectGuardScript();
-            const targetDoc = `<!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <style>${TARGET_CSS || ''}</style>
-            </head>
-            <body>
-                ${TARGET_HTML || ''}
-                ${guardScript}
-                <script>${TARGET_JS || ''}<\/script>
-            </body>
-            </html>`;
-            targetFrame.srcdoc = targetDoc;
+            targetFrame.srcdoc = buildTargetFrameDocument();
         }
-        const typeLabel = getElement('target-type-label');
-        if (typeLabel) typeLabel.textContent = CHALLENGE_TYPE === 'website_arena' ? 'Website Target' : 'HTML Target';
+        if (typeLabel) typeLabel.textContent = 'HTML Target';
     } else {
         if (targetFrame) targetFrame.style.display = 'none';
         if (targetImg && TARGET_IMAGE_URL) {
             targetImg.style.display = 'block';
             targetImg.src = TARGET_IMAGE_URL;
         }
-        const typeLabel = getElement('target-type-label');
         if (typeLabel) typeLabel.textContent = 'Image Target';
     }
 }
@@ -1299,6 +1395,18 @@ async function runDiffCheck(options = {}) {
 
         const outputCanvas = await captureFrameFullSurface(outputFrame, W, H);
         
+        if (usesWebsiteBriefTarget()) {
+            clearDiffViews();
+            const saved = save ? await saveAndBroadcastScore(null, { live }) : { accuracy: 0 };
+            const finalAccuracy = Number.isFinite(Number(saved?.accuracy)) ? Number(saved.accuracy) : 0;
+            updateMyProgressBar(finalAccuracy);
+            updateAccuracyBadge(finalAccuracy);
+            if (!silent) {
+                showToast(`Rubric score: ${finalAccuracy}%`, finalAccuracy >= 80 ? 'success' : 'info');
+            }
+            return finalAccuracy;
+        }
+
         // Get target canvas
         const targetCanvas = document.createElement('canvas');
         targetCanvas.width = W;
@@ -1307,7 +1415,7 @@ async function runDiffCheck(options = {}) {
         tCtx.fillStyle = '#ffffff';
         tCtx.fillRect(0, 0, W, H);
         
-        if (CHALLENGE_TYPE === 'image') {
+        if (CHALLENGE_TYPE === 'image' || usesWebsiteScreenshotTarget()) {
             const targetImg = getElement('target-image');
             await waitForImageLoad(targetImg);
             if (targetImg && targetImg.complete && targetImg.naturalWidth > 0) {

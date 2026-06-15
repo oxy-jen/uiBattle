@@ -102,6 +102,29 @@
                 <div id="js-editor" class="code-editor" style="display:none;"></div>
             </div>
 
+            <div class="spectator-camera-stage" id="spectator-camera-stage">
+                <div class="spectator-stage-head">
+                    <i class="fas fa-video"></i>
+                    <div>
+                        <strong>Player Cameras</strong>
+                        <span>Live cameras appear here when players enable them.</span>
+                    </div>
+                </div>
+                <div id="spectator-camera-list" class="spectator-camera-list">
+                    <div class="spectator-placeholder">Waiting for player cameras...</div>
+                </div>
+                <div class="spectator-stage-head spectator-stage-preview-head">
+                    <i class="fas fa-desktop"></i>
+                    <div>
+                        <strong>Player Screens</strong>
+                        <span>Read-only previews of player output.</span>
+                    </div>
+                </div>
+                <div id="spectator-editor-preview-list" class="spectator-preview-list">
+                    <div class="spectator-placeholder">Player previews will appear when competitors start coding.</div>
+                </div>
+            </div>
+
             <div class="editor-overlay" id="editor-overlay">
                 <div class="overlay-content">
                     <i class="fas fa-hourglass-half"></i>
@@ -208,7 +231,7 @@
                         <div id="cam-placeholder" class="cam-placeholder">
                             <i class="fas fa-video"></i>
                             <p>Camera optional</p>
-                            <button type="button" id="enable-camera-btn">Enable Camera</button>
+                            <button type="button" id="enable-cam-btn">Enable Camera</button>
                         </div>
                     </div>
                     <div class="remote-cam-list" id="remote-cam-list"></div>
@@ -221,6 +244,81 @@
                 <strong>Room Tools</strong>
                 <button class="icon-btn" id="close-chat-drawer" type="button" aria-label="Close chat"><i class="fas fa-times"></i></button>
             </div>
+            {% if user_role == 'spectator' %}
+            <section class="sidebar-card spectator-privileges-card">
+                <div class="sidebar-card-header"><i class="fas fa-eye"></i> Spectator Mode</div>
+                <div class="spectator-benefits">
+                    <div><i class="fas fa-comment-dots"></i> Live chat enabled</div>
+                    <div><i class="fas fa-chart-line"></i> Player progress enabled</div>
+                    <div><i class="fas fa-trophy"></i> Live leaderboard enabled</div>
+                </div>
+            </section>
+            {% endif %}
+            {% if user_role in ['spectator', 'admin'] %}
+            <section class="sidebar-card spectator-preview-card">
+                <div class="sidebar-card-header"><i class="fas fa-desktop"></i> Live Player Previews</div>
+                <div id="spectator-preview-list" class="spectator-preview-list">
+                    <div class="spectator-placeholder">Player previews will appear when competitors start coding.</div>
+                </div>
+            </section>
+            {% endif %}
+            {% if user_role == 'admin' %}
+            <section class="sidebar-card admin-incident-card">
+                <div class="sidebar-card-header"><i class="fas fa-triangle-exclamation"></i> Right-Click Incidents</div>
+                <div id="admin-incident-list" class="admin-incident-list">
+                    <div class="spectator-placeholder">No player right-click attempts reported.</div>
+                </div>
+            </section>
+            {% endif %}
+            {% if user_role in ['player1', 'player2', 'admin'] %}
+            <section class="sidebar-card media-settings-card">
+                <div class="sidebar-card-header"><i class="fas fa-sliders"></i> Media Settings</div>
+                <div class="media-permission-grid">
+                    <div class="media-permission-row">
+                        <span><i class="fas fa-video"></i> Camera</span>
+                        <strong id="camera-permission-state">Checking</strong>
+                    </div>
+                    <div class="media-permission-row">
+                        <span><i class="fas fa-microphone"></i> Microphone</span>
+                        <strong id="microphone-permission-state">Checking</strong>
+                    </div>
+                </div>
+                <div class="media-settings-actions">
+                    <button id="media-permission-btn" type="button" class="btn-small"><i class="fas fa-lock-open"></i> Allow Media</button>
+                    {% if user_role == 'admin' %}
+                    <button id="admin-voice-broadcast-btn" type="button" class="btn-small admin-broadcast-voice-btn"><i class="fas fa-bullhorn"></i> Broadcast Mic</button>
+                    {% endif %}
+                </div>
+                <p id="media-settings-note" class="media-settings-note">Waiting for browser permission</p>
+            </section>
+            {% endif %}
+            <section class="sidebar-card online-card">
+                <div class="sidebar-card-header"><i class="fas fa-signal"></i> Online</div>
+                <div id="online-users-list" class="online-users-list">
+                    <div class="spectator-placeholder">Connecting...</div>
+                </div>
+            </section>
+            <section class="sidebar-card player-docket-card">
+                <div class="sidebar-card-header"><i class="fas fa-clipboard-list"></i> Player Docket</div>
+                <div id="player-docket-list" class="online-users-list">
+                    <div class="online-user">
+                        <span class="online-dot"></span>
+                        <span id="docket-player1">{{ player1_username or 'Waiting for Player 1' }}</span>
+                        <small>Player 1</small>
+                    </div>
+                    <div class="online-user">
+                        <span class="online-dot"></span>
+                        <span id="docket-player2">{{ player2_username or 'Waiting for Player 2' }}</span>
+                        <small>Player 2</small>
+                    </div>
+                </div>
+            </section>
+            <section class="sidebar-card">
+                <div class="sidebar-card-header"><i class="fas fa-trophy"></i> Leaderboard <a href="/leaderboard" class="view-all">View Full</a></div>
+                <div id="leaderboard-list" class="leaderboard-list">
+                    <div class="leaderboard-placeholder">No scores yet</div>
+                </div>
+            </section>
             <section class="sidebar-card">
                 <div class="sidebar-card-header"><h3><i class="fas fa-info-circle"></i> Challenge</h3></div>
                 <div class="challenge-info">
@@ -231,8 +329,13 @@
                 </div>
             </section>
             <section class="sidebar-card chat-card">
-                <div class="sidebar-card-header"><h3><i class="fas fa-comments"></i> Chat</h3></div>
+                <div class="sidebar-card-header"><i class="fas fa-users"></i> Spectators (<span id="spectator-count">0</span>)</div>
+                <div id="spectator-list" class="spectator-list">
+                    <div class="spectator-placeholder">No spectators yet</div>
+                </div>
+                <div class="sidebar-card-header" style="margin-top: 12px;"><h3><i class="fas fa-comments"></i> Chat</h3></div>
                 <div id="chat-messages" class="chat-messages"></div>
+                <div id="typing-indicator" class="typing-indicator"></div>
                 <div class="chat-input-wrapper">
                     <input type="text" id="chat-input" placeholder="Message the room..." maxlength="500" autocomplete="off">
                     <button id="send-chat" type="button" aria-label="Send message" title="Send message"><i class="fas fa-paper-plane"></i></button>
