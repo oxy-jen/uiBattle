@@ -3455,6 +3455,12 @@ def broadcast_leaderboard(room_id):
     
     socketio.emit('leaderboard_update', {'players': players[:10]}, room=str(room_id))
 
+
+@app.route("/")
+def home():
+    return render_template("home.html")
+
+
 # ========== AUTH ROUTES ==========
 @app.route('/')
 def login_page():
@@ -3507,6 +3513,7 @@ def login():
         complete_login(user)
         return jsonify({'success': True, 'role': user.role})
     return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
+
 
 @app.route('/auth/2fa/verify-login', methods=['POST'])
 def verify_login_2fa():
