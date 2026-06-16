@@ -50,7 +50,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
 app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
 app.config['GOOGLE_REDIRECT_URI'] = os.environ.get('GOOGLE_REDIRECT_URI', '').strip()
-app.config['SITE_URL'] = os.environ.get('SITE_URL', '').strip().rstrip('/')
+app.config['SITE_URL'] = os.environ.get('SITE_URL', 'https://uibattlearena.top').strip().rstrip('/')
 app.config['GOOGLE_DISCOVERY_AUTH_URL'] = 'https://accounts.google.com/o/oauth2/v2/auth'
 app.config['GOOGLE_TOKEN_URL'] = 'https://oauth2.googleapis.com/token'
 app.config['GOOGLE_USERINFO_URL'] = 'https://openidconnect.googleapis.com/v1/userinfo'
@@ -3024,6 +3024,7 @@ def site_page_url(page_key):
     return url_for(endpoint) if endpoint else '#'
 
 PUBLIC_SEO_ENDPOINTS = [
+    'home',
     'login_page',
     'about_page',
     'support_page',
@@ -3080,7 +3081,7 @@ def public_sitemap_entries():
         entries.append({
             'loc': absolute_url_for(endpoint),
             'lastmod': now,
-            'priority': '1.0' if endpoint == 'login_page' else '0.7',
+            'priority': '1.0' if endpoint == 'home' else ('0.8' if endpoint == 'login_page' else '0.7'),
             'changefreq': 'weekly'
         })
     for endpoint, path in PUBLIC_SEO_STATIC_PATHS.items():
@@ -3345,7 +3346,8 @@ def inject_current_profile():
         'csrf_token': get_csrf_token(),
         'visible_site_pages': visible_site_pages,
         'contact_href': contact_href,
-        'email_href': email_href
+        'email_href': email_href,
+        'canonical_origin': site_origin
     }
     user_id = session.get('user_id')
     if not user_id:
@@ -3370,7 +3372,7 @@ def ensure_runtime_schema():
         return csrf_response
 
     # FORCE CANONICAL DOMAIN (SEO CONTROL LAYER)
-    base = "https://uibattlearena.top"
+    base = site_origin()
 
     # remove query params for clean SEO URLs
     clean_path = urlparse(request.full_path).path
@@ -3379,7 +3381,7 @@ def ensure_runtime_schema():
     g.canonical_base = urljoin(base, clean_path)
 
     # safety enforcement (hard override if wrong domain accessed)
-    if request.host != "uibattlearena.top":
+    if urlparse(base).netloc and request.host != urlparse(base).netloc:
         g.canonical_base = urljoin(base, clean_path)
         g.canonical_base = urljoin(base, clean_path).rstrip("/")
 
@@ -3458,11 +3460,19 @@ def broadcast_leaderboard(room_id):
 
 @app.route("/")
 def home():
-    return render_template("home.html")
+    return render_template(
+        "home.html",
+        challenge_count=Challenge.query.filter_by(is_active=True).count(),
+        room_count=Room.query.filter(Room.status.in_(['waiting', 'running', 'paused'])).count(),
+        seo_title='UI Battle Arena - Live Frontend Coding Battles and Website Design Competitions',
+        seo_description='UI Battle Arena is a real-time frontend coding competition platform for HTML, CSS, JavaScript, UI recreation, website battles, tournaments, scoring, spectators, and student awards.',
+        seo_canonical=absolute_url_for('home')
+    )
 
 
 # ========== AUTH ROUTES ==========
-@app.route('/')
+@app.route('/auth/login', methods=['GET'])
+@app.route('/login')
 def login_page():
     return render_template(
         'login.html',

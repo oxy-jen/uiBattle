@@ -1,261 +1,1238 @@
 {% extends "base.html" %}
 
+{% block extra_head %}
+{{ super() }}
+<meta name="author" content="UI Battle Arena">
+<meta name="application-name" content="UI Battle Arena">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "UI Battle Arena",
+  "url": "https://uibattlearena.top/",
+  "description": "UI Battle Arena is a live frontend coding competition platform for HTML, CSS, JavaScript, website design battles, UI recreation challenges, tournaments, scoring, spectators, and student awards.",
+  "publisher": {
+    "@type": "Organization",
+    "name": "UI Battle Arena",
+    "url": "https://uibattlearena.top/"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is UI Battle Arena?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "UI Battle Arena is a live frontend coding competition platform where players recreate interface targets with HTML, CSS, and JavaScript, then receive output-based scores."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Who can use UI Battle Arena?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Students, frontend developers, web design learners, teachers, and competition organizers can use UI Battle Arena for practice battles, classroom contests, tournaments, leaderboards, and awards."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How are UI Battle Arena matches scored?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Matches are scored by comparing rendered output with the target interface, including layout, spacing, typography, colors, alignment, borders, radius, and visual accuracy."
+      }
+    }
+  ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
-<div class="dashboard">
-
-    <!-- NAVBAR -->
-    <nav class="navbar">
-        <div class="nav-brand">
-            <i class="fas fa-code"></i>
-            <span>UI BATTLE ARENA</span>
-        </div>
-
-        <div class="nav-right">
-            <a href="/auth/login" class="logout-btn">
-                <i class="fas fa-arrow-right-to-bracket"></i>
-            </a>
+<main class="home-page">
+    <nav class="home-nav" aria-label="UI Battle Arena navigation">
+        <a class="home-brand" href="{{ url_for('home') }}" aria-label="UI Battle Arena home">
+            <span class="home-brand-mark"><i class="fas fa-crosshairs"></i></span>
+            <span>UI Battle Arena</span>
+        </a>
+        <div class="home-nav-links">
+            <a href="{{ url_for('competition_guide_page') }}">Competition Guide</a>
+            <a href="{{ url_for('help_page') }}">Help</a>
+            <a href="{{ url_for('contact_page') }}">Contact</a>
+            <a href="https://uibattlearena.top" class="home-domain-link" aria-label="UI Battle Arena official domain"><i class="fas fa-globe"></i> uibattlearena.top</a>
+            <a class="home-login-link" href="{{ url_for('login_page') }}"><i class="fas fa-right-to-bracket"></i> Login</a>
         </div>
     </nav>
 
-    <!-- HERO TERMINAL SECTION -->
-    <section class="terminal-section panel">
-
-        <div class="terminal-header">
-            <i class="fas fa-terminal"></i>
-            <span>system_boot.sh</span>
+    <section class="home-hero" aria-labelledby="home-hero-title">
+        <div class="home-hero-scene" aria-hidden="true">
+            <div class="scene-grid"></div>
+            <div class="scene-window scene-window-left">
+                <div class="scene-window-bar"><span></span><span></span><span></span></div>
+                <div class="scene-code-lines">
+                    <span style="--w:82%"></span>
+                    <span style="--w:58%"></span>
+                    <span style="--w:76%"></span>
+                    <span style="--w:44%"></span>
+                    <span style="--w:68%"></span>
+                </div>
+            </div>
+            <div class="scene-window scene-window-right">
+                <div class="scene-window-bar"><span></span><span></span><span></span></div>
+                <div class="scene-preview">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+            <div class="scene-score-ring">
+                <strong>97%</strong>
+                <span>visual match</span>
+            </div>
         </div>
 
-        <div class="terminal-body">
-            <pre id="terminalText"></pre>
+        <div class="home-hero-content">
+            <span class="home-kicker"><i class="fas fa-bolt"></i> Real-time UI coding arena</span>
+            <h1 id="home-hero-title">Frontend battles for students, designers, and web builders.</h1>
+            <p class="home-hero-copy">
+                Recreate interfaces live, submit HTML, CSS, and JavaScript, compare rendered output, climb leaderboards, and run organized tournaments with scoring, spectators, chat, and awards.
+            </p>
+            <div class="home-trust-strip" aria-label="Platform highlights">
+                <span><i class="fas fa-check"></i> Visual scoring</span>
+                <span><i class="fas fa-check"></i> Tournament ready</span>
+                <span><i class="fas fa-check"></i> Public SEO pages</span>
+            </div>
+            <div class="home-terminal" aria-label="Arena status terminal">
+                <div class="home-terminal-head">
+                    <span><i class="fas fa-terminal"></i> arena_boot.sh</span>
+                    <small>live</small>
+                </div>
+                <pre id="terminalText" class="cursor" aria-live="polite"></pre>
+            </div>
+            <div class="home-hero-actions">
+                <a href="{{ url_for('login_page') }}" class="home-btn home-btn-primary"><i class="fas fa-play"></i> Enter Arena</a>
+                <a href="{{ url_for('competition_guide_page') }}" class="home-btn home-btn-secondary"><i class="fas fa-sitemap"></i> Run a Competition</a>
+            </div>
         </div>
-
-        <div class="hero-title">
-            <h1>REAL-TIME CODING BATTLE SYSTEM</h1>
-            <p>Compete. Build. Break limits. Rank globally.</p>
-        </div>
-
-        <div class="hero-actions">
-            <a href="/auth/login" class="btn-primary">
-                <i class="fas fa-play"></i> Enter Arena
-            </a>
-
-            <a href="/about" class="btn-secondary">
-                <i class="fas fa-circle-info"></i> What is this?
-            </a>
-        </div>
-
+        <a class="home-scroll-cue" href="#how-it-works" aria-label="Scroll to how UI Battle Arena works">
+            <span></span>
+            Explore
+        </a>
     </section>
 
-    <!-- WHAT THE APP DOES -->
-    <section class="panel info-section">
-        <h2><i class="fas fa-layer-group"></i> SYSTEM OVERVIEW</h2>
+    <section class="home-stats" aria-label="Live UI Battle Arena statistics" aria-busy="true">
+        <div>
+            <strong id="home-stat-rooms" class="stat-skeleton">{{ room_count|default(0) }}</strong>
+            <span>Active rooms</span>
+        </div>
+        <div>
+            <strong id="home-stat-challenges" class="stat-skeleton">{{ challenge_count|default(0) }}</strong>
+            <span>Active challenges</span>
+        </div>
+        <div>
+            <strong id="home-stat-players" class="stat-skeleton">0</strong>
+            <span>Ranked players</span>
+        </div>
+        <div>
+            <strong class="stat-skeleton">1v1</strong>
+            <span>Battle format</span>
+        </div>
+    </section>
 
-        <div class="info-grid">
-
-            <div class="info-card">
-                <i class="fas fa-bolt"></i>
-                <h3>Live Battles</h3>
-                <p>Users compete in real-time coding challenges.</p>
-            </div>
-
-            <div class="info-card">
-                <i class="fas fa-trophy"></i>
-                <h3>Ranking Engine</h3>
-                <p>Accuracy-based global leaderboard system.</p>
-            </div>
-
-            <div class="info-card">
+    <section class="home-section home-section-split" id="how-it-works">
+        <div>
+            <span class="home-section-label">What players do</span>
+            <h2>Build the target interface under pressure.</h2>
+            <p>
+                Players join a live room, study the target visually, write frontend code, and submit before time runs out. Scores reward the rendered result: layout, typography, spacing, colors, alignment, borders, radius, and interaction behavior.
+            </p>
+        </div>
+        <div class="home-flow" aria-label="Arena workflow">
+            <article>
+                <i class="fas fa-door-open"></i>
+                <h3>Join</h3>
+                <p>Enter a match room or tournament wave.</p>
+            </article>
+            <article>
                 <i class="fas fa-code"></i>
-                <h3>Multiple Modes</h3>
-                <p>HTML, website building, and visual challenges.</p>
-            </div>
-
+                <h3>Build</h3>
+                <p>Create the UI with HTML, CSS, and JavaScript.</p>
+            </article>
+            <article>
+                <i class="fas fa-chart-line"></i>
+                <h3>Score</h3>
+                <p>Compare output and rank by accuracy.</p>
+            </article>
         </div>
     </section>
 
-    <!-- NAVIGATION CARDS -->
-    <section class="dashboard-grid">
-
-        <a href="/dashboard" class="panel nav-card">
-            <i class="fas fa-gauge"></i>
-            <h3>Dashboard</h3>
-            <p>Live stats and ongoing battles</p>
-        </a>
-
-        <a href="/competition-guide" class="panel nav-card">
-            <i class="fas fa-book"></i>
-            <h3>Competition Guide</h3>
-            <p>How the system works</p>
-        </a>
-
-        <a href="/help" class="panel nav-card">
-            <i class="fas fa-headset"></i>
-            <h3>Help Center</h3>
-            <p>Get support anytime</p>
-        </a>
-
-        <a href="/contact" class="panel nav-card">
-            <i class="fas fa-satellite-dish"></i>
-            <h3>Contact</h3>
-            <p>Reach system operators</p>
-        </a>
-
+    <section class="home-section home-first-time">
+        <div class="home-section-head">
+            <div>
+                <span class="home-section-label">First time here?</span>
+                <h2>Know what happens before you log in.</h2>
+            </div>
+        </div>
+        <div class="home-onboarding-grid">
+            <article>
+                <strong>01</strong>
+                <h3>Open a room</h3>
+                <p>Use a room invite, dashboard room, or tournament wave created by an admin.</p>
+            </article>
+            <article>
+                <strong>02</strong>
+                <h3>Study visually</h3>
+                <p>Read the target layout like a designer: spacing, color, type, shape, and motion.</p>
+            </article>
+            <article>
+                <strong>03</strong>
+                <h3>Submit output</h3>
+                <p>The final rendered page is scored, saved, ranked, and shown to organizers.</p>
+            </article>
+        </div>
     </section>
 
-</div>
+    <section class="home-section">
+        <div class="home-section-head">
+            <div>
+                <span class="home-section-label">Platform features</span>
+                <h2>Competition tools built into one arena.</h2>
+            </div>
+            <a href="{{ url_for('about_page') }}">About the platform <i class="fas fa-arrow-right"></i></a>
+        </div>
+        <div class="home-feature-grid">
+            <article>
+                <i class="fas fa-trophy"></i>
+                <h3>Leaderboards</h3>
+                <p>Rank players by trusted match scores, wins, best accuracy, and tournament progress.</p>
+            </article>
+            <article>
+                <i class="fas fa-users-viewfinder"></i>
+                <h3>Spectators</h3>
+                <p>Let admins and viewers watch active rooms, output previews, chat, and match state.</p>
+            </article>
+            <article>
+                <i class="fas fa-shield-halved"></i>
+                <h3>Fair Play</h3>
+                <p>Support camera checks, moderation, reports, scoring review, and anti-inspect rules.</p>
+            </article>
+            <article>
+                <i class="fas fa-award"></i>
+                <h3>Awards</h3>
+                <p>Create recognition cards and certificates for winners, finalists, and standout players.</p>
+            </article>
+        </div>
+    </section>
+
+    <section class="home-section home-domain-band">
+        <div>
+            <span class="home-section-label">Be Offially Connected</span>
+            <h2>Use uibattlearena.top for Google, sharing, and public pages.</h2>
+            <p>
+                For official information, updates, and platform access, visit the official UI Battle Arena website at <a href="https://uibattlearena.top">uibattlearena.top</a>.
+            </p>
+        </div>
+        <a class="home-btn home-btn-primary" href="https://uibattlearena.top"><i class="fas fa-globe"></i> Visit Domain</a>
+    </section>
+
+    <section class="home-section home-seo-band">
+        <div>
+            <span class="home-section-label">For Google and new visitors</span>
+            <h2>UI Battle Arena is a frontend coding competition platform.</h2>
+            <p>
+                The site supports web design battles, UI recreation challenges, HTML CSS JavaScript practice, live tournaments, classroom contests, student rankings, support pages, feedback, reports, and public competition guidance.
+            </p>
+        </div>
+        <div class="home-resource-links">
+            <a href="{{ url_for('help_page') }}"><i class="fas fa-circle-question"></i> Help Center</a>
+            <a href="{{ url_for('support_page') }}"><i class="fas fa-headset"></i> Support</a>
+            <a href="{{ url_for('feedback_page') }}"><i class="fas fa-message"></i> Feedback</a>
+            <a href="{{ url_for('report_page') }}"><i class="fas fa-triangle-exclamation"></i> Report a Problem</a>
+            <a href="{{ url_for('terms_page') }}"><i class="fas fa-file-contract"></i> Terms</a>
+        </div>
+    </section>
+
+    <section class="home-section home-faq-section" aria-labelledby="home-faq-title">
+        <div class="home-section-head">
+            <div>
+                <span class="home-section-label">Common questions</span>
+                <h2 id="home-faq-title">What new users should understand.</h2>
+            </div>
+        </div>
+        <div class="home-faq-grid">
+            <article>
+                <h3>What is UI Battle Arena?</h3>
+                <p>UI Battle Arena is a live frontend coding competition platform for HTML, CSS, JavaScript, UI recreation, website design battles, tournaments, scoring, spectators, and student awards.</p>
+            </article>
+            <article>
+                <h3>Who is it for?</h3>
+                <p>It is built for students, frontend learners, teachers, event organizers, and developers who want practical interface-building challenges with measurable results.</p>
+            </article>
+            <article>
+                <h3>How does scoring work?</h3>
+                <p>The arena compares the rendered output against the target and rewards visual accuracy across layout, spacing, typography, color, alignment, shape, and interaction details.</p>
+            </article>
+        </div>
+    </section>
+</main>
 
 <style>
-
-/* TERMINAL */
-.terminal-section {
-    margin: 20px;
-    padding: 25px;
-    position: relative;
-    overflow: hidden;
+.home-page {
+    --home-bg: #08111f;
+    --home-panel: rgba(12, 20, 34, 0.86);
+    --home-panel-strong: rgba(8, 15, 28, 0.94);
+    --home-line: rgba(148, 163, 184, 0.22);
+    --home-text: #f8fafc;
+    --home-muted: #cbd5e1;
+    --home-soft: #dbeafe;
+    --home-cyan: #38bdf8;
+    --home-green: #86efac;
+    --home-gold: #fde68a;
+    min-height: 100vh;
+    font-family: 'Rajdhani', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background:
+        radial-gradient(circle at 18% 12%, rgba(56, 189, 248, 0.1), transparent 28%),
+        radial-gradient(circle at 86% 16%, rgba(250, 204, 21, 0.08), transparent 24%),
+        linear-gradient(90deg, rgba(56, 189, 248, 0.035) 1px, transparent 1px),
+        linear-gradient(rgba(134, 239, 172, 0.025) 1px, transparent 1px),
+        linear-gradient(135deg, #07101d 0%, #0f172a 48%, #102019 100%);
+    background-size: auto, auto, 64px 64px, 64px 64px, auto;
+    color: var(--home-text);
+    overflow-x: hidden;
 }
 
-.terminal-header {
+.home-nav {
+    position: sticky;
+    top: 0;
+    z-index: 40;
     display: flex;
     align-items: center;
-    gap: 10px;
-    color: var(--text-secondary);
-    border-bottom: 1px solid var(--border-default);
-    padding-bottom: 10px;
-    margin-bottom: 15px;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 14px clamp(18px, 5vw, 72px);
+    background: var(--home-panel-strong);
+    border-bottom: 1px solid var(--home-line);
+    backdrop-filter: blur(18px);
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
-.terminal-body {
-    font-family: monospace;
-    color: var(--accent-primary);
-    min-height: 120px;
-    white-space: pre-line;
+.home-page.is-scrolled .home-nav {
+    background: rgba(8, 15, 28, 0.98);
+    border-color: rgba(56, 189, 248, 0.32);
 }
 
-/* HERO TEXT */
-.hero-title {
-    margin-top: 20px;
-}
-
-.hero-title h1 {
-    font-size: 34px;
-    letter-spacing: 1px;
-}
-
-.hero-title p {
-    color: var(--text-secondary);
-}
-
-/* BUTTONS */
-.hero-actions {
-    margin-top: 18px;
+.home-brand,
+.home-nav-links,
+.home-nav-links a,
+.home-btn,
+.home-section-head,
+.home-resource-links a {
     display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
+    align-items: center;
 }
 
-.btn-primary, .btn-secondary {
-    padding: 10px 14px;
+.home-brand {
+    gap: 10px;
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.home-brand-mark {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
     border-radius: 8px;
+    background: #0ea5e9;
+    color: #04111f;
+}
+
+.home-nav-links {
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.home-nav-links a {
+    min-height: 38px;
+    padding: 0 12px;
+    border-radius: 8px;
+    color: var(--home-muted);
     text-decoration: none;
     font-weight: 700;
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
+    transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.home-nav-links a:hover,
+.home-login-link {
+    color: #ffffff !important;
+    border-color: rgba(56, 189, 248, 0.38) !important;
+    background: rgba(14, 165, 233, 0.12);
+}
+
+.home-nav-links a:hover {
+    transform: translateY(-1px);
+}
+
+.home-domain-link {
+    color: var(--home-gold) !important;
+    background: rgba(250, 204, 21, 0.08);
+}
+
+.home-hero {
+    position: relative;
+    min-height: min(780px, calc(100vh - 64px));
+    display: grid;
+    align-items: center;
+    padding: clamp(44px, 7vw, 88px) clamp(18px, 5vw, 72px);
+}
+
+.home-hero::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 180px;
+    background: linear-gradient(transparent, rgba(8, 17, 31, 0.94));
+    pointer-events: none;
+}
+
+.home-hero-scene {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    opacity: 0.54;
+}
+
+.scene-grid {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(90deg, rgba(14, 165, 233, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(34, 197, 94, 0.055) 1px, transparent 1px);
+    background-size: 96px 96px;
+    transform: perspective(680px) rotateX(56deg) translateY(12%);
+    transform-origin: center bottom;
+    animation: gridDrift 18s linear infinite;
+}
+
+.scene-window,
+.scene-score-ring {
+    position: absolute;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.66);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(12px);
+    will-change: transform;
+}
+
+.scene-window-left {
+    width: min(38vw, 520px);
+    min-width: 280px;
+    left: auto;
+    right: 16vw;
+    top: 15%;
+    animation: sceneFloat 8s ease-in-out infinite;
+}
+
+.scene-window-right {
+    width: min(32vw, 420px);
+    min-width: 250px;
+    right: 6vw;
+    bottom: 12%;
+    animation: sceneFloat 9s ease-in-out infinite reverse;
+}
+
+.scene-window-bar {
+    display: flex;
+    gap: 7px;
+    padding: 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.scene-window-bar span {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #38bdf8;
+}
+
+.scene-window-bar span:nth-child(2) { background: #22c55e; }
+.scene-window-bar span:nth-child(3) { background: #f59e0b; }
+
+.scene-code-lines {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+}
+
+.scene-code-lines span {
+    height: 12px;
+    width: var(--w);
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(56, 189, 248, 0.74), rgba(34, 197, 94, 0.66));
+    animation: codePulse 2.6s ease-in-out infinite;
+    animation-delay: calc(var(--line-delay, 0) * 110ms);
+}
+
+.scene-code-lines span:nth-child(2) { --line-delay: 1; }
+.scene-code-lines span:nth-child(3) { --line-delay: 2; }
+.scene-code-lines span:nth-child(4) { --line-delay: 3; }
+.scene-code-lines span:nth-child(5) { --line-delay: 4; }
+
+.scene-preview {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 18px;
+}
+
+.scene-preview span {
+    min-height: 76px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.36), rgba(34, 197, 94, 0.22));
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    animation: previewGlow 4s ease-in-out infinite;
+}
+
+.scene-preview span:first-child {
+    grid-column: 1 / -1;
+}
+
+.scene-score-ring {
+    right: clamp(24px, 12vw, 180px);
+    top: 21%;
+    width: 132px;
+    height: 132px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at center, rgba(15, 23, 42, 0.96) 58%, transparent 60%),
+        conic-gradient(#22c55e 0 78%, #38bdf8 78% 97%, rgba(148, 163, 184, 0.28) 97%);
+    animation: scorePulse 2.8s ease-in-out infinite;
+}
+
+.scene-score-ring strong {
+    font-size: 30px;
+}
+
+.scene-score-ring span {
+    display: block;
+    color: var(--home-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.home-hero-content {
+    position: relative;
+    z-index: 2;
+    width: min(720px, 100%);
+    text-shadow: 0 2px 18px rgba(2, 6, 23, 0.64);
+}
+
+.home-kicker,
+.home-section-label {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    color: #7dd3fc;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 13px;
 }
 
-.btn-primary {
-    background: var(--accent-primary);
-    color: white;
+.home-hero h1 {
+    margin: 18px 0 16px;
+    max-width: 720px;
+    font-size: clamp(40px, 6vw, 72px);
+    line-height: 1.01;
+    color: #ffffff;
+    font-family: 'Rajdhani', system-ui, sans-serif;
+    font-weight: 800;
+    letter-spacing: 0;
 }
 
-.btn-secondary {
-    color: var(--text-primary);
+.home-hero-copy {
+    max-width: 680px;
+    color: var(--home-soft);
+    font-size: clamp(17px, 2vw, 21px);
+    line-height: 1.55;
 }
 
-/* INFO SECTION */
-.info-section {
-    margin: 20px;
-    padding: 20px;
-}
-
-.info-section h2 {
-    margin-bottom: 15px;
-}
-
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 15px;
-}
-
-.info-card {
-    border: 1px solid var(--border-default);
-    padding: 15px;
+.home-terminal {
+    width: min(650px, 100%);
+    margin-top: 24px;
+    border: 1px solid rgba(56, 189, 248, 0.28);
     border-radius: 8px;
-    background: var(--bg-panel-alt);
+    background: rgba(2, 6, 23, 0.82);
+    overflow: hidden;
+    box-shadow: 0 18px 60px rgba(14, 165, 233, 0.14);
 }
 
-.info-card i {
-    color: var(--accent-primary);
-    font-size: 18px;
-    margin-bottom: 8px;
+.home-terminal:hover {
+    border-color: rgba(134, 239, 172, 0.46);
 }
 
-/* NAV CARDS */
-.nav-card {
-    text-decoration: none;
-    transition: 0.2s;
+.home-terminal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 14px;
+    color: #bae6fd;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.18);
 }
 
-.nav-card:hover {
-    transform: translateY(-3px);
-    border-color: var(--accent-primary);
+.home-terminal-head small {
+    color: var(--home-green);
+    text-transform: uppercase;
+    font-weight: 800;
 }
 
-/* TERMINAL ANIMATION */
-@keyframes blink {
-    50% { opacity: 0; }
+.home-terminal pre {
+    min-height: 132px;
+    margin: 0;
+    padding: 16px;
+    color: var(--home-green);
+    font-family: 'JetBrains Mono', monospace;
+    white-space: pre-wrap;
 }
 
 .cursor::after {
     content: "|";
-    animation: blink 1s infinite;
+    color: #38bdf8;
+    animation: blink 0.85s steps(2, start) infinite;
 }
 
-</style>
+.home-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 22px;
+}
 
-<script>
-// TYPEWRITER TERMINAL EFFECT
-const lines = [
-"booting UI Battle Arena...",
-"loading competition engine...",
-"initializing ranking system...",
-"syncing global players...",
-"system ready: enter arena"
-];
+.home-trust-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+}
 
-let i = 0;
-let j = 0;
-const speed = 35;
-const terminal = document.getElementById("terminalText");
+.home-trust-strip span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 0 11px;
+    border-radius: 8px;
+    color: var(--home-soft);
+    background: rgba(8, 15, 28, 0.76);
+    border: 1px solid var(--home-line);
+}
 
-function type() {
-    if (i < lines.length) {
-        if (j < lines[i].length) {
-            terminal.innerHTML += lines[i][j];
-            j++;
-            setTimeout(type, speed);
-        } else {
-            terminal.innerHTML += "\n";
-            i++;
-            j = 0;
-            setTimeout(type, 400);
-        }
+.home-trust-strip i {
+    color: var(--home-green);
+}
+
+.home-btn {
+    min-height: 48px;
+    gap: 9px;
+    padding: 0 18px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 800;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    position: relative;
+    overflow: hidden;
+}
+
+.home-btn::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.2) 48%, transparent 56%);
+    transform: translateX(-120%);
+    transition: transform 0.55s ease;
+}
+
+.home-btn:hover::after {
+    transform: translateX(120%);
+}
+
+.home-btn-primary {
+    background: #0ea5e9;
+    color: #04111f;
+    box-shadow: 0 12px 32px rgba(14, 165, 233, 0.3);
+}
+
+.home-btn-secondary {
+    background: rgba(15, 23, 42, 0.86);
+    color: #ffffff;
+}
+
+.home-stats,
+.home-section {
+    position: relative;
+    z-index: 2;
+    width: min(1180px, calc(100% - 36px));
+    margin: 0 auto;
+}
+
+.home-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    border: 1px solid var(--home-line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(148, 163, 184, 0.12);
+    transform: translateY(-28px);
+}
+
+.home-stats div {
+    padding: 22px;
+    background: var(--home-panel);
+    position: relative;
+    overflow: hidden;
+}
+
+.home-stats strong {
+    display: block;
+    font-size: clamp(28px, 4vw, 46px);
+    color: #ffffff;
+}
+
+.home-stats[aria-busy="true"] .stat-skeleton {
+    color: transparent;
+    width: 86px;
+    max-width: 100%;
+    border-radius: 8px;
+    background: linear-gradient(100deg, rgba(148, 163, 184, 0.18), rgba(226, 232, 240, 0.34), rgba(148, 163, 184, 0.18));
+    background-size: 220% 100%;
+    animation: skeletonSweep 1.15s ease-in-out infinite;
+}
+
+.home-stats.is-loaded .stat-skeleton {
+    color: #ffffff;
+    width: auto;
+    background: transparent;
+    animation: none;
+}
+
+.home-stats span {
+    color: var(--home-muted);
+    font-weight: 700;
+}
+
+.home-section {
+    padding: clamp(52px, 7vw, 92px) 0;
+    scroll-margin-top: 88px;
+}
+
+.home-section-split {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
+    gap: clamp(24px, 5vw, 64px);
+    align-items: center;
+}
+
+.home-section h2 {
+    margin: 10px 0 12px;
+    font-size: clamp(32px, 5vw, 58px);
+    line-height: 1;
+    color: #ffffff;
+}
+
+.home-section p {
+    color: var(--home-muted);
+    line-height: 1.65;
+    font-size: 17px;
+}
+
+.home-flow,
+.home-feature-grid {
+    display: grid;
+    gap: 14px;
+}
+
+.home-flow {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.home-flow article,
+.home-feature-grid article {
+    min-width: 0;
+    padding: 20px;
+    border-radius: 8px;
+    background: var(--home-panel);
+    border: 1px solid var(--home-line);
+    position: relative;
+    overflow: hidden;
+}
+
+.home-flow article::before,
+.home-feature-grid article::before,
+.home-onboarding-grid article::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at var(--hover-x, 50%) var(--hover-y, 0%), rgba(56, 189, 248, 0.16), transparent 38%);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.home-flow article > *,
+.home-feature-grid article > *,
+.home-onboarding-grid article > * {
+    position: relative;
+    z-index: 1;
+}
+
+.home-flow article:hover::before,
+.home-feature-grid article:hover::before,
+.home-onboarding-grid article:hover::before {
+    opacity: 1;
+}
+
+.home-flow i,
+.home-feature-grid i {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: rgba(34, 197, 94, 0.14);
+    color: var(--home-green);
+    margin-bottom: 14px;
+}
+
+.home-flow h3,
+.home-feature-grid h3 {
+    margin: 0 0 8px;
+    color: #ffffff;
+    font-size: 23px;
+}
+
+.home-flow p,
+.home-feature-grid p {
+    margin: 0;
+    font-size: 15px;
+}
+
+.home-section-head {
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 22px;
+}
+
+.home-section-head a {
+    color: #7dd3fc;
+    text-decoration: none;
+    font-weight: 800;
+}
+
+.home-feature-grid {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.home-first-time {
+    padding-top: 20px;
+}
+
+.home-onboarding-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+}
+
+.home-onboarding-grid article {
+    position: relative;
+    min-width: 0;
+    padding: 22px;
+    border-radius: 8px;
+    background: var(--home-panel);
+    border: 1px solid var(--home-line);
+    overflow: hidden;
+}
+
+.home-onboarding-grid strong {
+    display: inline-flex;
+    width: 42px;
+    height: 42px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    color: #04111f;
+    background: #fbbf24;
+    margin-bottom: 18px;
+}
+
+.home-onboarding-grid h3 {
+    margin: 0 0 8px;
+    color: #ffffff;
+    font-size: 24px;
+}
+
+.home-onboarding-grid p {
+    margin: 0;
+    font-size: 15px;
+}
+
+.home-domain-band {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 24px;
+    align-items: center;
+    padding: clamp(28px, 5vw, 42px);
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(251, 191, 36, 0.08)),
+        var(--home-panel);
+    border: 1px solid rgba(125, 211, 252, 0.2);
+}
+
+.home-seo-band {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 32px;
+    align-items: center;
+    margin-bottom: 48px;
+    padding: clamp(28px, 5vw, 46px);
+    border: 1px solid var(--home-line);
+    border-radius: 8px;
+    background: var(--home-panel);
+}
+
+.home-resource-links {
+    flex-direction: column;
+    gap: 10px;
+}
+
+.home-resource-links a {
+    justify-content: space-between;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 8px;
+    color: #e0f2fe;
+    text-decoration: none;
+    background: rgba(8, 15, 28, 0.88);
+    border: 1px solid var(--home-line);
+}
+
+.home-scroll-cue {
+    position: absolute;
+    left: 50%;
+    bottom: 28px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: #bae6fd;
+    text-decoration: none;
+    font-weight: 800;
+    transform: translateX(-50%);
+}
+
+.home-scroll-cue span {
+    width: 22px;
+    height: 36px;
+    border: 1px solid rgba(186, 230, 253, 0.56);
+    border-radius: 999px;
+    position: relative;
+}
+
+.home-scroll-cue span::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 7px;
+    width: 4px;
+    height: 7px;
+    border-radius: 999px;
+    background: #bae6fd;
+    transform: translateX(-50%);
+    animation: scrollDot 1.4s ease-in-out infinite;
+}
+
+.home-resource-links a:hover,
+.home-btn:hover,
+.home-flow article:hover,
+.home-feature-grid article:hover,
+.home-onboarding-grid article:hover {
+    transform: translateY(-4px);
+    border-color: rgba(56, 189, 248, 0.5);
+}
+
+.home-btn,
+.home-flow article,
+.home-feature-grid article,
+.home-onboarding-grid article,
+.home-resource-links a,
+.home-terminal,
+.home-stats div {
+    transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease;
+}
+
+.home-reveal {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity 0.62s ease, transform 0.62s ease;
+}
+
+.home-reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
+@keyframes sceneFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-14px); }
+}
+
+@keyframes gridDrift {
+    from { background-position: 0 0; }
+    to { background-position: 86px 86px; }
+}
+
+@keyframes codePulse {
+    0%, 100% { opacity: 0.58; transform: scaleX(0.92); transform-origin: left; }
+    50% { opacity: 1; transform: scaleX(1); transform-origin: left; }
+}
+
+@keyframes previewGlow {
+    0%, 100% { box-shadow: inset 0 0 0 rgba(56, 189, 248, 0); }
+    50% { box-shadow: inset 0 0 34px rgba(56, 189, 248, 0.18); }
+}
+
+@keyframes scorePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+}
+
+@keyframes skeletonSweep {
+    from { background-position: 160% 0; }
+    to { background-position: -60% 0; }
+}
+
+@keyframes scrollDot {
+    0% { transform: translate(-50%, 0); opacity: 0; }
+    35% { opacity: 1; }
+    100% { transform: translate(-50%, 15px); opacity: 0; }
+}
+
+@media (max-width: 980px) {
+    .home-nav {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .home-nav-links {
+        justify-content: flex-start;
+    }
+
+    .home-hero {
+        min-height: auto;
+        padding-top: 44px;
+    }
+
+    .scene-window-left,
+    .scene-window-right,
+    .scene-score-ring {
+        opacity: 0.34;
+    }
+
+    .home-stats,
+    .home-flow,
+    .home-feature-grid,
+    .home-onboarding-grid,
+    .home-section-split,
+    .home-seo-band,
+    .home-domain-band {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .home-section-head {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
 
-type();
-</script>
+@media (max-width: 640px) {
+    .home-nav-links a {
+        min-height: 34px;
+        padding: 0 9px;
+        font-size: 13px;
+    }
 
+    .home-hero h1 {
+        font-size: 42px;
+    }
+
+    .home-stats,
+    .home-flow,
+    .home-feature-grid,
+    .home-onboarding-grid,
+    .home-section-split,
+    .home-seo-band,
+    .home-domain-band {
+        grid-template-columns: 1fr;
+    }
+
+    .home-stats div,
+    .home-flow article,
+    .home-feature-grid article,
+    .home-onboarding-grid article {
+        padding: 16px;
+    }
+
+    .home-seo-band {
+        width: min(1180px, calc(100% - 24px));
+        padding: 22px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scene-window,
+    .scene-score-ring,
+    .scene-grid,
+    .scene-code-lines span,
+    .scene-preview span,
+    .cursor::after,
+    .home-scroll-cue span::after,
+    .home-stats[aria-busy="true"] .stat-skeleton {
+        animation: none !important;
+    }
+
+    .home-btn,
+    .home-flow article,
+    .home-feature-grid article,
+    .home-onboarding-grid article,
+    .home-resource-links a,
+    .home-reveal {
+        transition: none;
+        opacity: 1;
+        transform: none;
+    }
+}
+</style>
+
+<script>
+const terminalLines = [
+    "boot: UI Battle Arena public gateway online",
+    "scan: loading HTML, CSS, JavaScript challenge rooms",
+    "sync: ranking engine, spectators, chat, and awards ready",
+    "seo: public guide, support, contact, terms, and help pages indexed",
+    "status: enter the arena when your match starts"
+];
+
+const terminal = document.getElementById("terminalText");
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const homePage = document.querySelector(".home-page");
+
+function typeTerminalLine(lineIndex = 0, charIndex = 0) {
+    if (!terminal) return;
+    if (reduceMotion) {
+        terminal.textContent = terminalLines.join("\n");
+        return;
+    }
+    if (lineIndex >= terminalLines.length) return;
+    const current = terminalLines[lineIndex];
+    if (charIndex <= current.length) {
+        const previous = terminalLines.slice(0, lineIndex).join("\n");
+        terminal.textContent = `${previous}${previous ? "\n" : ""}${current.slice(0, charIndex)}`;
+        window.setTimeout(() => typeTerminalLine(lineIndex, charIndex + 1), 24);
+    } else {
+        window.setTimeout(() => typeTerminalLine(lineIndex + 1, 0), 220);
+    }
+}
+
+function setStatsLoaded() {
+    const stats = document.querySelector(".home-stats");
+    if (!stats) return;
+    stats.classList.add("is-loaded");
+    stats.setAttribute("aria-busy", "false");
+}
+
+async function hydrateHomeStats() {
+    try {
+        const roomsResponse = await fetch("/room/list");
+        if (roomsResponse.ok) {
+            const rooms = await roomsResponse.json();
+            const activeRooms = Array.isArray(rooms)
+                ? rooms.filter((room) => ["waiting", "running", "paused"].includes(room.status)).length || rooms.length
+                : 0;
+            const roomsNode = document.getElementById("home-stat-rooms");
+            if (roomsNode) roomsNode.textContent = String(activeRooms);
+        }
+    } catch (error) {}
+
+    try {
+        const leaderboardResponse = await fetch("/api/leaderboard");
+        if (leaderboardResponse.ok) {
+            const players = await leaderboardResponse.json();
+            const playersNode = document.getElementById("home-stat-players");
+            if (playersNode && Array.isArray(players)) playersNode.textContent = String(players.length);
+        }
+    } catch (error) {}
+    setStatsLoaded();
+}
+
+function setupHomeMotion() {
+    if (!homePage) return;
+
+    const updateScrollState = () => {
+        homePage.classList.toggle("is-scrolled", window.scrollY > 12);
+    };
+    updateScrollState();
+    window.addEventListener("scroll", updateScrollState, { passive: true });
+
+    document.querySelectorAll(".home-section, .home-stats, .home-terminal, .home-flow article, .home-feature-grid article, .home-onboarding-grid article, .home-domain-band, .home-seo-band").forEach((item, index) => {
+        item.classList.add("home-reveal");
+        item.style.transitionDelay = `${Math.min(index * 36, 220)}ms`;
+    });
+
+    if (!reduceMotion && "IntersectionObserver" in window) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add("is-visible");
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.16, rootMargin: "0px 0px -8% 0px" });
+        document.querySelectorAll(".home-reveal").forEach((item) => observer.observe(item));
+    } else {
+        document.querySelectorAll(".home-reveal").forEach((item) => item.classList.add("is-visible"));
+    }
+
+    document.querySelectorAll(".home-flow article, .home-feature-grid article, .home-onboarding-grid article").forEach((card) => {
+        card.addEventListener("pointermove", (event) => {
+            const rect = card.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 100;
+            const y = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * 100;
+            card.style.setProperty("--hover-x", `${x}%`);
+            card.style.setProperty("--hover-y", `${y}%`);
+        });
+    });
+}
+
+window.setTimeout(setStatsLoaded, 2400);
+setupHomeMotion();
+typeTerminalLine();
+hydrateHomeStats();
+</script>
 {% endblock %}

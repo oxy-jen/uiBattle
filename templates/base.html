@@ -5,18 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     {% set default_seo_title = 'UI Battle Arena - Live Frontend Coding Battles and Website Design Competitions' %}
     {% set default_seo_description = 'UI Battle Arena is a live frontend coding competition platform for HTML, CSS, JavaScript, UI recreation, website design battles, tournaments, scoring, spectators, chat, and admin monitoring.' %}
-    {% set seo_public_endpoints = ['login_page', 'about_page', 'support_page', 'terms_page', 'contact_page', 'help_page', 'competition_guide_page', 'shortcuts_page', 'feedback_page', 'report_page', 'maintenance_page'] %}
+    {% set seo_public_endpoints = ['home', 'login_page', 'about_page', 'support_page', 'terms_page', 'contact_page', 'help_page', 'competition_guide_page', 'shortcuts_page', 'feedback_page', 'report_page', 'maintenance_page'] %}
     {% set seo_title = seo_title|default(default_seo_title) %}
     {% set seo_description = seo_description|default(default_seo_description) %}
     {% set seo_image = seo_image|default(url_for('static', filename='site-icon.svg', _external=True)) %}
-    {% set base_domain = 'https://uibattlearena.top' %}
+    {% set base_domain = canonical_origin() %}
     {% set seo_canonical = seo_canonical|default(base_domain ~ request.path) %}
     {% set seo_robots = seo_robots|default('index, follow' if request.endpoint in seo_public_endpoints else 'noindex, nofollow') %}
     <title>{{ seo_title }}</title>
     <meta name="description" content="{{ seo_description }}">
     <meta name="keywords" content="UI Battle Arena, uibattlearena, frontend coding competition, HTML CSS JavaScript battle, website design competition, UI challenge arena, live coding tournament, web design battle">
     <meta name="robots" content="{{ seo_robots }}">
-    <link rel="canonical" href="{{ g.canonical_base }}">
+    <link rel="canonical" href="{{ seo_canonical }}">
+    <link rel="alternate" hreflang="en" href="{{ seo_canonical }}">
+    <link rel="alternate" hreflang="x-default" href="{{ base_domain }}/">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="UI Battle Arena">
     <meta property="og:title" content="{{ seo_title }}">
@@ -27,6 +29,7 @@
     <meta name="twitter:title" content="{{ seo_title }}">
     <meta name="twitter:description" content="{{ seo_description }}">
     <meta name="twitter:image" content="{{ seo_image }}">
+    {% block extra_head %}{% endblock %}
     <script type="application/ld+json">
         {
           "@context": "https://schema.org",
