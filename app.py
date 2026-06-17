@@ -358,6 +358,7 @@ def is_room_player(user, room):
 RESEND_API_URL = 'https://api.resend.com/emails'
 RESEND_FROM_EMAIL = 'noreply@uibattlearena.top'
 EMAIL_SUBJECT_MAX_LENGTH = 150
+EMAIL_ERROR_MAX_LENGTH = 260
 
 
 def email_configured():
@@ -373,6 +374,18 @@ def email_configuration_error():
     if missing:
         return 'Email sending is not configured. Missing: ' + ', '.join(missing)
     return ''
+
+
+def set_last_email_error(message):
+    cleaned = re.sub(r'\s+', ' ', str(message or '')).strip()
+    app.config['LAST_EMAIL_ERROR'] = cleaned[:EMAIL_ERROR_MAX_LENGTH]
+
+
+def email_failure_message(default_message):
+    detail = app.config.get('LAST_EMAIL_ERROR')
+    if detail:
+        return f'{default_message} Resend response: {detail}'
+    return default_message
 
 
 def safe_email_subject(subject):
@@ -455,8 +468,10 @@ def send_email(to_email, subject, body, html_body=None):
     to_email = valid_email(to_email)
     from_email = app.config.get('SMTP_FROM')
     api_key = app.config.get('RESEND_API_KEY')
+    app.config['LAST_EMAIL_ERROR'] = ''
     if not to_email or from_email != RESEND_FROM_EMAIL or not api_key:
-        app.logger.error('Resend email skipped: %s', email_configuration_error() or 'invalid recipient')
+        set_last_email_error(email_configuration_error() or 'invalid recipient')
+        app.logger.error('Resend email skipped: %s', app.config['LAST_EMAIL_ERROR'])
         return False
     subject = safe_email_subject(subject)
     text_body, html_body = prepare_email_content(subject, body, html_body)
@@ -477,7 +492,9 @@ def send_email(to_email, subject, body, html_body=None):
         data=json.dumps(payload).encode('utf-8'),
         headers={
             'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'UIBattleArena/1.0 (https://uibattlearena.top)'
         },
         method='POST'
     )
@@ -486,16 +503,20 @@ def send_email(to_email, subject, body, html_body=None):
             response_body = response.read().decode('utf-8', errors='replace')
             success = 200 <= response.status < 300
             if not success:
+                set_last_email_error(f'status {response.status}: {response_body[:500]}')
                 app.logger.error('Resend email send failed with status %s: %s', response.status, response_body[:500])
             return success
     except urllib.error.HTTPError as error:
         response_body = error.read().decode('utf-8', errors='replace')
+        set_last_email_error(f'status {error.code}: {response_body[:500]}')
         app.logger.error('Resend email send failed with status %s: %s', error.code, response_body[:500])
         return False
     except urllib.error.URLError as error:
+        set_last_email_error(f'network error: {error}')
         app.logger.error('Resend email send failed with network error: %s', error)
         return False
     except Exception:
+        set_last_email_error('unexpected send failure')
         app.logger.exception('Resend email send failed')
         return False
 
@@ -769,7 +790,7 @@ def start_admin_email_otp_session(user, csrf_token=None):
     if not sent:
         session.clear()
         session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
-        return {'success': False, 'error': 'Could not send admin login code. Check Resend settings and try again.'}, 500
+        return {'success': False, 'error': email_failure_message('Could not send admin login code. Check Resend settings and try again.')}, 500
     return {
         'success': False,
         'requires_2fa': True,
@@ -2661,7 +2682,7 @@ def begin_email_verification_login(user, message='Verification code sent to your
         app.logger.exception('Email verification send failed for user %s', user.id)
         sent = False
     if not sent:
-        return jsonify({'success': False, 'error': 'Could not send verification code. Check Resend settings and try again.'}), 500
+        return jsonify({'success': False, 'error': email_failure_message('Could not send verification code. Check Resend settings and try again.')}), 500
     csrf_token = session.get('csrf_token')
     session.clear()
     session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
@@ -3534,7 +3555,7 @@ def resend_login_2fa_code():
             app.logger.exception('Email verification resend failed for user %s', user.id)
             sent = False
         if not sent:
-            return jsonify({'success': False, 'error': 'Could not send verification code. Check Resend settings and try again.'}), 500
+            return jsonify({'success': False, 'error': email_failure_message('Could not send verification code. Check Resend settings and try again.')}), 500
         return jsonify({'success': True, 'message': 'New verification code sent. Check your inbox and spam folder.'})
     if rate_limited('admin-email-otp-send', str(user.id), limit=10, window_seconds=15 * 60):
         return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
@@ -3608,7 +3629,7 @@ def request_password_reset():
                 })
         except Exception:
             app.logger.exception('Password reset email failed for user %s', user.id)
-            return jsonify({'success': False, 'email_sent': False, 'error': 'Could not send the reset email. Check Resend settings and try again.'}), 500
+            return jsonify({'success': False, 'email_sent': False, 'error': email_failure_message('Could not send the reset email. Check Resend settings and try again.')}), 500
 
     return jsonify({
         'success': True,
@@ -6509,7 +6530,7 @@ def account_send_email_verification():
         app.logger.exception('Email verification send failed')
         sent = False
     if not sent:
-        return jsonify({'success': False, 'error': 'Could not send verification email. Check Resend settings and try again.'}), 500
+        return jsonify({'success': False, 'error': email_failure_message('Could not send verification email. Check Resend settings and try again.')}), 500
     return jsonify({'success': True, 'message': 'Verification code sent', 'email': user.email})
 
 @app.route('/api/account/email/verify', methods=['POST'])
