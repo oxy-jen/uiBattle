@@ -2729,7 +2729,8 @@ DEFAULT_SITE_CONTENT = {
         'body': (
             'UI Battle Arena is built for practical frontend practice. Students join live rooms, rebuild a target interface with HTML, CSS, and JavaScript, and receive a score based on the rendered output, visual closeness, CSS details, and clean implementation.\n\n'
             'The arena supports one-on-one battles, spectators, tournaments, certificates, profile awards, admin moderation, room chat, camera checks, and live scoreboards. The goal is not to force every student to write the same code. A student can use Bootstrap, custom CSS, or another reasonable approach as long as the final output matches the target.\n\n'
-            'Admins can create challenges, monitor rooms, review messages, manage tournaments, publish public site pages, send maintenance notices, and keep student progress visible and reliable.'
+            'Admins can create challenges, monitor rooms, review messages, manage tournaments, publish public site pages, send maintenance notices, and keep student progress visible and reliable.\n\n'
+            'UI Battle Arena is created and maintained by Oxyjen Tech.'
         ),
         'contact_email': ARENA_CONTACT_EMAILS[0],
         'nav_label': 'About',
@@ -2983,6 +2984,11 @@ def refresh_builtin_site_content():
     terms = saved.get('terms')
     if isinstance(terms, dict) and required_policy not in str(terms.get('body') or ''):
         terms['body'] = (str(terms.get('body') or DEFAULT_SITE_CONTENT['terms']['body']).rstrip() + '\n\n' + required_policy)
+        changed = True
+    about = saved.get('about')
+    creator_line = 'UI Battle Arena is created and maintained by Oxyjen Tech.'
+    if isinstance(about, dict) and creator_line not in str(about.get('body') or ''):
+        about['body'] = (str(about.get('body') or DEFAULT_SITE_CONTENT['about']['body']).rstrip() + '\n\n' + creator_line)
         changed = True
     help_policy = 'Fair play: players MUST NOT RIGHT CLICK OR THEY ARE DISQUALIFIED. Players must not use Inspect, view page source, or use developer-tool shortcuts during arena matches. The target should be studied visually, not by reading page code or hidden hints.'
     help_page = saved.get('help')
@@ -3451,9 +3457,17 @@ def home():
         challenge_count=Challenge.query.filter_by(is_active=True).count(),
         room_count=Room.query.filter(Room.status.in_(['waiting', 'running', 'paused'])).count(),
         seo_title='UI Battle Arena - Live Frontend Coding Battles and Website Design Competitions',
-        seo_description='UI Battle Arena is a real-time frontend coding competition platform for HTML, CSS, JavaScript, UI recreation, website battles, tournaments, scoring, spectators, and student awards.',
+        seo_description='UI Battle Arena, created by Oxyjen Tech, is a real-time frontend coding competition platform for HTML, CSS, JavaScript, UI recreation, website battles, tournaments, scoring, spectators, and student awards.',
         seo_canonical=absolute_url_for('home')
     )
+
+
+@app.route('/app')
+def app_entry():
+    user = get_current_user()
+    if user:
+        return redirect(url_for('admin_panel' if user.role == 'admin' else 'dashboard'))
+    return redirect(url_for('login_page'))
 
 
 # ========== AUTH ROUTES ==========
@@ -4069,7 +4083,7 @@ def pwa_manifest():
         'name': 'UI Battle Arena',
         'short_name': 'UI Battle',
         'description': 'Live frontend coding battles, tournaments, scoring, and admin monitoring.',
-        'start_url': '/',
+        'start_url': '/app',
         'scope': '/',
         'display': 'standalone',
         'display_override': ['window-controls-overlay', 'standalone', 'browser'],
@@ -4078,6 +4092,18 @@ def pwa_manifest():
         'categories': ['games', 'education', 'productivity'],
         'orientation': 'any',
         'icons': [
+            {
+                'src': url_for('static', filename='pwa-icon-192.png'),
+                'sizes': '192x192',
+                'type': 'image/png',
+                'purpose': 'any maskable'
+            },
+            {
+                'src': url_for('static', filename='pwa-icon-512.png'),
+                'sizes': '512x512',
+                'type': 'image/png',
+                'purpose': 'any maskable'
+            },
             {
                 'src': url_for('static', filename='site-icon.svg'),
                 'sizes': 'any',
@@ -4090,13 +4116,13 @@ def pwa_manifest():
                 'name': 'Dashboard',
                 'short_name': 'Dashboard',
                 'url': '/dashboard',
-                'icons': [{'src': url_for('static', filename='site-icon.svg'), 'sizes': 'any'}]
+                'icons': [{'src': url_for('static', filename='pwa-icon-192.png'), 'sizes': '192x192'}]
             },
             {
                 'name': 'Leaderboard',
                 'short_name': 'Ranks',
                 'url': '/leaderboard',
-                'icons': [{'src': url_for('static', filename='site-icon.svg'), 'sizes': 'any'}]
+                'icons': [{'src': url_for('static', filename='pwa-icon-192.png'), 'sizes': '192x192'}]
             }
         ]
     }

@@ -5,13 +5,21 @@
     const CLIENT_ID_KEY = 'uibaPwaClientId';
     const ACTIVE_VERSION_KEY = 'uibaPwaActiveVersion';
     const LATER_VERSION_KEY = 'uibaPwaLaterVersion';
+    const LATER_AT_KEY = 'uibaPwaLaterAt';
     const PENDING_VERSION_KEY = 'uibaPwaPendingVersion';
     const LAST_CHECK_KEY = 'uibaPwaLastCheckAt';
+    const INSTALL_DISMISSED_KEY = 'uibaPwaInstallDismissedAt';
     const DEFAULT_CHECK_INTERVAL = 15 * 60 * 1000;
+    const INSTALL_DISMISS_MS = 7 * 24 * 60 * 60 * 1000;
+    const UPDATE_SNOOZE_MS = 12 * 60 * 60 * 1000;
 
     let registration = null;
     let latestRelease = null;
     let updatePanel = null;
+    let installPanel = null;
+    let statusPanel = null;
+    let statusButton = null;
+    let installPromptEvent = null;
     let controllerReloading = false;
 
     function supportsPwaUpdates() {
@@ -41,7 +49,7 @@
     function clientId() {
         let id = storageGet(CLIENT_ID_KEY);
         if (!id) {
-            id = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/[^a-zA-Z0-9-]/g, '');
+            id = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/[^a-zA-Z0-9-]/g, '');
             storageSet(CLIENT_ID_KEY, id);
         }
         return id;
@@ -75,7 +83,8 @@
 
     function shouldShowUpdate(release) {
         if (!release?.version || !isInRollout(release)) return false;
-        if (storageGet(LATER_VERSION_KEY) === release.version) return false;
+        const laterAt = Number(storageGet(LATER_AT_KEY, '0'));
+        if (storageGet(LATER_VERSION_KEY) === release.version && Date.now() - laterAt < UPDATE_SNOOZE_MS) return false;
         return currentVersion() && currentVersion() !== release.version;
     }
 
@@ -121,6 +130,108 @@
         return updatePanel;
     }
 
+    function isHomePage() {
+        return window.location.pathname === '/' || document.querySelector('.home-page');
+    }
+
+    function isInstalledDisplayMode() {
+        return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    }
+
+    function redirectStandaloneHomeToApp() {
+        if (!isInstalledDisplayMode()) return;
+        if (window.location.pathname === '/') {
+            window.location.replace('/app');
+        }
+    }
+
+    function installDismissedRecently() {
+        const dismissedAt = Number(storageGet(INSTALL_DISMISSED_KEY, '0'));
+        return dismissedAt && Date.now() - dismissedAt < INSTALL_DISMISS_MS;
+    }
+
+    function syncInstallButtons() {
+        const canInstall = Boolean(installPromptEvent) && !isInstalledDisplayMode();
+        document.querySelectorAll('[data-pwa-install]').forEach((button) => {
+            button.hidden = !canInstall;
+            button.disabled = !canInstall;
+            if (!button.dataset.pwaInstallBound) {
+                button.dataset.pwaInstallBound = 'true';
+                button.addEventListener('click', installApp);
+            }
+        });
+    }
+
+    function ensureInstallPanel() {
+        if (installPanel) return installPanel;
+        installPanel = document.createElement('section');
+        installPanel.className = 'pwa-install-panel';
+        installPanel.setAttribute('role', 'dialog');
+        installPanel.setAttribute('aria-live', 'polite');
+        installPanel.hidden = true;
+        document.body.appendChild(installPanel);
+        return installPanel;
+    }
+
+    function showInstallPanel() {
+        if (!installPromptEvent || !isHomePage() || isInstalledDisplayMode() || installDismissedRecently()) return;
+        const panel = ensureInstallPanel();
+        panel.innerHTML = `
+            <div class="pwa-install-head">
+                <div>
+                    <span class="pwa-install-kicker"><i class="fas fa-desktop"></i> Desktop app</span>
+                    <h3>Install UI Battle Arena</h3>
+                </div>
+                <button class="pwa-install-close" type="button" aria-label="Dismiss install prompt">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <p class="pwa-install-copy">Add the arena to your desktop for a faster app-style launch, background updates, and release notes after deployments.</p>
+            <div class="pwa-install-actions">
+                <button class="pwa-install-later" type="button">Later</button>
+                <button class="pwa-install-now" type="button"><i class="fas fa-download"></i> Install app</button>
+            </div>
+        `;
+        panel.hidden = false;
+        requestAnimationFrame(() => panel.classList.add('is-visible'));
+        panel.querySelector('.pwa-install-close')?.addEventListener('click', dismissInstallPrompt);
+        panel.querySelector('.pwa-install-later')?.addEventListener('click', dismissInstallPrompt);
+        panel.querySelector('.pwa-install-now')?.addEventListener('click', installApp);
+    }
+
+    function hideInstallPanel() {
+        if (!installPanel) return;
+        installPanel.classList.remove('is-visible');
+        setTimeout(() => {
+            if (installPanel) installPanel.hidden = true;
+        }, 220);
+    }
+
+    function dismissInstallPrompt() {
+        storageSet(INSTALL_DISMISSED_KEY, String(Date.now()));
+        hideInstallPanel();
+    }
+
+    async function installApp() {
+        if (!installPromptEvent) return;
+        const promptEvent = installPromptEvent;
+        installPromptEvent = null;
+        hideInstallPanel();
+        syncInstallButtons();
+        try {
+            await promptEvent.prompt();
+            const choice = await promptEvent.userChoice;
+            if (choice?.outcome === 'accepted') {
+                storageRemove(INSTALL_DISMISSED_KEY);
+                if (window.showToast) showToast('UI Battle Arena is installing.', 'success');
+            } else {
+                dismissInstallPrompt();
+            }
+        } catch (error) {
+            if (window.showToast) showToast('Install prompt is unavailable in this browser right now.', 'warning');
+        }
+    }
+
     function showUpdatePanel(release) {
         latestRelease = release;
         const panel = ensurePanel();
@@ -151,8 +262,75 @@
         panel.querySelector('.pwa-update-now')?.addEventListener('click', activateUpdate);
     }
 
+    function ensureStatusButton() {
+        if (statusButton || !isInstalledDisplayMode()) return statusButton;
+        statusButton = document.createElement('button');
+        statusButton.className = 'pwa-app-status-btn';
+        statusButton.type = 'button';
+        statusButton.innerHTML = '<i class="fas fa-cloud-arrow-down"></i><span>Updates</span>';
+        statusButton.setAttribute('aria-label', 'Open app update status');
+        statusButton.addEventListener('click', showStatusPanel);
+        document.body.appendChild(statusButton);
+        return statusButton;
+    }
+
+    function ensureStatusPanel() {
+        if (statusPanel) return statusPanel;
+        statusPanel = document.createElement('section');
+        statusPanel.className = 'pwa-status-panel';
+        statusPanel.setAttribute('role', 'dialog');
+        statusPanel.hidden = true;
+        document.body.appendChild(statusPanel);
+        return statusPanel;
+    }
+
+    function showStatusPanel() {
+        const panel = ensureStatusPanel();
+        const active = escapeText(currentVersion() || 'Installed');
+        const latest = escapeText(latestRelease?.version || active);
+        const released = escapeText(latestRelease?.released_at || 'Latest deployed release');
+        panel.innerHTML = `
+            <div class="pwa-install-head">
+                <div>
+                    <span class="pwa-install-kicker"><i class="fas fa-desktop"></i> App version</span>
+                    <h3>UI Battle Arena</h3>
+                </div>
+                <button class="pwa-install-close" type="button" aria-label="Close update status">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="pwa-status-body">
+                <div><span>Current</span><strong>${active}</strong></div>
+                <div><span>Latest</span><strong>${latest}</strong></div>
+                <p>${released}</p>
+            </div>
+            <div class="pwa-install-actions">
+                <button class="pwa-install-later" type="button">Close</button>
+                <button class="pwa-install-now" type="button"><i class="fas fa-rotate"></i> Check for updates</button>
+            </div>
+        `;
+        panel.hidden = false;
+        requestAnimationFrame(() => panel.classList.add('is-visible'));
+        panel.querySelector('.pwa-install-close')?.addEventListener('click', hideStatusPanel);
+        panel.querySelector('.pwa-install-later')?.addEventListener('click', hideStatusPanel);
+        panel.querySelector('.pwa-install-now')?.addEventListener('click', async () => {
+            panel.querySelector('.pwa-install-now').disabled = true;
+            await checkForUpdates(true, true);
+            hideStatusPanel();
+        });
+    }
+
+    function hideStatusPanel() {
+        if (!statusPanel) return;
+        statusPanel.classList.remove('is-visible');
+        setTimeout(() => {
+            if (statusPanel) statusPanel.hidden = true;
+        }, 220);
+    }
+
     function dismissUpdate() {
         if (latestRelease?.version) storageSet(LATER_VERSION_KEY, latestRelease.version);
+        storageSet(LATER_AT_KEY, String(Date.now()));
         hidePanel();
     }
 
@@ -178,6 +356,7 @@
         if (!latestRelease?.version) return;
         storageSet(PENDING_VERSION_KEY, latestRelease.version);
         storageRemove(LATER_VERSION_KEY);
+        storageRemove(LATER_AT_KEY);
         hidePanel();
         if (window.showToast) showToast('Updating UI Battle Arena...', 'info');
 
@@ -234,7 +413,7 @@
         });
     }
 
-    async function checkForUpdates(force = false) {
+    async function checkForUpdates(force = false, userInitiated = false) {
         if (!supportsPwaUpdates()) return;
         const now = Date.now();
         const interval = Number(latestRelease?.update_check_interval_ms || DEFAULT_CHECK_INTERVAL);
@@ -249,8 +428,11 @@
             await registration?.update?.();
             if (shouldShowUpdate(release)) {
                 showUpdatePanel(release);
+            } else if (userInitiated && window.showToast) {
+                showToast('You are already on the latest version.', 'success');
             }
         } catch (error) {
+            if (userInitiated && window.showToast) showToast('Could not check for updates. Try again when you are online.', 'error');
             // Update checks must never interrupt the app.
         }
     }
@@ -272,14 +454,36 @@
                 if (!document.hidden) checkForUpdates(false);
             });
             window.addEventListener('online', () => checkForUpdates(true));
+            ensureStatusButton();
         } catch (error) {
             // PWA support is a progressive enhancement.
         }
     }
 
+    window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault();
+        installPromptEvent = event;
+        syncInstallButtons();
+        setTimeout(showInstallPanel, 900);
+    });
+
+    window.addEventListener('appinstalled', () => {
+        installPromptEvent = null;
+        storageRemove(INSTALL_DISMISSED_KEY);
+        hideInstallPanel();
+        syncInstallButtons();
+        if (window.showToast) showToast('UI Battle Arena installed. Future updates will appear here.', 'success');
+    });
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initPwaUpdater);
+        document.addEventListener('DOMContentLoaded', () => {
+            redirectStandaloneHomeToApp();
+            syncInstallButtons();
+            initPwaUpdater();
+        });
     } else {
+        redirectStandaloneHomeToApp();
+        syncInstallButtons();
         initPwaUpdater();
     }
 })();

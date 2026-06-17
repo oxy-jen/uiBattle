@@ -8,7 +8,9 @@ const CORE_ASSETS = [
   '/static/css/style.css?v={{ static_version }}',
   '/static/js/main.js?v=profile-media2',
   '/static/js/pwa-updater.js?v={{ app_version }}',
-  '/static/site-icon.svg'
+  '/static/site-icon.svg',
+  '/static/pwa-icon-192.png',
+  '/static/pwa-icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {

@@ -2,8 +2,9 @@
 
 {% block extra_head %}
 {{ super() }}
-<meta name="author" content="UI Battle Arena">
+<meta name="author" content="Oxyjen Tech">
 <meta name="application-name" content="UI Battle Arena">
+<meta name="creator" content="Oxyjen Tech">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -13,7 +14,12 @@
   "description": "UI Battle Arena is a live frontend coding competition platform for HTML, CSS, JavaScript, website design battles, UI recreation challenges, tournaments, scoring, spectators, and student awards.",
   "publisher": {
     "@type": "Organization",
-    "name": "UI Battle Arena",
+    "name": "Oxyjen Tech",
+    "url": "https://uibattlearena.top/"
+  },
+  "creator": {
+    "@type": "Organization",
+    "name": "Oxyjen Tech",
     "url": "https://uibattlearena.top/"
   }
 }
@@ -116,6 +122,7 @@
             <div class="home-hero-actions">
                 <a href="{{ url_for('login_page') }}" class="home-btn home-btn-primary"><i class="fas fa-play"></i> Enter Arena</a>
                 <a href="{{ url_for('competition_guide_page') }}" class="home-btn home-btn-secondary"><i class="fas fa-sitemap"></i> Run a Competition</a>
+                <button class="home-btn home-btn-install" type="button" data-pwa-install hidden><i class="fas fa-download"></i> Install Desktop App</button>
             </div>
         </div>
         <a class="home-scroll-cue" href="#how-it-works" aria-label="Scroll to how UI Battle Arena works">
