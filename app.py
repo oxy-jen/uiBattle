@@ -357,6 +357,7 @@ def is_room_player(user, room):
 
 RESEND_API_URL = 'https://api.resend.com/emails'
 RESEND_FROM_EMAIL = 'noreply@uibattlearena.top'
+RESEND_FROM_HEADER = 'UI Battle Arena <noreply@uibattlearena.top>'
 EMAIL_SUBJECT_MAX_LENGTH = 150
 EMAIL_ERROR_MAX_LENGTH = 260
 
@@ -476,7 +477,7 @@ def send_email(to_email, subject, body, html_body=None):
     subject = safe_email_subject(subject)
     text_body, html_body = prepare_email_content(subject, body, html_body)
     payload = {
-        'from': from_email,
+        'from': RESEND_FROM_HEADER,
         'to': [to_email],
         'subject': subject,
         'text': text_body,
