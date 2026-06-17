@@ -18,12 +18,10 @@ import hashlib
 import html as html_lib
 import hmac
 import struct
-import smtplib
 import urllib.parse
 import urllib.request
+import urllib.error
 from functools import wraps
-from email.message import EmailMessage
-from email.utils import formataddr, formatdate, make_msgid
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -54,16 +52,9 @@ app.config['SITE_URL'] = os.environ.get('SITE_URL', 'https://uibattlearena.top')
 app.config['GOOGLE_DISCOVERY_AUTH_URL'] = 'https://accounts.google.com/o/oauth2/v2/auth'
 app.config['GOOGLE_TOKEN_URL'] = 'https://oauth2.googleapis.com/token'
 app.config['GOOGLE_USERINFO_URL'] = 'https://openidconnect.googleapis.com/v1/userinfo'
-app.config['SMTP_HOST'] = os.environ.get('SMTP_HOST', '').strip()
-app.config['SMTP_PORT'] = int(os.environ.get('SMTP_PORT', '587') or 587)
-app.config['SMTP_USERNAME'] = os.environ.get('SMTP_USERNAME', '').strip()
-app.config['SMTP_PASSWORD'] = os.environ.get('SMTP_PASSWORD', '').strip()
-app.config['SMTP_FROM'] = os.environ.get('SMTP_FROM', app.config['SMTP_USERNAME']).strip()
+app.config['RESEND_API_KEY'] = os.environ.get('RESEND_API_KEY', '').strip()
+app.config['SMTP_FROM'] = 'noreply@uibattlearena.top'
 app.config['SMTP_FROM_NAME'] = os.environ.get('SMTP_FROM_NAME', 'UI Battle Arena').strip()
-app.config['SMTP_USE_TLS'] = os.environ.get('SMTP_USE_TLS', '1').strip() != '0'
-app.config['MAILJET_API_KEY'] = os.environ.get('MAILJET_API_KEY', app.config['SMTP_USERNAME']).strip()
-app.config['MAILJET_SECRET_KEY'] = os.environ.get('MAILJET_SECRET_KEY', app.config['SMTP_PASSWORD']).strip()
-app.config['MAILJET_API_URL'] = os.environ.get('MAILJET_API_URL', 'https://api.mailjet.com/v3.1/send').strip()
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 ALLOWED_SITE_MEDIA_EXTENSIONS = ALLOWED_EXTENSIONS | {'webp', 'mp4', 'webm', 'mov'}
@@ -173,7 +164,6 @@ def configured_admin_email():
     return (
         valid_email(os.environ.get('ADMIN_EMAIL'))
         or valid_email(app.config.get('SMTP_FROM'))
-        or valid_email(app.config.get('SMTP_USERNAME'))
         or ''
     )
 
@@ -365,86 +355,87 @@ def socket_room_context(data):
 def is_room_player(user, room):
     return bool(user and room and user.id in {room.player1_id, room.player2_id})
 
-def smtp_configured():
-    return bool(app.config['SMTP_HOST'] and app.config['SMTP_FROM'])
-
-
-def mailjet_api_configured():
-    return bool(
-        app.config.get('MAILJET_API_KEY')
-        and app.config.get('MAILJET_SECRET_KEY')
-        and valid_email(app.config.get('SMTP_FROM'))
-    )
+RESEND_API_URL = 'https://api.resend.com/emails'
+RESEND_FROM_EMAIL = 'noreply@uibattlearena.top'
+EMAIL_SUBJECT_MAX_LENGTH = 150
 
 
 def email_configured():
-    return mailjet_api_configured() or smtp_configured()
+    return bool(app.config.get('RESEND_API_KEY') and app.config.get('SMTP_FROM') == RESEND_FROM_EMAIL)
 
 
-def smtp_configuration_error():
+def email_configuration_error():
     missing = []
-    if not valid_email(app.config['SMTP_FROM']):
+    if not app.config.get('RESEND_API_KEY'):
+        missing.append('RESEND_API_KEY')
+    if app.config.get('SMTP_FROM') != RESEND_FROM_EMAIL:
         missing.append('SMTP_FROM')
-    if mailjet_api_configured():
-        return ''
-    if not app.config.get('MAILJET_API_KEY') and not app.config['SMTP_HOST']:
-        missing.append('MAILJET_API_KEY or SMTP_HOST')
-    if app.config.get('MAILJET_API_KEY') and not app.config.get('MAILJET_SECRET_KEY'):
-        missing.append('MAILJET_SECRET_KEY')
-    if app.config['SMTP_HOST'] and app.config['SMTP_USERNAME'] and not app.config['SMTP_PASSWORD']:
-        missing.append('SMTP_PASSWORD')
-    if not missing and not app.config['SMTP_HOST']:
-        missing.append('SMTP_HOST')
     if missing:
         return 'Email sending is not configured. Missing: ' + ', '.join(missing)
     return ''
 
 
-def email_footer_text():
-    sender = valid_email(app.config.get('SMTP_FROM')) or 'the UI Battle Arena administrator'
-    return (
-        '\n\n--\n'
-        'UI Battle Arena\n'
-        f'Sent by {app.config.get("SMTP_FROM_NAME") or "UI Battle Arena"} from {sender}.\n'
-        'This message was sent because you have a UI Battle Arena account, match invite, or admin notification. '
-        'If you did not expect this email, contact the arena administrator.'
-    )
+def safe_email_subject(subject):
+    cleaned = re.sub(r'\s+', ' ', str(subject or 'UI Battle Arena notification')).strip()
+    return cleaned[:EMAIL_SUBJECT_MAX_LENGTH] or 'UI Battle Arena notification'
 
 
 def build_email_html(subject, body):
-    safe_subject = html_lib.escape((subject or 'UI Battle Arena').strip())
+    safe_subject = html_lib.escape(safe_email_subject(subject))
     paragraphs = [
         html_lib.escape(part.strip()).replace('\n', '<br>')
         for part in re.split(r'\n\s*\n', (body or '').strip())
         if part.strip()
     ]
-    content = ''.join(f'<p>{paragraph}</p>' for paragraph in paragraphs)
+    if not paragraphs:
+        paragraphs = ['You have a new UI Battle Arena notification.']
+    content = ''.join(
+        f'<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:#243044;">{paragraph}</p>'
+        for paragraph in paragraphs
+    )
     brand = html_lib.escape(app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena')
     sender = html_lib.escape(valid_email(app.config.get('SMTP_FROM')) or '')
     return f'''<!doctype html>
-<html>
-<body style="margin:0;background:#f6f8fb;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="x-apple-disable-message-reformatting">
+  <title>{safe_subject}</title>
+</head>
+<body style="margin:0;padding:0;background:#eef2f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
   <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">{safe_subject}</div>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f8fb;padding:24px 12px;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef2f7;margin:0;padding:0;">
     <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+      <td align="center" style="padding:28px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #dbe3ef;border-radius:8px;overflow:hidden;">
           <tr>
-            <td style="background:#111827;color:#ffffff;padding:20px 24px;">
-              <div style="font-size:18px;font-weight:700;letter-spacing:.2px;">{brand}</div>
-              <div style="font-size:13px;color:#cbd5e1;margin-top:4px;">Official arena notification</div>
+            <td style="background:#0f172a;color:#ffffff;padding:24px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="font-size:19px;font-weight:700;color:#ffffff;">{brand}</td>
+                  <td align="right" style="font-size:12px;color:#cbd5e1;">Official notice</td>
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>
-            <td style="padding:24px;font-size:15px;line-height:1.58;color:#172033;">
-              <h1 style="font-size:20px;line-height:1.3;margin:0 0 16px;color:#111827;">{safe_subject}</h1>
+            <td style="padding:30px 28px 20px;font-size:15px;line-height:1.65;color:#243044;">
+              <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#0f766e;margin:0 0 10px;">UI Battle Arena</div>
+              <h1 style="font-size:22px;line-height:1.32;margin:0 0 18px;color:#111827;font-weight:700;">{safe_subject}</h1>
               {content}
             </td>
           </tr>
           <tr>
-            <td style="padding:16px 24px;background:#f9fafb;border-top:1px solid #e5e7eb;font-size:12px;line-height:1.5;color:#64748b;">
-              Sent by {brand}{f' from {sender}' if sender else ''}. This message was sent because you have a UI Battle Arena account, match invite, or admin notification.
-              If you did not expect this email, contact the arena administrator.
+            <td style="padding:0 28px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #e5e7eb;">
+                <tr>
+                  <td style="padding-top:16px;font-size:12px;line-height:1.55;color:#64748b;">
+                    Sent by {brand}{f' from {sender}' if sender else ''}. You received this because of your UI Battle Arena account, match invite, or admin notification.
+                    If you did not expect this email, contact the arena administrator. Please do not reply with sensitive information.
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
         </table>
@@ -457,89 +448,56 @@ def build_email_html(subject, body):
 
 def prepare_email_content(subject, body, html_body=None):
     text_body = (body or '').strip()
-    if email_footer_text().strip() not in text_body:
-        text_body += email_footer_text()
     return text_body, html_body or build_email_html(subject, text_body)
-
-
-def send_email_via_mailjet_api(to_email, subject, body, html_body=None):
-    api_key = app.config.get('MAILJET_API_KEY') or app.config.get('SMTP_USERNAME')
-    secret_key = app.config.get('MAILJET_SECRET_KEY') or app.config.get('SMTP_PASSWORD')
-    from_email = valid_email(app.config['SMTP_FROM'])
-    if not api_key or not secret_key or not to_email or not from_email:
-        return False
-    text_body, html_body = prepare_email_content(subject, body, html_body)
-    payload = {
-        'Messages': [{
-            'From': {
-                'Email': from_email,
-                'Name': app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena'
-            },
-            'To': [{'Email': to_email}],
-            'ReplyTo': {
-                'Email': from_email,
-                'Name': app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena'
-            },
-            'Subject': subject[:160],
-            'TextPart': text_body,
-            'HTMLPart': html_body,
-            'Headers': {
-                'List-Unsubscribe': f'<mailto:{from_email}>',
-                'X-Entity-Ref-ID': secrets.token_hex(12)
-            }
-        }]
-    }
-    data = json.dumps(payload).encode('utf-8')
-    request_obj = urllib.request.Request(
-        app.config.get('MAILJET_API_URL') or 'https://api.mailjet.com/v3.1/send',
-        data=data,
-        headers={'Content-Type': 'application/json'},
-        method='POST'
-    )
-    auth_token = base64.b64encode(f'{api_key}:{secret_key}'.encode('utf-8')).decode('ascii')
-    request_obj.add_header('Authorization', f'Basic {auth_token}')
-    try:
-        with urllib.request.urlopen(request_obj, timeout=10) as response:
-            response_body = response.read().decode('utf-8', errors='replace')
-            success = 200 <= response.status < 300
-            if not success:
-                app.logger.error('Mailjet API send failed with status %s: %s', response.status, response_body[:500])
-            return success
-    except urllib.error.HTTPError as error:
-        response_body = error.read().decode('utf-8', errors='replace')
-        app.logger.error('Mailjet API send failed with status %s: %s', error.code, response_body[:500])
-        return False
-    except Exception:
-        app.logger.exception('Mailjet API send failed')
-        return False
 
 
 def send_email(to_email, subject, body, html_body=None):
     to_email = valid_email(to_email)
-    from_email = valid_email(app.config['SMTP_FROM'])
-    if not to_email or not from_email or not email_configured():
+    from_email = app.config.get('SMTP_FROM')
+    api_key = app.config.get('RESEND_API_KEY')
+    if not to_email or from_email != RESEND_FROM_EMAIL or not api_key:
+        app.logger.error('Resend email skipped: %s', email_configuration_error() or 'invalid recipient')
         return False
-    if mailjet_api_configured():
-        return send_email_via_mailjet_api(to_email, subject, body, html_body)
+    subject = safe_email_subject(subject)
     text_body, html_body = prepare_email_content(subject, body, html_body)
-    message = EmailMessage()
-    message['Subject'] = subject[:160]
-    message['From'] = formataddr((app.config.get('SMTP_FROM_NAME') or 'UI Battle Arena', from_email))
-    message['To'] = to_email
-    message['Reply-To'] = from_email
-    message['Date'] = formatdate(localtime=True)
-    message['Message-ID'] = make_msgid(domain=from_email.split('@')[-1])
-    message['X-Mailer'] = 'UI Battle Arena'
-    message['List-Unsubscribe'] = f'<mailto:{from_email}>'
-    message.set_content(text_body + '\n')
-    message.add_alternative(html_body, subtype='html')
-    with smtplib.SMTP(app.config['SMTP_HOST'], app.config['SMTP_PORT'], timeout=10) as smtp:
-        if app.config['SMTP_USE_TLS']:
-            smtp.starttls()
-        if app.config['SMTP_USERNAME'] and app.config['SMTP_PASSWORD']:
-            smtp.login(app.config['SMTP_USERNAME'], app.config['SMTP_PASSWORD'])
-        smtp.send_message(message)
-    return True
+    payload = {
+        'from': from_email,
+        'to': [to_email],
+        'subject': subject,
+        'text': text_body,
+        'html': html_body,
+        'reply_to': from_email,
+        'headers': {
+            'Message-ID': f'<{uuid.uuid4().hex}@uibattlearena.top>',
+            'List-Unsubscribe': f'<mailto:{from_email}>'
+        }
+    }
+    request_obj = urllib.request.Request(
+        RESEND_API_URL,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        },
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(request_obj, timeout=12) as response:
+            response_body = response.read().decode('utf-8', errors='replace')
+            success = 200 <= response.status < 300
+            if not success:
+                app.logger.error('Resend email send failed with status %s: %s', response.status, response_body[:500])
+            return success
+    except urllib.error.HTTPError as error:
+        response_body = error.read().decode('utf-8', errors='replace')
+        app.logger.error('Resend email send failed with status %s: %s', error.code, response_body[:500])
+        return False
+    except urllib.error.URLError as error:
+        app.logger.error('Resend email send failed with network error: %s', error)
+        return False
+    except Exception:
+        app.logger.exception('Resend email send failed')
+        return False
 
 def default_certificate_template():
     return {
@@ -793,7 +751,7 @@ def start_admin_email_otp_session(user, csrf_token=None):
     if not user or user.role != 'admin':
         return None, 400
     if not email_configured():
-        return {'success': False, 'error': smtp_configuration_error()}, 400
+        return {'success': False, 'error': email_configuration_error()}, 400
     target_email = valid_email(user.email) or configured_admin_email()
     if not target_email:
         return {'success': False, 'error': 'Admin email is missing or invalid.'}, 400
@@ -811,7 +769,7 @@ def start_admin_email_otp_session(user, csrf_token=None):
     if not sent:
         session.clear()
         session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
-        return {'success': False, 'error': 'Could not send admin login code. Check Mailjet/SMTP settings and try again.'}, 500
+        return {'success': False, 'error': 'Could not send admin login code. Check Resend settings and try again.'}, 500
     return {
         'success': False,
         'requires_2fa': True,
@@ -2694,7 +2652,7 @@ def begin_email_verification_login(user, message='Verification code sent to your
     if not user or not user.email:
         return jsonify({'success': False, 'error': 'This account has no email address to verify.'}), 400
     if not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'error': email_configuration_error()}), 400
     if rate_limited('email-verification-send', str(user.id), limit=10, window_seconds=15 * 60):
         return rate_limit_response('Too many verification code requests. Wait a few minutes and try again.')
     try:
@@ -2703,7 +2661,7 @@ def begin_email_verification_login(user, message='Verification code sent to your
         app.logger.exception('Email verification send failed for user %s', user.id)
         sent = False
     if not sent:
-        return jsonify({'success': False, 'error': 'Could not send verification code. Check Mailjet/SMTP settings and try again.'}), 500
+        return jsonify({'success': False, 'error': 'Could not send verification code. Check Resend settings and try again.'}), 500
     csrf_token = session.get('csrf_token')
     session.clear()
     session['csrf_token'] = csrf_token or secrets.token_urlsafe(32)
@@ -3576,7 +3534,7 @@ def resend_login_2fa_code():
             app.logger.exception('Email verification resend failed for user %s', user.id)
             sent = False
         if not sent:
-            return jsonify({'success': False, 'error': 'Could not send verification code. Check Mailjet/SMTP settings and try again.'}), 500
+            return jsonify({'success': False, 'error': 'Could not send verification code. Check Resend settings and try again.'}), 500
         return jsonify({'success': True, 'message': 'New verification code sent. Check your inbox and spam folder.'})
     if rate_limited('admin-email-otp-send', str(user.id), limit=10, window_seconds=15 * 60):
         return rate_limit_response('Too many admin login code requests. Wait a few minutes and try again.')
@@ -3634,7 +3592,7 @@ def request_password_reset():
     if rate_limited('password-reset-request', normalized_identifier or client_rate_identity(), limit=5, window_seconds=15 * 60):
         return rate_limit_response()
     if not email_configured():
-        return jsonify({'success': False, 'email_sent': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'email_sent': False, 'error': email_configuration_error()}), 400
     user = User.query.filter(
         (User.username == identifier) | (User.email == normalized_identifier)
     ).first() if identifier else None
@@ -3650,7 +3608,7 @@ def request_password_reset():
                 })
         except Exception:
             app.logger.exception('Password reset email failed for user %s', user.id)
-            return jsonify({'success': False, 'email_sent': False, 'error': 'Could not send the reset email. Check SMTP settings and try again.'}), 500
+            return jsonify({'success': False, 'email_sent': False, 'error': 'Could not send the reset email. Check Resend settings and try again.'}), 500
 
     return jsonify({
         'success': True,
@@ -3711,7 +3669,7 @@ def register():
     if User.query.filter_by(email=email).first():
         return jsonify({'success': False, 'error': 'Email already exists'}), 400
     if not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'error': email_configuration_error()}), 400
     
     user = User(username=username, email=email, role='player')
     user.set_password(password)
@@ -4325,7 +4283,7 @@ def admin_broadcast():
 @admin_required
 def admin_broadcast_email():
     if not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'error': email_configuration_error()}), 400
     if rate_limited('admin-broadcast-email', str(session.get('user_id')), limit=5, window_seconds=60 * 60):
         return rate_limit_response('Too many bulk email broadcasts. Wait a while before sending another.')
 
@@ -4708,7 +4666,7 @@ def admin_email_user(user_id):
     if not target_user.email:
         return jsonify({'success': False, 'error': 'This user does not have an email address'}), 400
     if not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'error': email_configuration_error()}), 400
     data = request.get_json(silent=True) or {}
     subject = (data.get('subject') or 'UI Battle Arena update').strip()[:160]
     message = (data.get('message') or '').strip()[:2000]
@@ -4725,7 +4683,7 @@ def admin_email_user(user_id):
 @admin_required
 def admin_reply_site_mail(message_id):
     if not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'error': email_configuration_error()}), 400
     if rate_limited('admin-site-mail-reply', str(session.get('user_id')), limit=30, window_seconds=60 * 60):
         return rate_limit_response('Too many replies. Wait a while before sending another.')
 
@@ -4888,7 +4846,7 @@ def create_challenge():
     if not title:
         return jsonify({'success': False, 'error': 'Challenge name is required'}), 400
     if share_with_email and launch_mode == 'single_room' and not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'error': email_configuration_error()}), 400
     needs_participants = launch_mode in {'bulk_rooms', 'qualification', 'qualifier_bracket', 'bracket'}
     if needs_participants:
         participant_ids = list(dict.fromkeys(parse_int_list(request.form.getlist('participant_ids') or request.form.get('participant_ids'))))
@@ -6170,7 +6128,7 @@ def room_invite(room_code):
 @admin_required
 def admin_share_room_email(room_id):
     if not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'error': email_configuration_error()}), 400
     if rate_limited('room-share-email', f"{session.get('user_id')}:{room_id}", limit=5, window_seconds=60 * 60):
         return rate_limit_response('Too many invite emails for this room. Wait a while before sending again.')
     room = db.session.get(Room, room_id)
@@ -6530,7 +6488,7 @@ def account_send_email_verification():
     if User.query.filter(User.email == requested_email, User.id != user.id).first():
         return jsonify({'success': False, 'error': 'Recovery email is already used by another account'}), 400
     if not email_configured():
-        return jsonify({'success': False, 'error': smtp_configuration_error()}), 400
+        return jsonify({'success': False, 'error': email_configuration_error()}), 400
 
     email_changed = requested_email != (user.email or '')
     if user.role == 'admin' and email_changed:
@@ -6551,7 +6509,7 @@ def account_send_email_verification():
         app.logger.exception('Email verification send failed')
         sent = False
     if not sent:
-        return jsonify({'success': False, 'error': 'Could not send verification email. Check SMTP settings and try again.'}), 500
+        return jsonify({'success': False, 'error': 'Could not send verification email. Check Resend settings and try again.'}), 500
     return jsonify({'success': True, 'message': 'Verification code sent', 'email': user.email})
 
 @app.route('/api/account/email/verify', methods=['POST'])
