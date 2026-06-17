@@ -55,6 +55,12 @@ app.config['GOOGLE_USERINFO_URL'] = 'https://openidconnect.googleapis.com/v1/use
 app.config['RESEND_API_KEY'] = os.environ.get('RESEND_API_KEY', '').strip()
 app.config['SMTP_FROM'] = 'noreply@uibattlearena.top'
 app.config['SMTP_FROM_NAME'] = os.environ.get('SMTP_FROM_NAME', 'UI Battle Arena').strip()
+app.config['APP_VERSION'] = (
+    os.environ.get('APP_VERSION')
+    or os.environ.get('RENDER_GIT_COMMIT', '')[:12]
+    or '2026.06.17.1'
+).strip()
+app.config['PWA_ROLLOUT_PERCENT'] = max(0, min(100, int(os.environ.get('PWA_ROLLOUT_PERCENT', '100') or 100)))
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 ALLOWED_SITE_MEDIA_EXTENSIONS = ALLOWED_EXTENSIONS | {'webp', 'mp4', 'webm', 'mov'}
@@ -4022,6 +4028,116 @@ def robots_txt():
         ''
     ]
     return app.response_class('\n'.join(lines), mimetype='text/plain')
+
+
+def pwa_changelog():
+    return [
+        {
+            'type': 'New features',
+            'items': [
+                'Desktop install support with a managed update flow',
+                'Version-aware update notifications for installed app users'
+            ]
+        },
+        {
+            'type': 'UI improvements',
+            'items': [
+                'Professional desktop-style update panel with release notes',
+                'Clear Update now and Later choices without interrupting active work'
+            ]
+        },
+        {
+            'type': 'Reliability',
+            'items': [
+                'Safe service worker activation after user confirmation',
+                'Health check and cache rollback path if an update fails'
+            ]
+        },
+        {
+            'type': 'Performance',
+            'items': [
+                'Versioned cache cleanup for outdated frontend assets',
+                'Periodic background update checks while the app is open'
+            ]
+        }
+    ]
+
+
+@app.route('/manifest.webmanifest')
+def pwa_manifest():
+    manifest = {
+        'name': 'UI Battle Arena',
+        'short_name': 'UI Battle',
+        'description': 'Live frontend coding battles, tournaments, scoring, and admin monitoring.',
+        'start_url': '/',
+        'scope': '/',
+        'display': 'standalone',
+        'display_override': ['window-controls-overlay', 'standalone', 'browser'],
+        'background_color': '#0f172a',
+        'theme_color': '#0f172a',
+        'categories': ['games', 'education', 'productivity'],
+        'orientation': 'any',
+        'icons': [
+            {
+                'src': url_for('static', filename='site-icon.svg'),
+                'sizes': 'any',
+                'type': 'image/svg+xml',
+                'purpose': 'any maskable'
+            }
+        ],
+        'shortcuts': [
+            {
+                'name': 'Dashboard',
+                'short_name': 'Dashboard',
+                'url': '/dashboard',
+                'icons': [{'src': url_for('static', filename='site-icon.svg'), 'sizes': 'any'}]
+            },
+            {
+                'name': 'Leaderboard',
+                'short_name': 'Ranks',
+                'url': '/leaderboard',
+                'icons': [{'src': url_for('static', filename='site-icon.svg'), 'sizes': 'any'}]
+            }
+        ]
+    }
+    response = jsonify(manifest)
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+
+@app.route('/pwa/version.json')
+def pwa_version():
+    response = jsonify({
+        'version': app.config['APP_VERSION'],
+        'released_at': os.environ.get('APP_RELEASED_AT', '2026-06-17'),
+        'rollout_percent': app.config['PWA_ROLLOUT_PERCENT'],
+        'minimum_supported_version': os.environ.get('PWA_MIN_SUPPORTED_VERSION', ''),
+        'update_check_interval_ms': 15 * 60 * 1000,
+        'changelog': pwa_changelog()
+    })
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+
+@app.route('/pwa/health')
+def pwa_health():
+    response = jsonify({'ok': True, 'version': app.config['APP_VERSION']})
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+
+@app.route('/service-worker.js')
+def service_worker_js():
+    sw = render_template(
+        'service-worker.js',
+        app_version=app.config['APP_VERSION'],
+        static_version='arena23'
+    )
+    response = app.response_class(sw, mimetype='application/javascript')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Service-Worker-Allowed'] = '/'
+    return response
+
 
 @app.route('/sitemap.xml')
 def sitemap_xml():
