@@ -1298,32 +1298,86 @@ function readScoreCache() {
 
 function initWebsiteArenaWorkspace() {
     if (CHALLENGE_TYPE !== 'website_arena') return;
+    const root = document.querySelector('.website-tool-arena');
+    const sidebar = getElement('website-arena-sidebar');
     const pageList = getElement('website-page-list');
     const requirements = getElement('website-requirements');
     const previewSizes = getElement('website-preview-size-row');
     const targetMode = getElement('website-target-mode-label');
+    const assetList = getElement('website-asset-list');
     const pageNames = Array.isArray(WEBSITE_CONFIG.page_names) && WEBSITE_CONFIG.page_names.length ? WEBSITE_CONFIG.page_names : ['Home'];
     const sections = Array.isArray(WEBSITE_CONFIG.required_sections) ? WEBSITE_CONFIG.required_sections : [];
     const sizes = Array.isArray(WEBSITE_CONFIG.preview_sizes) ? WEBSITE_CONFIG.preview_sizes : ['desktop', 'tablet', 'mobile'];
+    const assets = Array.isArray(WEBSITE_CONFIG.allowed_assets) ? WEBSITE_CONFIG.allowed_assets : [];
+    const files = Array.isArray(WEBSITE_CONFIG.allowed_files) && WEBSITE_CONFIG.allowed_files.length
+        ? WEBSITE_CONFIG.allowed_files
+        : ['index.html', 'style.css', 'script.js'];
+    const sizeWidths = {
+        desktop: '100%',
+        laptop: '1180px',
+        tablet: '768px',
+        mobile: '390px'
+    };
 
     if (targetMode) {
         targetMode.textContent = String(WEBSITE_CONFIG.target_mode || 'hybrid').replace(/_/g, ' ');
     }
     if (pageList) {
-        pageList.innerHTML = pageNames.map((name, index) => `
-            <button type="button" class="website-page-chip${index === 0 ? ' active' : ''}" data-page-index="${index}">
-                <i class="fas fa-file-code"></i><span>${escapeHtml(name)}</span>
+        pageList.innerHTML = pageNames.map((name, index) => {
+            const fileName = files[index] || `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'page'}.html`;
+            return `
+            <button type="button" class="website-page-chip${index === 0 ? ' active' : ''}" data-page-index="${index}" title="${escapeHtml(fileName)}">
+                <i class="fas fa-file-code"></i><span>${escapeHtml(name)}</span><small>${escapeHtml(fileName)}</small>
             </button>
-        `).join('');
+        `;
+        }).join('');
     }
     if (requirements) {
         requirements.innerHTML = sections.length
             ? sections.map((section) => `<span><i class="fas fa-check"></i>${escapeHtml(section)}</span>`).join('')
             : '<span><i class="fas fa-check"></i>custom brief</span>';
     }
-    if (previewSizes) {
-        previewSizes.innerHTML = sizes.map((size) => `<button type="button" data-preview-size="${escapeHtml(size)}">${escapeHtml(size)}</button>`).join('');
+    if (assetList) {
+        const assetItems = assets.length ? assets : ['Use only assets provided by the challenge brief'];
+        assetList.innerHTML = `
+            <strong><i class="fas fa-paperclip"></i> Assets</strong>
+            ${assetItems.map((asset) => `<span>${escapeHtml(asset)}</span>`).join('')}
+        `;
     }
+    if (previewSizes) {
+        previewSizes.innerHTML = sizes.map((size, index) => `
+            <button type="button" class="${index === 0 ? 'active' : ''}" data-preview-size="${escapeHtml(size)}" aria-pressed="${index === 0 ? 'true' : 'false'}">
+                <i class="fas fa-${String(size).toLowerCase().includes('mobile') ? 'mobile-screen' : String(size).toLowerCase().includes('tablet') ? 'tablet-screen-button' : 'desktop'}"></i>
+                ${escapeHtml(size)}
+            </button>
+        `).join('');
+        previewSizes.querySelectorAll('[data-preview-size]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const size = String(button.dataset.previewSize || 'desktop').toLowerCase();
+                const width = sizeWidths[size] || (/^\d+$/.test(size) ? `${size}px` : '100%');
+                root?.style.setProperty('--website-preview-width', width);
+                previewSizes.querySelectorAll('[data-preview-size]').forEach((item) => {
+                    const active = item === button;
+                    item.classList.toggle('active', active);
+                    item.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
+                scheduleLiveDiffCheck(120);
+            });
+        });
+    }
+    document.querySelectorAll('[data-workbench-view]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const view = button.dataset.workbenchView || 'files';
+            document.querySelectorAll('[data-workbench-view]').forEach((item) => {
+                const active = item === button;
+                item.classList.toggle('active', active);
+                item.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+            sidebar?.querySelectorAll('[data-workbench-panel]').forEach((panel) => {
+                panel.classList.toggle('active', panel.dataset.workbenchPanel === view);
+            });
+        });
+    });
 }
 
 function escapeHtml(value) {
@@ -2343,7 +2397,8 @@ function initAdminObserverWorkspace() {
     const editorContainer = editorPanel?.querySelector('.editor-container');
     if (!editorPanel || !editorContainer || editorPanel.querySelector('.admin-observer-workspace')) return;
 
-    editorPanel.querySelector('.editor-header-left span:first-of-type').textContent = 'LIVE PLAYER EDITORS';
+    const observerTitle = editorPanel.querySelector('.editor-header-left span:first-of-type') || editorPanel.querySelector('.website-toolbar strong');
+    if (observerTitle) observerTitle.textContent = 'Live Player Editors';
     editorPanel.querySelector('.editor-tabs')?.remove();
     editorContainer.style.display = 'none';
 

@@ -66,12 +66,11 @@
     </header>
 
     <main class="website-tool-main arena-main sidebar-collapsed">
-        <aside class="website-file-rail">
+        <aside class="website-file-rail" aria-label="Website arena tools">
             <div class="website-rail-brand"><i class="fas fa-crosshairs"></i></div>
-            <button type="button" title="Explorer"><i class="fas fa-folder-tree"></i></button>
-            <button type="button" title="Search"><i class="fas fa-search"></i></button>
-            <button type="button" title="Preview sizes"><i class="fas fa-display"></i></button>
-            <button type="button" title="Requirements"><i class="fas fa-list-check"></i></button>
+            <button type="button" class="website-rail-btn active" data-workbench-view="files" title="Explorer" aria-label="Show files" aria-pressed="true"><i class="fas fa-folder-tree"></i></button>
+            <button type="button" class="website-rail-btn" data-workbench-view="requirements" title="Requirements" aria-label="Show requirements" aria-pressed="false"><i class="fas fa-list-check"></i></button>
+            <button type="button" class="website-rail-btn" data-workbench-view="preview" title="Preview sizes" aria-label="Show preview sizes" aria-pressed="false"><i class="fas fa-display"></i></button>
             <button type="button" id="toggle-chat-btn-nav" title="Chat"><i class="fas fa-comment-dots"></i></button>
         </aside>
 
@@ -85,9 +84,25 @@
             </div>
 
             <div class="website-arena-sidebar" id="website-arena-sidebar">
-                <div class="website-page-list" id="website-page-list"></div>
-                <div class="website-requirements" id="website-requirements"></div>
-                <div class="website-preview-size-row" id="website-preview-size-row"></div>
+                <section class="website-workbench-section active" data-workbench-panel="files">
+                    <div class="website-arena-sidebar-head">
+                        <span><i class="fas fa-folder-tree"></i> Pages</span>
+                    </div>
+                    <div class="website-page-list" id="website-page-list"></div>
+                </section>
+                <section class="website-workbench-section" data-workbench-panel="requirements">
+                    <div class="website-arena-sidebar-head">
+                        <span><i class="fas fa-list-check"></i> Requirements</span>
+                    </div>
+                    <div class="website-requirements" id="website-requirements"></div>
+                    <div class="website-asset-list" id="website-asset-list"></div>
+                </section>
+                <section class="website-workbench-section" data-workbench-panel="preview">
+                    <div class="website-arena-sidebar-head">
+                        <span><i class="fas fa-display"></i> Canvas</span>
+                    </div>
+                    <div class="website-preview-size-row" id="website-preview-size-row"></div>
+                </section>
             </div>
 
             <nav class="editor-tabs">
