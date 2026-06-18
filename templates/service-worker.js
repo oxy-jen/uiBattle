@@ -1,13 +1,14 @@
-const APP_VERSION = '{{ app_version }}';
+const APP_VERSION = {{ app_version|tojson }};
 const CACHE_PREFIX = 'uiba-pwa';
 const CACHE_NAME = `${CACHE_PREFIX}-${APP_VERSION}`;
 const CORE_ASSETS = [
-  '/',
+  '/app',
+  '/login',
   '/manifest.webmanifest',
   '/pwa/version.json',
-  '/static/css/style.css?v={{ static_version }}',
-  '/static/js/main.js?v=profile-media2',
-  '/static/js/pwa-updater.js?v={{ app_version }}',
+  '/static/css/style.css?v={{ static_version|urlencode }}',
+  '/static/js/main.js?v=profile-media3',
+  '/static/js/pwa-updater.js?v={{ app_version|urlencode }}',
   '/static/site-icon.svg',
   '/static/pwa-icon-192.png',
   '/static/pwa-icon-512.png'
@@ -70,7 +71,7 @@ self.addEventListener('fetch', (event) => {
         return response;
       } catch (error) {
         const cached = await caches.match(request);
-        return cached || caches.match('/');
+        return cached || caches.match('/app') || caches.match('/login');
       }
     })());
     return;

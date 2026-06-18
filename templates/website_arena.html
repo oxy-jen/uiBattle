@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="website-tool-arena arena-root website-arena-mode chat-open {% if user_role == 'spectator' %}spectator-mode{% elif user_role == 'admin' %}admin-mode{% endif %}">
+<div class="website-tool-arena arena-root website-arena-mode chat-open website-tools-open website-diff-open website-camera-open {% if user_role == 'spectator' %}spectator-mode{% elif user_role == 'admin' %}admin-mode{% endif %}">
     <script>
         window.ARENA_CONFIG = {
             roomId: {{ room.id }},
@@ -84,7 +84,7 @@
         </section>
     </header>
 
-    <main class="website-tool-main arena-main editor-collapsed">
+    <main class="website-tool-main arena-main">
         <aside class="website-file-rail" aria-label="Website arena tools">
             <div class="website-rail-brand"><i class="fas fa-crosshairs"></i></div>
             <button type="button" class="website-rail-btn active" data-workbench-view="files" title="Explorer" aria-label="Show files" aria-pressed="true"><i class="fas fa-folder-tree"></i></button>
@@ -93,7 +93,7 @@
             <button type="button" id="toggle-chat-btn-nav" title="Chat"><i class="fas fa-comment-dots"></i></button>
         </aside>
 
-        <section class="website-code-workbench editor-panel collapsed" id="editor-panel">
+        <section class="website-code-workbench editor-panel" id="editor-panel">
             <div class="website-toolbar">
                 <div>
                     <strong>Website Files</strong>

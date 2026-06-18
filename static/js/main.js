@@ -34,10 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
     applyGlobalTheme(getSavedGlobalTheme());
     initProfileSitePermissions();
     initSiteMenus();
-    if (document.getElementById('admin-theme-toggle')) {
-        const globalToggle = document.getElementById('global-theme-toggle');
-        if (globalToggle) globalToggle.hidden = true;
-    }
     document.querySelectorAll('#global-theme-toggle, #admin-theme-toggle').forEach((toggle) => {
         toggle.addEventListener('click', () => {
             const currentTheme = document.documentElement.dataset.theme || 'dark';

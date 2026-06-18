@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
+    <link rel="icon" href="{{ url_for('static', filename='site-icon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ release_version|urlencode }}">
+    <title>{{ release_name }} - UI Battle Arena App</title>
+</head>
+<body class="app-launch-body">
+    <main class="app-launch-screen" data-target-url="{{ target_url }}">
+        <section class="app-launch-card">
+            <div class="app-launch-brand">
+                <div class="app-launch-logo">
+                    <i class="fas fa-shield-halved"></i>
+                </div>
+                <div>
+                    <p class="app-launch-eyebrow">Installed app</p>
+                    <h1 class="app-launch-title">Welcome to {{ release_name }}</h1>
+                </div>
+            </div>
+            <p class="app-launch-version">UI Battle Arena app version {{ release_version }}</p>
+            <p class="app-launch-build">Build {{ app_build }}</p>
+            <div class="app-launch-progress" aria-label="Loading app">
+                <span></span>
+            </div>
+            <p class="app-launch-note">Opening your arena workspace...</p>
+        </section>
+    </main>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/js/all.min.js"></script>
+    <script src="{{ url_for('static', filename='js/pwa-updater.js') }}?v={{ release_version|urlencode }}"></script>
+    <script>
+        window.setTimeout(() => {
+            const target = document.querySelector('[data-target-url]')?.dataset.targetUrl || '/login';
+            window.location.replace(target);
+        }, 1400);
+    </script>
+</body>
+</html>

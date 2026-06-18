@@ -124,10 +124,6 @@
     <meta name="theme-color" content="#0f172a">
 </head>
 <body data-theme="dark">
-    <button class="theme-toggle-global" id="global-theme-toggle" type="button" aria-label="Toggle light and dark mode">
-        <i class="fas fa-moon"></i>
-        <span>Dark</span>
-    </button>
     {% if request.endpoint in ['login_page', 'about_page', 'support_page', 'terms_page', 'contact_page', 'help_page', 'competition_guide_page', 'shortcuts_page', 'feedback_page', 'report_page', 'maintenance_page'] %}
     <nav class="public-site-nav site-menu" aria-label="Public site links" data-site-menu>
         <button class="site-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" data-site-menu-toggle>
@@ -185,6 +181,16 @@
         </div>
 
         <form class="profile-settings-form" id="profile-settings-form" enctype="multipart/form-data">
+            <div class="profile-theme-setting">
+                <div>
+                    <strong>Appearance</strong>
+                    <span>Switch between dark and light mode.</span>
+                </div>
+                <button class="theme-toggle-global profile-theme-toggle" id="global-theme-toggle" type="button" aria-label="Toggle light and dark mode">
+                    <i class="fas fa-moon"></i>
+                    <span>Dark</span>
+                </button>
+            </div>
             <label>
                 Display name
                 <input id="profile-settings-username" name="username" maxlength="80" value="{{ user.username }}" required>
@@ -345,8 +351,8 @@
     </script>
     {% endif %}
     
-    <script src="{{ url_for('static', filename='js/main.js') }}?v=profile-media2"></script>
-    <script src="{{ url_for('static', filename='js/pwa-updater.js') }}?v={{ config.APP_VERSION }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=profile-media3"></script>
+    <script src="{{ url_for('static', filename='js/pwa-updater.js') }}?v={{ pwa_asset_version|default(config.APP_VERSION)|urlencode }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

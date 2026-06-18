@@ -82,7 +82,7 @@
     }
 
     function shouldShowUpdate(release) {
-        if (!release?.version || !isInRollout(release)) return false;
+        if (!release?.version || !release?.published || !release?.update_available || !isInRollout(release)) return false;
         const laterAt = Number(storageGet(LATER_AT_KEY, '0'));
         if (storageGet(LATER_VERSION_KEY) === release.version && Date.now() - laterAt < UPDATE_SNOOZE_MS) return false;
         return currentVersion() && currentVersion() !== release.version;
@@ -255,7 +255,7 @@
                 ${changelogHtml(release.changelog)}
             </div>
             <div class="pwa-update-actions">
-                <button class="pwa-update-later" type="button">Later</button>
+                <button class="pwa-update-later" type="button">Remind me later</button>
                 <button class="pwa-update-now" type="button"><i class="fas fa-rotate"></i> Update now</button>
             </div>
         `;
@@ -291,8 +291,9 @@
     function showStatusPanel() {
         const panel = ensureStatusPanel();
         const active = escapeText(currentVersion() || 'Installed');
-        const latest = escapeText(latestRelease?.version || active);
+        const latest = escapeText(latestRelease?.published ? latestRelease.version : active);
         const released = escapeText(latestRelease?.released_at || 'Latest deployed release');
+        const releaseState = latestRelease?.published ? 'Released by admin' : 'Waiting for admin release';
         panel.innerHTML = `
             <div class="pwa-install-head">
                 <div>
@@ -305,10 +306,11 @@
             </div>
             <div class="pwa-status-body">
                 <div><span>Current</span><strong>${active}</strong></div>
-                <div><span>Latest</span><strong>${latest}</strong></div>
-                <p>${released}</p>
+                <div><span>Available</span><strong>${latest}</strong></div>
+                <p>${escapeText(releaseState)}${latestRelease?.published ? ` · ${released}` : ''}</p>
             </div>
             <div class="pwa-install-actions">
+                <a class="pwa-backup-link" href="/api/account/backup"><i class="fas fa-download"></i> Backup data</a>
                 <button class="pwa-install-later" type="button">Close</button>
                 <button class="pwa-install-now" type="button"><i class="fas fa-rotate"></i> Check for updates</button>
             </div>
@@ -367,7 +369,6 @@
         if (window.showToast) showToast('Updating UI Battle Arena...', 'info');
 
         try {
-            await clearPwaCaches();
             await registration?.update?.();
             const waitingWorker = registration?.waiting || registration?.installing;
             if (waitingWorker) {
@@ -435,7 +436,7 @@
             if (shouldShowUpdate(release)) {
                 showUpdatePanel(release);
             } else if (userInitiated && window.showToast) {
-                showToast('You are already on the latest version.', 'success');
+                showToast(release?.published ? 'You are already on the latest version.' : 'No admin-released app update is available yet.', 'success');
             }
         } catch (error) {
             if (userInitiated && window.showToast) showToast('Could not check for updates. Try again when you are online.', 'error');

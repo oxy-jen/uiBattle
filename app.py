@@ -3685,9 +3685,15 @@ def home():
 @app.route('/app')
 def app_entry():
     user = get_current_user()
-    if user:
-        return redirect(url_for('admin_panel' if user.role == 'admin' else 'dashboard'))
-    return redirect(url_for('login_page'))
+    release = current_release_notice()
+    return render_template(
+        'app_loading.html',
+        release_name=release.get('name') or 'UI Battle Arena',
+        release_version=pwa_public_version(release),
+        app_build=release.get('app_version') or app.config['APP_VERSION'],
+        target_url=url_for('admin_panel' if user and user.role == 'admin' else 'dashboard') if user else url_for('login_page'),
+        user=user
+    )
 
 
 # ========== AUTH ROUTES ==========
@@ -4271,14 +4277,33 @@ def current_release_notice():
         notice = {}
     release_version = str(notice.get('release_version') or '').strip()
     release_name = str(notice.get('release_name') or '').strip()
+    build_version = app.config['APP_VERSION']
     return {
         'published': bool(notice.get('release_enabled')),
-        'version': release_version or app.config['APP_VERSION'],
-        'name': release_name or f"UI Battle Arena {release_version or app.config['APP_VERSION']}",
+        'version': release_version or build_version,
+        'release_version': release_version,
+        'app_version': build_version,
+        'name': release_name or f"UI Battle Arena {release_version or build_version}",
         'description': str(notice.get('release_description') or '').strip(),
         'notes': str(notice.get('release_notes') or '').strip(),
         'backup_warning': str(notice.get('backup_warning') or DEFAULT_SITE_CONTENT['maintenance_notice']['backup_warning']).strip(),
         'released_at': str(notice.get('release_at') or os.environ.get('APP_RELEASED_AT', '2026-06-17')).strip()
+    }
+
+
+def pwa_public_version(release=None):
+    release = release or current_release_notice()
+    if release.get('published') and str(release.get('release_version') or '').strip():
+        return str(release.get('release_version') or '').strip()
+    return 'admin-managed'
+
+
+@app.context_processor
+def inject_pwa_release_context():
+    release = current_release_notice()
+    return {
+        'current_pwa_release': release,
+        'pwa_asset_version': pwa_public_version(release),
     }
 
 
@@ -4383,13 +4408,15 @@ def pwa_manifest():
 @app.route('/pwa/version.json')
 def pwa_version():
     release = current_release_notice()
-    version = release['version'] if release.get('published') else app.config['APP_VERSION']
+    version = pwa_public_version(release)
     response = jsonify({
         'version': version,
+        'app_build': release.get('app_version') or app.config['APP_VERSION'],
         'release_name': release['name'],
         'release_description': release['description'],
         'backup_warning': release['backup_warning'],
         'published': bool(release.get('published')),
+        'update_available': bool(release.get('published') and release.get('release_version')),
         'released_at': release['released_at'],
         'rollout_percent': app.config['PWA_ROLLOUT_PERCENT'],
         'minimum_supported_version': os.environ.get('PWA_MIN_SUPPORTED_VERSION', ''),
@@ -4403,17 +4430,22 @@ def pwa_version():
 @app.route('/pwa/health')
 def pwa_health():
     release = current_release_notice()
-    response = jsonify({'ok': True, 'version': release['version'] if release.get('published') else app.config['APP_VERSION']})
+    response = jsonify({
+        'ok': True,
+        'version': pwa_public_version(release),
+        'app_build': release.get('app_version') or app.config['APP_VERSION']
+    })
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
 
 
 @app.route('/service-worker.js')
 def service_worker_js():
+    release = current_release_notice()
     sw = render_template(
         'service-worker.js',
-        app_version=app.config['APP_VERSION'],
-        static_version='arena23'
+        app_version=pwa_public_version(release),
+        static_version=pwa_public_version(release)
     )
     response = app.response_class(sw, mimetype='application/javascript')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -4823,6 +4855,63 @@ def admin_site_content():
                 only_verified=False
             )
     return jsonify({'success': True, 'site_content': content})
+
+@app.route('/admin/app-release', methods=['GET', 'POST'])
+@admin_required
+def admin_app_release():
+    if request.method == 'GET':
+        return jsonify({'success': True, 'release': current_release_notice()})
+
+    data = request.get_json(silent=True) or {}
+    action = str(data.get('action') or 'draft').strip().lower()
+    content = get_site_content()
+    notice = content.get('maintenance_notice')
+    if not isinstance(notice, dict):
+        notice = {}
+        content['maintenance_notice'] = notice
+
+    def clean(key, limit):
+        return str(data.get(key) or '').strip()[:limit]
+
+    if action == 'pause':
+        notice['release_enabled'] = False
+    elif action == 'rollback':
+        rollback_version = clean('rollback_version', 80)
+        if not rollback_version:
+            return jsonify({'success': False, 'error': 'Enter the rollback version first.'}), 400
+        notice['release_enabled'] = True
+        notice['release_version'] = rollback_version
+        notice['release_name'] = clean('release_name', 140) or f'Rollback to {rollback_version}'
+        notice['release_description'] = clean('rollback_description', 1200) or 'This rollback restores the previous stable app release.'
+        notice['release_notes'] = clean('rollback_notes', 3000)
+        notice['release_at'] = clean('release_at', 80)
+    else:
+        version = clean('release_version', 80)
+        if action == 'publish' and not version:
+            return jsonify({'success': False, 'error': 'Enter an app version before publishing.'}), 400
+        notice['release_enabled'] = action == 'publish'
+        notice['release_version'] = version
+        notice['release_name'] = clean('release_name', 140)
+        notice['release_description'] = clean('release_description', 1200)
+        notice['release_notes'] = clean('release_notes', 3000)
+        notice['release_at'] = clean('release_at', 80)
+
+    notice['backup_warning'] = clean('backup_warning', 1000) or DEFAULT_SITE_CONTENT['maintenance_notice']['backup_warning']
+    save_site_content(content)
+
+    release = current_release_notice()
+    socketio.emit('maintenance_notice', {
+        'title': 'App update released' if release.get('published') else 'App update rollout paused',
+        'message': release.get('description') or '',
+        'release_at': release.get('released_at') or '',
+        'release_enabled': bool(release.get('published')),
+        'release_version': release.get('release_version') or '',
+        'release_name': release.get('name') or '',
+        'release_description': release.get('description') or '',
+        'backup_warning': release.get('backup_warning') or DEFAULT_SITE_CONTENT['maintenance_notice']['backup_warning']
+    })
+    return jsonify({'success': True, 'release': release, 'site_content': content})
+
 
 @app.route('/admin/site-content/upload', methods=['POST'])
 @admin_required
@@ -7045,6 +7134,110 @@ def update_award_card_color(card_id):
     card.student_color = clean_hex_color(data.get('color'), card.primary_color)
     db.session.commit()
     return jsonify({'success': True, 'card': serialize_award_card(card)})
+
+@app.route('/api/account/backup')
+@login_required
+def account_backup():
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+
+    def iso(value):
+        return value.isoformat() if value else None
+
+    def json_value(value, fallback=None):
+        if not value:
+            return fallback
+        try:
+            return json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return value
+
+    record = sync_user_competition_state(user)
+    db.session.commit()
+    submissions = Submission.query.filter_by(user_id=user.id).order_by(Submission.submitted_at.desc()).all()
+    website_entries = WebsiteChallengeEntry.query.filter_by(user_id=user.id).order_by(WebsiteChallengeEntry.updated_at.desc()).all()
+    awards = AwardCard.query.filter_by(user_id=user.id).order_by(AwardCard.created_at.desc()).all()
+    match_events = get_user_match_events(user.id)
+
+    payload = {
+        'exported_at': datetime.utcnow().isoformat() + 'Z',
+        'app': {
+            'name': 'UI Battle Arena',
+            'release': current_release_notice(),
+            'version': pwa_public_version(),
+        },
+        'user': profile_payload(user),
+        'record': {
+            key: value for key, value in record.items()
+            if key != 'events'
+        },
+        'matches': [
+            {
+                'room_code': event['room'].room_code if event.get('room') else None,
+                'challenge': event['room'].challenge.title if event.get('room') and event['room'].challenge else None,
+                'opponent': event['opponent'].username if event.get('opponent') else None,
+                'result': event.get('result'),
+                'accuracy': round(event['submission'].accuracy, 2) if event.get('submission') else None,
+                'completed_at': iso(event.get('completed_at')),
+            }
+            for event in match_events
+        ],
+        'submissions': [
+            {
+                'id': submission.id,
+                'room_code': submission.room.room_code if submission.room else None,
+                'challenge': submission.challenge.title if submission.challenge else None,
+                'accuracy': round(submission.accuracy or 0, 2),
+                'is_forfeit': bool(submission.is_forfeit),
+                'is_final': bool(submission.is_final),
+                'score_details': json_value(submission.score_details, {}),
+                'html_code': submission.html_code or '',
+                'css_code': submission.css_code or '',
+                'js_code': submission.js_code or '',
+                'submitted_at': iso(submission.submitted_at),
+            }
+            for submission in submissions
+        ],
+        'website_challenges': [
+            {
+                'id': entry.id,
+                'competition': entry.competition.title if entry.competition else None,
+                'challenge': entry.challenge.title if entry.challenge else None,
+                'live_url': entry.live_url,
+                'github_url': entry.github_url,
+                'screenshots': json_value(entry.screenshots, []),
+                'description': entry.description,
+                'status': entry.status,
+                'community_score': entry.community_score,
+                'automated_score': entry.automated_score,
+                'judge_score': entry.judge_score,
+                'final_score': entry.final_score,
+                'xp_awarded': entry.xp_awarded,
+                'joined_at': iso(entry.joined_at),
+                'submitted_at': iso(entry.submitted_at),
+                'updated_at': iso(entry.updated_at),
+            }
+            for entry in website_entries
+        ],
+        'award_cards': [
+            {
+                **serialize_award_card(card),
+                'created_at': iso(card.created_at),
+            }
+            for card in awards
+        ],
+    }
+
+    filename = f"ui-battle-arena-backup-{user.username}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json"
+    response = app.response_class(
+        json.dumps(payload, indent=2, default=str),
+        mimetype='application/json'
+    )
+    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
 
 @app.route('/api/profile/me', methods=['GET', 'POST'])
 @login_required

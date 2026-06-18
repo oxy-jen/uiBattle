@@ -3021,11 +3021,10 @@ function initCollapseEditor() {
     window.addEventListener('resize', () => queueArenaLayoutSync(120));
     initArenaResizers(arenaMain);
     if (USER_ROLE !== 'spectator' && CHALLENGE_TYPE === 'website_arena') {
-        arenaRoot?.classList.add('chat-open');
-        arenaRoot?.classList.remove('website-tools-open');
-        arenaMain?.classList.add('editor-collapsed');
+        arenaRoot?.classList.add('chat-open', 'website-tools-open', 'website-diff-open', 'website-camera-open');
+        arenaMain?.classList.remove('editor-collapsed');
         arenaMain?.classList.remove('sidebar-collapsed');
-        editorPanel?.classList.add('collapsed');
+        editorPanel?.classList.remove('collapsed');
         sidebar?.classList.remove('collapsed');
     } else if (USER_ROLE !== 'spectator') {
         arenaRoot?.classList.add('chat-open');
@@ -3670,8 +3669,8 @@ function initWebsiteArenaDock() {
         }
     });
 
-    root.classList.remove('website-diff-open', 'website-camera-open');
-    centerPanel.classList.add('camera-compact');
+    root.classList.add('website-diff-open', 'website-camera-open');
+    centerPanel.classList.remove('camera-compact');
     refreshDockState();
 }
 

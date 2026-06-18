@@ -19,6 +19,10 @@
                 <span data-profile-name>{{ user.username }}</span>
                 <i class="fas fa-chevron-down"></i>
             </button>
+            <a href="{{ url_for('account_backup') }}" class="app-backup-btn" title="Download your data backup">
+                <i class="fas fa-download"></i>
+                <span>Backup</span>
+            </a>
             <a href="/auth/logout" class="logout-btn"><i class="fas fa-sign-out-alt"></i></a>
         </div>
     </nav>

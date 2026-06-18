@@ -18,6 +18,7 @@
             <a href="{{ url_for('admin_competition_guide') }}"><i class="fas fa-book-open"></i> Admin Guide</a>
             <a href="#" data-section="moderation"><i class="fas fa-comments"></i> Chat Moderation</a>
             <a href="#" data-section="broadcast"><i class="fas fa-broadcast-tower"></i> Broadcast</a>
+            <a href="#" data-section="app-release"><i class="fas fa-cloud-arrow-up"></i> App Releases</a>
             <a href="#" data-section="site-content"><i class="fas fa-pen-to-square"></i> Site Content</a>
             <a href="#" data-section="maintenance"><i class="fas fa-sliders"></i> Maintenance</a>
             <button class="sidebar-profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">
@@ -30,10 +31,6 @@
         <div class="admin-header">
             <h1>Admin Console</h1>
             <div class="admin-user">
-                <button class="theme-toggle" id="admin-theme-toggle" type="button" aria-label="Toggle admin theme">
-                    <i class="fas fa-moon"></i>
-                    <span>Dark</span>
-                </button>
                 <button class="admin-profile-trigger" type="button" data-profile-trigger aria-haspopup="dialog" aria-expanded="false">
                     <span class="admin-profile-avatar" data-profile-avatar>
                         {% if current_profile is defined and current_profile.avatar_url %}
@@ -1611,6 +1608,77 @@
             </div>
         </div>
 
+        <!-- App Release Section -->
+        <div id="section-app-release" class="admin-section">
+            {% set release_notice = site_content.get('maintenance_notice', {}) %}
+            <div class="maintenance-panel app-release-admin">
+                <div class="maintenance-head">
+                    <div>
+                        <h3><i class="fas fa-cloud-arrow-up"></i> Installed App Releases</h3>
+                        <p>Control what installed app users receive. Render deploys stay hidden until you publish a version here.</p>
+                    </div>
+                    <span class="panel-pill {% if release_notice.get('release_enabled') and release_notice.get('release_version') %}success{% else %}muted{% endif %}">
+                        {% if release_notice.get('release_enabled') and release_notice.get('release_version') %}Live rollout{% else %}Paused{% endif %}
+                    </span>
+                </div>
+
+                <div class="app-release-grid">
+                    <form class="content-editor-card app-release-card" id="app-release-form">
+                        <h4>Release to App Users</h4>
+                        <p class="muted">Use the app version as the release switch. Examples: Beta 8, UI Battle Arena v1, June Finals Build.</p>
+                        <label>App version
+                            <input id="release-version-input" maxlength="80" placeholder="Beta 8 or UI Battle Arena v1" value="{{ release_notice.get('release_version', '') }}">
+                        </label>
+                        <label>Release name
+                            <input id="release-name-input" maxlength="140" placeholder="UI Battle Arena Beta 8" value="{{ release_notice.get('release_name', '') }}">
+                        </label>
+                        <label>Release date/time
+                            <input id="release-at-input" maxlength="80" placeholder="June 18, 2026 8:00 PM" value="{{ release_notice.get('release_at', '') }}">
+                        </label>
+                        <label>What changed
+                            <textarea id="release-description-input" rows="4" maxlength="1200" placeholder="Paste the commit message summary or short release explanation.">{{ release_notice.get('release_description', '') }}</textarea>
+                        </label>
+                        <label>Release notes
+                            <textarea id="release-notes-input" rows="7" maxlength="3000" placeholder="One change per line.">{{ release_notice.get('release_notes', '') }}</textarea>
+                        </label>
+                        <label>Backup warning
+                            <textarea id="release-backup-input" rows="3" maxlength="1000">{{ release_notice.get('backup_warning', 'Before updating, back up anything important: export admin data, save active match work, and download files you need.') }}</textarea>
+                        </label>
+                        <div class="app-release-actions">
+                            <button type="button" class="btn-primary" onclick="saveAppRelease('publish', this)">
+                                <i class="fas fa-rocket"></i> Publish Rollout
+                            </button>
+                            <button type="button" class="btn-secondary" onclick="saveAppRelease('draft', this)">
+                                <i class="fas fa-save"></i> Save Draft
+                            </button>
+                            <button type="button" class="btn-danger" onclick="saveAppRelease('pause', this)">
+                                <i class="fas fa-pause"></i> Pause Rollout
+                            </button>
+                        </div>
+                    </form>
+
+                    <form class="content-editor-card app-release-card" id="app-rollback-form">
+                        <h4>Rollback Release</h4>
+                        <p class="muted">Deploy the previous Render commit first, then publish that previous version here so installed app users are prompted back to it.</p>
+                        <label>Rollback version
+                            <input id="rollback-version-input" maxlength="80" placeholder="Beta 7 or UI Battle Arena v0.9">
+                        </label>
+                        <label>Rollback message
+                            <textarea id="rollback-description-input" rows="4" maxlength="1200" placeholder="Explain why this rollback is being released."></textarea>
+                        </label>
+                        <label>Rollback notes
+                            <textarea id="rollback-notes-input" rows="5" maxlength="3000" placeholder="One note per line."></textarea>
+                        </label>
+                        <div class="app-release-actions">
+                            <button type="button" class="btn-danger" onclick="saveAppRelease('rollback', this)">
+                                <i class="fas fa-clock-rotate-left"></i> Roll Back App Users
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <!-- Site Content Section -->
         <div id="section-site-content" class="admin-section">
             <div class="maintenance-panel site-content-admin">
@@ -1745,16 +1813,18 @@
                     {% set notice = site_content.get('maintenance_notice', {}) %}
                     <div class="content-editor-card" data-content-section="maintenance_notice">
                         <h4>Maintenance and Update Notice</h4>
+                        <p class="muted">Installed app updates are admin released. A Render deploy alone will not force users to reinstall or update. Publish only when the app version below is ready.</p>
                         <label class="checkbox-label"><input data-field="enabled" type="checkbox" {% if notice.get('enabled') %}checked{% endif %}> Show popup notice</label>
                         <label>Popup title <input data-field="title" value="{{ notice.get('title', '') }}"></label>
                         <label>Message <textarea data-field="message" rows="5">{{ notice.get('message', '') }}</textarea></label>
                         <label>Maintenance date/time <input data-field="maintenance_at" value="{{ notice.get('maintenance_at', '') }}"></label>
                         <label>Update release date/time <input data-field="release_at" value="{{ notice.get('release_at', '') }}"></label>
                         <label class="checkbox-label"><input data-field="release_enabled" type="checkbox" {% if notice.get('release_enabled') %}checked{% endif %}> Publish app update prompt</label>
-                        <label>App version <input data-field="release_version" placeholder="Beta version 8" value="{{ notice.get('release_version', '') }}"></label>
-                        <label>Release name <input data-field="release_name" placeholder="Beta version 8" value="{{ notice.get('release_name', '') }}"></label>
-                        <label>Release description <textarea data-field="release_description" rows="4" placeholder="Short summary of what users should expect.">{{ notice.get('release_description', '') }}</textarea></label>
-                        <label>Release notes <textarea data-field="release_notes" rows="6" placeholder="One update per line.">{{ notice.get('release_notes', '') }}</textarea></label>
+                        <label>App version <input data-field="release_version" placeholder="Beta 8 or UI Battle Arena v1" value="{{ notice.get('release_version', '') }}"></label>
+                        <small class="muted">Changing this version releases a new installed-app update. Clearing it or unchecking publish pauses the rollout.</small>
+                        <label>Release name <input data-field="release_name" placeholder="UI Battle Arena Beta 8" value="{{ notice.get('release_name', '') }}"></label>
+                        <label>Release description <textarea data-field="release_description" rows="4" placeholder="Short summary, or paste the commit message summary here.">{{ notice.get('release_description', '') }}</textarea></label>
+                        <label>Release notes <textarea data-field="release_notes" rows="6" placeholder="One update per line. Use this for commit-message details and what changed.">{{ notice.get('release_notes', '') }}</textarea></label>
                         <label>Backup warning <textarea data-field="backup_warning" rows="4">{{ notice.get('backup_warning', 'Before updating, back up anything important: export admin data, save active match work, and download files you need.') }}</textarea></label>
                         <label class="checkbox-label"><input data-field="email_users" type="checkbox"> Email users on save</label>
                     </div>
@@ -1907,6 +1977,48 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 16px;
+}
+.app-release-admin {
+    display: grid;
+    gap: 18px;
+}
+.app-release-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+    gap: 16px;
+}
+.app-release-card {
+    align-content: start;
+}
+.app-release-card label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+.app-release-card input,
+.app-release-card textarea {
+    width: 100%;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-panel-alt);
+    color: var(--text-primary);
+    padding: 10px;
+}
+.app-release-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.panel-pill.success {
+    color: #dcfce7;
+    border-color: rgba(34, 197, 94, 0.38);
+    background: rgba(22, 163, 74, 0.18);
+}
+@media (max-width: 1100px) {
+    .app-release-grid {
+        grid-template-columns: 1fr;
+    }
 }
 .content-editor-card {
     display: grid;
@@ -5643,6 +5755,84 @@ function readContentSection(section) {
     });
     return data;
 }
+
+function setContentField(section, key, value) {
+    const field = document.querySelector(`[data-content-section="${section}"] [data-field="${key}"]`);
+    if (!field) return;
+    if (field.type === 'checkbox') {
+        field.checked = Boolean(value);
+    } else {
+        field.value = value || '';
+    }
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function syncReleaseToMaintenanceCard(release = {}) {
+    setContentField('maintenance_notice', 'release_enabled', Boolean(release.published));
+    setContentField('maintenance_notice', 'release_version', release.release_version || '');
+    setContentField('maintenance_notice', 'release_name', release.name || '');
+    setContentField('maintenance_notice', 'release_description', release.description || '');
+    setContentField('maintenance_notice', 'release_notes', release.notes || '');
+    setContentField('maintenance_notice', 'release_at', release.released_at || '');
+    setContentField('maintenance_notice', 'backup_warning', release.backup_warning || '');
+}
+
+function appReleasePayload(action) {
+    const data = {
+        action,
+        release_version: document.getElementById('release-version-input')?.value || '',
+        release_name: document.getElementById('release-name-input')?.value || '',
+        release_at: document.getElementById('release-at-input')?.value || '',
+        release_description: document.getElementById('release-description-input')?.value || '',
+        release_notes: document.getElementById('release-notes-input')?.value || '',
+        backup_warning: document.getElementById('release-backup-input')?.value || '',
+        rollback_version: document.getElementById('rollback-version-input')?.value || '',
+        rollback_description: document.getElementById('rollback-description-input')?.value || '',
+        rollback_notes: document.getElementById('rollback-notes-input')?.value || ''
+    };
+    if (action === 'rollback') {
+        data.release_name = data.release_name || `Rollback to ${data.rollback_version}`;
+        data.release_at = data.release_at || new Date().toLocaleString();
+    }
+    return data;
+}
+
+function updateReleaseStatus(release = {}) {
+    const pill = document.querySelector('#section-app-release .panel-pill');
+    if (!pill) return;
+    const live = Boolean(release.published && release.release_version);
+    pill.classList.toggle('success', live);
+    pill.classList.toggle('muted', !live);
+    pill.textContent = live ? `Live: ${release.release_version}` : 'Paused';
+}
+
+window.saveAppRelease = async (action, button) => {
+    const original = button?.innerHTML;
+    try {
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+        const res = await fetch('/admin/app-release', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(appReleasePayload(action))
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not update app release');
+        syncReleaseToMaintenanceCard(data.release);
+        updateReleaseStatus(data.release);
+        const label = action === 'publish' ? 'App rollout published' : action === 'pause' ? 'App rollout paused' : action === 'rollback' ? 'Rollback rollout published' : 'Release draft saved';
+        showToast(label, 'success');
+    } catch (error) {
+        showToast(error.message || 'Could not update app release', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = original;
+        }
+    }
+};
 
 function parseSiteArray(textarea) {
     try {
