@@ -2959,6 +2959,9 @@ function initCollapseEditor() {
         if (!arenaMain || !editorPanel) return;
         arenaMain.classList.toggle('editor-collapsed');
         editorPanel.classList.toggle('collapsed', arenaMain.classList.contains('editor-collapsed'));
+        if (CHALLENGE_TYPE === 'website_arena' && !arenaMain.classList.contains('editor-collapsed')) {
+            arenaRoot?.classList.add('website-tools-open');
+        }
         syncCollapseLabels();
         queueArenaLayoutSync();
     }
@@ -2977,8 +2980,11 @@ function initCollapseEditor() {
     }
 
     function toggleWebsiteTools() {
-        if (!arenaRoot) return;
-        arenaRoot.classList.toggle('website-tools-open');
+        if (!arenaRoot || !arenaMain || !editorPanel) return;
+        const opening = !arenaRoot.classList.contains('website-tools-open') || arenaMain.classList.contains('editor-collapsed');
+        arenaRoot.classList.toggle('website-tools-open', opening);
+        arenaMain.classList.toggle('editor-collapsed', !opening);
+        editorPanel.classList.toggle('collapsed', !opening);
         syncCollapseLabels();
         queueArenaLayoutSync();
     }
@@ -3015,10 +3021,12 @@ function initCollapseEditor() {
     window.addEventListener('resize', () => queueArenaLayoutSync(120));
     initArenaResizers(arenaMain);
     if (USER_ROLE !== 'spectator' && CHALLENGE_TYPE === 'website_arena') {
-        arenaRoot?.classList.remove('chat-open');
+        arenaRoot?.classList.add('chat-open');
         arenaRoot?.classList.remove('website-tools-open');
-        arenaMain?.classList.add('sidebar-collapsed');
-        sidebar?.classList.add('collapsed');
+        arenaMain?.classList.add('editor-collapsed');
+        arenaMain?.classList.remove('sidebar-collapsed');
+        editorPanel?.classList.add('collapsed');
+        sidebar?.classList.remove('collapsed');
     } else if (USER_ROLE !== 'spectator') {
         arenaRoot?.classList.add('chat-open');
         arenaMain?.classList.remove('sidebar-collapsed');
