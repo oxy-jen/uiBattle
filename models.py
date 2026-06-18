@@ -348,6 +348,13 @@ class AwardCard(db.Model):
     user = db.relationship('User', foreign_keys=[user_id], backref='award_cards')
     admin = db.relationship('User', foreign_keys=[awarded_by])
 
+class AppSetting(db.Model):
+    __tablename__ = 'app_settings'
+
+    key = db.Column(db.String(80), primary_key=True)
+    value = db.Column(db.Text, nullable=False, default='{}')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class Submission(db.Model):
     __tablename__ = 'submissions'
     

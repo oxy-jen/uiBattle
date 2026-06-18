@@ -1741,6 +1741,12 @@
                         <label>Message <textarea data-field="message" rows="5">{{ notice.get('message', '') }}</textarea></label>
                         <label>Maintenance date/time <input data-field="maintenance_at" value="{{ notice.get('maintenance_at', '') }}"></label>
                         <label>Update release date/time <input data-field="release_at" value="{{ notice.get('release_at', '') }}"></label>
+                        <label class="checkbox-label"><input data-field="release_enabled" type="checkbox" {% if notice.get('release_enabled') %}checked{% endif %}> Publish app update prompt</label>
+                        <label>App version <input data-field="release_version" placeholder="Beta version 8" value="{{ notice.get('release_version', '') }}"></label>
+                        <label>Release name <input data-field="release_name" placeholder="Beta version 8" value="{{ notice.get('release_name', '') }}"></label>
+                        <label>Release description <textarea data-field="release_description" rows="4" placeholder="Short summary of what users should expect.">{{ notice.get('release_description', '') }}</textarea></label>
+                        <label>Release notes <textarea data-field="release_notes" rows="6" placeholder="One update per line.">{{ notice.get('release_notes', '') }}</textarea></label>
+                        <label>Backup warning <textarea data-field="backup_warning" rows="4">{{ notice.get('backup_warning', 'Before updating, back up anything important: export admin data, save active match work, and download files you need.') }}</textarea></label>
                         <label class="checkbox-label"><input data-field="email_users" type="checkbox"> Email users on save</label>
                     </div>
                 </div>

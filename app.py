@@ -37,7 +37,10 @@ except ImportError:
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+database_url = (os.environ.get('DATABASE_URL') or '').strip()
+if database_url.startswith('postgres://'):
+    database_url = 'postgresql://' + database_url[len('postgres://'):]
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
@@ -70,7 +73,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 from models import (
     db, User, Challenge, Room, Submission, ChatMessage,
     Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard, RoomAccess,
-    Competition, CompetitionWave, CompetitionAdminAssignment, AdminTask, DisputeCase
+    Competition, CompetitionWave, CompetitionAdminAssignment, AdminTask, DisputeCase, AppSetting
 )
 from moderation_terms import (
     BAD_LANGUAGE_TERMS,
@@ -109,6 +112,8 @@ room_typing_expiry = {}
 RATE_LIMITS = {}
 PROFILE_STORE = os.path.join(app.root_path, 'profile_store.json')
 LEADERBOARD_STREAK_TARGET = 5
+LEADERBOARD_API_CACHE_TTL = 30
+leaderboard_api_cache = {'expires_at': 0, 'payload': None}
 schema_upgrades_ready = False
 CARD_TEMPLATES = [
     {'id': 'champion', 'name': 'Champion Crest', 'icon': 'fa-trophy', 'layout': 'classic', 'shape': 'rounded', 'primary': '#f59e0b', 'secondary': '#111827'},
@@ -949,6 +954,9 @@ def ensure_schema_upgrades():
     if schema_upgrades_ready:
         return
     db.create_all()
+    if db.engine.dialect.name != 'sqlite':
+        schema_upgrades_ready = True
+        return
     user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(users)")).fetchall()}
     user_additions = {
         'email': 'ALTER TABLE users ADD COLUMN email VARCHAR(255)',
@@ -2581,6 +2589,15 @@ def profile_payload(user):
 
 def load_profile_store():
     try:
+        setting = db.session.get(AppSetting, 'profile_store')
+        if setting and setting.value:
+            return json.loads(setting.value)
+    except (RuntimeError, SQLAlchemyError, json.JSONDecodeError):
+        try:
+            db.session.rollback()
+        except RuntimeError:
+            pass
+    try:
         if os.path.exists(PROFILE_STORE):
             with open(PROFILE_STORE, 'r', encoding='utf-8') as handle:
                 return json.load(handle)
@@ -2589,8 +2606,34 @@ def load_profile_store():
     return {}
 
 def save_profile_store(profiles):
+    try:
+        setting = db.session.get(AppSetting, 'profile_store')
+        if not setting:
+            setting = AppSetting(key='profile_store')
+            db.session.add(setting)
+        setting.value = json.dumps(profiles)
+        db.session.commit()
+        return
+    except (RuntimeError, SQLAlchemyError):
+        try:
+            db.session.rollback()
+        except RuntimeError:
+            pass
     with open(PROFILE_STORE, 'w', encoding='utf-8') as handle:
         json.dump(profiles, handle, indent=2)
+
+
+def migrate_profile_store_file_to_db():
+    if db.session.get(AppSetting, 'profile_store') or not os.path.exists(PROFILE_STORE):
+        return
+    try:
+        with open(PROFILE_STORE, 'r', encoding='utf-8') as handle:
+            profiles = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return
+    setting = AppSetting(key='profile_store', value=json.dumps(profiles))
+    db.session.add(setting)
+    db.session.commit()
 
 def get_certificate_template_settings():
     profiles = load_profile_store()
@@ -2920,6 +2963,12 @@ DEFAULT_SITE_CONTENT = {
         'message': 'UI Battle Arena may be paused for updates, score improvements, content changes, or database maintenance. Save any work you need before the maintenance window and return after the release time.',
         'maintenance_at': '',
         'release_at': '',
+        'release_enabled': False,
+        'release_version': '',
+        'release_name': '',
+        'release_description': '',
+        'release_notes': '',
+        'backup_warning': 'Before updating, back up anything important: export admin data, save active match work, and download files you need.',
         'email_users': False
     }
 }
@@ -3205,6 +3254,12 @@ def normalize_site_content_payload(data):
         'message': str(notice.get('message') or '')[:1500],
         'maintenance_at': str(notice.get('maintenance_at') or '')[:80],
         'release_at': str(notice.get('release_at') or '')[:80],
+        'release_enabled': bool(notice.get('release_enabled')),
+        'release_version': str(notice.get('release_version') or '')[:80],
+        'release_name': str(notice.get('release_name') or '')[:140],
+        'release_description': str(notice.get('release_description') or '')[:1200],
+        'release_notes': str(notice.get('release_notes') or '')[:3000],
+        'backup_warning': str(notice.get('backup_warning') or DEFAULT_SITE_CONTENT['maintenance_notice']['backup_warning'])[:1000],
         'email_users': bool(notice.get('email_users'))
     }
     return current
@@ -4044,7 +4099,35 @@ def robots_txt():
     return app.response_class('\n'.join(lines), mimetype='text/plain')
 
 
-def pwa_changelog():
+def current_release_notice():
+    notice = get_site_content().get('maintenance_notice', {})
+    if not isinstance(notice, dict):
+        notice = {}
+    release_version = str(notice.get('release_version') or '').strip()
+    release_name = str(notice.get('release_name') or '').strip()
+    return {
+        'published': bool(notice.get('release_enabled')),
+        'version': release_version or app.config['APP_VERSION'],
+        'name': release_name or f"UI Battle Arena {release_version or app.config['APP_VERSION']}",
+        'description': str(notice.get('release_description') or '').strip(),
+        'notes': str(notice.get('release_notes') or '').strip(),
+        'backup_warning': str(notice.get('backup_warning') or DEFAULT_SITE_CONTENT['maintenance_notice']['backup_warning']).strip(),
+        'released_at': str(notice.get('release_at') or os.environ.get('APP_RELEASED_AT', '2026-06-17')).strip()
+    }
+
+
+def pwa_changelog(release=None):
+    release = release or current_release_notice()
+    if release.get('published') and (release.get('notes') or release.get('description')):
+        items = []
+        if release.get('description'):
+            items.append(release['description'])
+        items.extend([
+            line.strip()
+            for line in str(release.get('notes') or '').splitlines()
+            if line.strip()
+        ])
+        return [{'type': release.get('name') or 'Release notes', 'items': items[:12]}]
     return [
         {
             'type': 'New features',
@@ -4133,13 +4216,19 @@ def pwa_manifest():
 
 @app.route('/pwa/version.json')
 def pwa_version():
+    release = current_release_notice()
+    version = release['version'] if release.get('published') else app.config['APP_VERSION']
     response = jsonify({
-        'version': app.config['APP_VERSION'],
-        'released_at': os.environ.get('APP_RELEASED_AT', '2026-06-17'),
+        'version': version,
+        'release_name': release['name'],
+        'release_description': release['description'],
+        'backup_warning': release['backup_warning'],
+        'published': bool(release.get('published')),
+        'released_at': release['released_at'],
         'rollout_percent': app.config['PWA_ROLLOUT_PERCENT'],
         'minimum_supported_version': os.environ.get('PWA_MIN_SUPPORTED_VERSION', ''),
         'update_check_interval_ms': 15 * 60 * 1000,
-        'changelog': pwa_changelog()
+        'changelog': pwa_changelog(release)
     })
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
@@ -4147,7 +4236,8 @@ def pwa_version():
 
 @app.route('/pwa/health')
 def pwa_health():
-    response = jsonify({'ok': True, 'version': app.config['APP_VERSION']})
+    release = current_release_notice()
+    response = jsonify({'ok': True, 'version': release['version'] if release.get('published') else app.config['APP_VERSION']})
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
 
@@ -4359,7 +4449,12 @@ def admin_site_content():
             'title': notice.get('title') or 'Scheduled maintenance',
             'message': notice.get('message') or '',
             'maintenance_at': notice.get('maintenance_at') or '',
-            'release_at': notice.get('release_at') or ''
+            'release_at': notice.get('release_at') or '',
+            'release_enabled': bool(notice.get('release_enabled')),
+            'release_version': notice.get('release_version') or '',
+            'release_name': notice.get('release_name') or '',
+            'release_description': notice.get('release_description') or '',
+            'backup_warning': notice.get('backup_warning') or DEFAULT_SITE_CONTENT['maintenance_notice']['backup_warning']
         }
         socketio.emit('maintenance_notice', payload)
         if notice.get('email_users') and email_configured():
@@ -4371,7 +4466,9 @@ def admin_site_content():
                     f"{payload['message']}\n\n"
                     f"Maintenance: {payload['maintenance_at'] or 'To be announced'}\n"
                     f"Update release: {payload['release_at'] or 'To be announced'}\n\n"
-                    "Please download any assets you need before the maintenance window."
+                    f"Release: {payload['release_name'] or payload['release_version'] or 'To be announced'}\n"
+                    f"What to expect: {payload['release_description'] or 'Release notes will be shown in the app.'}\n\n"
+                    f"Back up first: {payload['backup_warning']}"
                 ),
                 only_verified=False
             )
@@ -6455,8 +6552,12 @@ def leaderboard():
 
 @app.route('/api/leaderboard')
 def leaderboard_api():
+    now = time.time()
+    if leaderboard_api_cache['payload'] is not None and leaderboard_api_cache['expires_at'] > now:
+        return jsonify(leaderboard_api_cache['payload'])
+
     rows = build_leaderboard_rows()
-    return jsonify([
+    payload = [
         {
             'rank': index + 1,
             'id': row['user'].id,
@@ -6478,7 +6579,10 @@ def leaderboard_api():
             'award_color': row['user'].leaderboard_award_color
         }
         for index, row in enumerate(rows)
-    ])
+    ]
+    leaderboard_api_cache['payload'] = payload
+    leaderboard_api_cache['expires_at'] = now + LEADERBOARD_API_CACHE_TTL
+    return jsonify(payload)
 
 @app.route('/profile/<int:user_id>')
 @login_required
@@ -7667,6 +7771,7 @@ def initialize_runtime_database(create_dev_admin=False):
     with app.app_context():
         db.create_all()
         ensure_schema_upgrades()
+        migrate_profile_store_file_to_db()
         refresh_builtin_site_content()
 
         admin = User.query.filter_by(role='admin').first()

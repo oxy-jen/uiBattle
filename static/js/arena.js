@@ -2497,6 +2497,7 @@ function initCollapseEditor() {
     function syncCollapseLabels() {
         const editorCollapsed = arenaMain?.classList.contains('editor-collapsed');
         const sidebarCollapsed = arenaMain?.classList.contains('sidebar-collapsed');
+        const websiteToolsOpen = arenaRoot?.classList.contains('website-tools-open');
 
         if (collapseBtn) {
             collapseBtn.innerHTML = editorCollapsed ? '<i class="fas fa-chevron-right"></i>' : '<i class="fas fa-chevron-left"></i>';
@@ -2506,7 +2507,13 @@ function initCollapseEditor() {
             collapseBtnBottom.innerHTML = editorCollapsed ? '<i class="fas fa-chevron-right"></i> Expand Editor' : '<i class="fas fa-chevron-left"></i> Collapse Editor';
         }
         if (sidebarBtn) {
-            sidebarBtn.innerHTML = sidebarCollapsed ? '<i class="fas fa-chevron-left"></i> Show Sidebar' : '<i class="fas fa-chevron-right"></i> Hide Sidebar';
+            if (CHALLENGE_TYPE === 'website_arena') {
+                sidebarBtn.innerHTML = websiteToolsOpen ? '<i class="fas fa-columns"></i> Hide Tools' : '<i class="fas fa-columns"></i> Tools';
+                sidebarBtn.classList.toggle('active', Boolean(websiteToolsOpen));
+                sidebarBtn.setAttribute('aria-expanded', websiteToolsOpen ? 'true' : 'false');
+            } else {
+                sidebarBtn.innerHTML = sidebarCollapsed ? '<i class="fas fa-chevron-left"></i> Show Sidebar' : '<i class="fas fa-chevron-right"></i> Hide Sidebar';
+            }
         }
         const chatOpen = arenaRoot?.classList.contains('chat-open');
         [chatBtn, chatBtnNav].forEach((btn) => {
@@ -2537,6 +2544,13 @@ function initCollapseEditor() {
         queueArenaLayoutSync();
     }
 
+    function toggleWebsiteTools() {
+        if (!arenaRoot) return;
+        arenaRoot.classList.toggle('website-tools-open');
+        syncCollapseLabels();
+        queueArenaLayoutSync();
+    }
+
     function toggleChat(forceOpen = null) {
         if (!arenaRoot || !sidebar) return;
         const shouldOpen = forceOpen === null ? !arenaRoot.classList.contains('chat-open') : Boolean(forceOpen);
@@ -2558,7 +2572,7 @@ function initCollapseEditor() {
 
     if (collapseBtn) collapseBtn.addEventListener('click', toggleEditor);
     if (collapseBtnBottom) collapseBtnBottom.addEventListener('click', toggleEditor);
-    if (sidebarBtn) sidebarBtn.addEventListener('click', toggleSidebar);
+    if (sidebarBtn) sidebarBtn.addEventListener('click', CHALLENGE_TYPE === 'website_arena' ? toggleWebsiteTools : toggleSidebar);
     if (chatBtn) chatBtn.addEventListener('click', () => toggleChat());
     if (chatBtnNav) chatBtnNav.addEventListener('click', () => toggleChat());
     if (closeChatBtn) closeChatBtn.addEventListener('click', () => toggleChat(false));
@@ -2570,6 +2584,7 @@ function initCollapseEditor() {
     initArenaResizers(arenaMain);
     if (USER_ROLE !== 'spectator' && CHALLENGE_TYPE === 'website_arena') {
         arenaRoot?.classList.remove('chat-open');
+        arenaRoot?.classList.remove('website-tools-open');
         arenaMain?.classList.add('sidebar-collapsed');
         sidebar?.classList.add('collapsed');
     } else if (USER_ROLE !== 'spectator') {
@@ -2968,7 +2983,7 @@ function initPanelSizing() {
     const buttons = document.querySelectorAll('.panel-size-btn[data-panel-size]');
     const cameraPanel = centerPanel.querySelector('.cam-panel');
     const cameraCompactBtn = getElement('toggle-camera-compact');
-    const focusClasses = ['expand-output', 'expand-target', 'expand-diff'];
+    const focusClasses = ['expand-output', 'expand-target', 'expand-diff', 'expand-camera'];
     const websiteSizingEnabled = CHALLENGE_TYPE === 'website_arena';
 
     function refreshVisibleSurfaces() {
@@ -3148,6 +3163,76 @@ function initPanelSizing() {
     }
 
     syncCameraButton();
+}
+
+function initWebsiteArenaDock() {
+    if (CHALLENGE_TYPE !== 'website_arena') return;
+    const root = document.querySelector('.website-tool-arena');
+    const centerPanel = document.querySelector('.website-preview-station');
+    if (!root || !centerPanel) return;
+
+    const dockButtons = {
+        output: getElement('website-show-output-btn'),
+        target: getElement('website-show-target-btn'),
+        diff: getElement('website-toggle-diff-btn'),
+        camera: getElement('website-toggle-camera-btn')
+    };
+    const fullscreenBtn = getElement('website-fullscreen-btn');
+
+    function refreshDockState() {
+        dockButtons.diff?.classList.toggle('active', root.classList.contains('website-diff-open'));
+        dockButtons.camera?.classList.toggle('active', root.classList.contains('website-camera-open'));
+    }
+
+    function openSecondary(name) {
+        if (name === 'diff') root.classList.add('website-diff-open');
+        if (name === 'camera') {
+            root.classList.add('website-camera-open');
+            centerPanel.classList.remove('camera-compact');
+        }
+        refreshDockState();
+        setTimeout(() => {
+            document.querySelector(`.${name === 'camera' ? 'cam' : name}-panel`)?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+            if (typeof scheduleLiveDiffCheck === 'function') scheduleLiveDiffCheck(120);
+        }, 80);
+    }
+
+    function focusPanel(name) {
+        openSecondary(name);
+        const selector = name === 'camera' ? '.cam-panel' : `.${name}-panel`;
+        const panel = centerPanel.querySelector(selector);
+        const button = panel?.querySelector('.panel-size-btn[data-panel-size]');
+        button?.click();
+    }
+
+    dockButtons.output?.addEventListener('click', () => focusPanel('output'));
+    dockButtons.target?.addEventListener('click', () => focusPanel('target'));
+    dockButtons.diff?.addEventListener('click', () => {
+        const isOpen = root.classList.toggle('website-diff-open');
+        refreshDockState();
+        if (isOpen && typeof scheduleLiveDiffCheck === 'function') scheduleLiveDiffCheck(120);
+    });
+    dockButtons.camera?.addEventListener('click', () => {
+        const isOpen = root.classList.toggle('website-camera-open');
+        if (!isOpen) centerPanel.classList.add('camera-compact');
+        else centerPanel.classList.remove('camera-compact');
+        refreshDockState();
+    });
+    fullscreenBtn?.addEventListener('click', async () => {
+        try {
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+            } else {
+                await root.requestFullscreen();
+            }
+        } catch (error) {
+            showToast('Fullscreen is not available in this browser.', 'warning');
+        }
+    });
+
+    root.classList.remove('website-diff-open', 'website-camera-open');
+    centerPanel.classList.add('camera-compact');
+    refreshDockState();
 }
 
 function initSpectatorMode() {
@@ -3348,6 +3433,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSidebarTabs();
     initCenterPanelResizers();
     initPanelSizing();
+    initWebsiteArenaDock();
     initSurfaceZoom();
     initLiveScoringObservers();
     initSpectatorMode();

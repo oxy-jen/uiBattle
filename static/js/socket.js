@@ -1,12 +1,10 @@
 ﻿// Socket.IO connection - Force HTTP long-polling only (more reliable for local dev)
 const socket = io({
-    transports: ['polling'],  // Force polling only, no websocket
     reconnection: true,
     reconnectionAttempts: 10,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     timeout: 20000,
-    upgrade: false  // Don't try to upgrade to websocket
 });
 window.socket = socket;
 
@@ -597,7 +595,9 @@ socket.on('system_announcement', (data) => {
 socket.on('maintenance_notice', (data) => {
     const when = data?.maintenance_at ? ` Maintenance: ${data.maintenance_at}.` : '';
     const release = data?.release_at ? ` Release: ${data.release_at}.` : '';
-    showToast(`${data?.title || 'Scheduled maintenance'}: ${data?.message || ''}${when}${release}`, 'warning');
+    const releaseName = data?.release_name || data?.release_version;
+    const releaseText = releaseName ? ` Update: ${releaseName}.` : '';
+    showToast(`${data?.title || 'Scheduled maintenance'}: ${data?.message || ''}${when}${release}${releaseText}`, 'warning');
 });
 
 const voiceBroadcastQueue = [];

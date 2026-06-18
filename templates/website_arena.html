@@ -43,25 +43,44 @@
     <input type="hidden" id="p1-username-data" value="{{ player1_username or '' }}">
     <input type="hidden" id="p2-username-data" value="{{ player2_username or '' }}">
 
-    <header class="website-tool-header">
-        <section class="website-player-card">
-            <span class="website-player-label">PLAYER 1</span>
-            <strong id="p1-username">{{ player1_username or 'Waiting...' }}</strong>
-            <div class="website-player-meter"><span id="p1-progress-fill" style="width:{{ p1_accuracy|default(0) }}%"></span></div>
-            <small><span id="p1-accuracy-label">{{ "%.1f"|format(p1_accuracy|default(0)) }}%</span> <span id="p1-status">Online</span></small>
+    <header class="website-tool-header website-app-header">
+        <section class="website-app-brand">
+            <strong><i class="fas fa-shield-halved"></i> UiBattleArena</strong>
+            <span>Website Arena <i class="fas fa-chevron-right"></i> {{ challenge.title }}</span>
         </section>
 
-        <section class="website-clock-card">
-            <span>{{ challenge.title }}</span>
-            <strong id="timer-display">00:00</strong>
-            <em id="room-status">{{ room.status|upper }}</em>
+        <section class="website-app-metrics">
+            <div class="website-clock-card website-app-timer">
+                <span>Time Left</span>
+                <strong id="timer-display">00:00</strong>
+                <em id="room-status">{{ room.status|upper }}</em>
+            </div>
+            <div class="website-app-stat">
+                <span>Rank</span>
+                <strong>#--</strong>
+            </div>
+            <div class="website-app-stat website-app-stat-wide">
+                <span>Similarity</span>
+                <strong id="p1-accuracy-label">{{ "%.1f"|format(p1_accuracy|default(0)) }}%</strong>
+                <div class="website-player-meter"><span id="p1-progress-fill" style="width:{{ p1_accuracy|default(0) }}%"></span></div>
+            </div>
+            <div class="website-app-stat website-app-stat-wide">
+                <span>UI Score</span>
+                <strong id="p2-accuracy-label">{{ "%.1f"|format(p2_accuracy|default(0)) }}%</strong>
+                <div class="website-player-meter"><span id="p2-progress-fill" style="width:{{ p2_accuracy|default(0) }}%"></span></div>
+            </div>
+            <div class="website-app-stat website-app-stat-wide">
+                <span>Requirements</span>
+                <strong>100%</strong>
+                <div class="website-player-meter"><span style="width:100%"></span></div>
+            </div>
         </section>
 
-        <section class="website-player-card website-player-card-right">
-            <span class="website-player-label">PLAYER 2</span>
-            <strong id="p2-username">{{ player2_username or 'Waiting...' }}</strong>
-            <div class="website-player-meter"><span id="p2-progress-fill" style="width:{{ p2_accuracy|default(0) }}%"></span></div>
-            <small><span id="p2-status">Online</span> <span id="p2-accuracy-label">{{ "%.1f"|format(p2_accuracy|default(0)) }}%</span></small>
+        <section class="website-app-actions">
+            <span class="website-player-compact"><b id="p1-username">{{ player1_username or 'Waiting...' }}</b> <small id="p1-status">Online</small></span>
+            <span class="website-player-compact"><b id="p2-username">{{ player2_username or 'Waiting...' }}</b> <small id="p2-status">Online</small></span>
+            <button type="button" id="website-fullscreen-btn" class="action-btn-secondary"><i class="fas fa-expand"></i> Fullscreen</button>
+            <a href="{{ url_for('dashboard') }}" class="action-btn-danger website-exit-link"><i class="fas fa-door-open"></i> Exit Arena</a>
         </section>
     </header>
 
@@ -235,6 +254,7 @@
                         <span><i class="fas fa-video"></i> CAM / EXTRA</span>
                         <span class="rec-badge" id="rec-badge" style="display:none;"><span class="rec-dot"></span> REC</span>
                         <button type="button" class="camera-compact-btn" id="toggle-camera-compact" title="Minimize camera" aria-label="Minimize camera"><i class="fas fa-circle-dot"></i></button>
+                        <button type="button" class="panel-size-btn" data-panel-size="camera" title="Focus camera view" aria-label="Focus camera view"><i class="fas fa-up-right-and-down-left-from-center"></i></button>
                     </header>
                     <div class="cam-container">
                         <video id="cam-feed" autoplay muted playsinline></video>
@@ -363,6 +383,10 @@
         <button id="collapse-editor-btn-bottom" class="action-btn-secondary"><i class="fas fa-chevron-left"></i> Editor</button>
         <button id="toggle-sidebar-btn" class="action-btn-secondary"><i class="fas fa-columns"></i> Tools</button>
         <button id="toggle-chat-btn" class="action-btn-secondary"><i class="fas fa-comment-dots"></i> Chat</button>
+        <button id="website-show-output-btn" class="action-btn-secondary"><i class="fas fa-desktop"></i> Output</button>
+        <button id="website-show-target-btn" class="action-btn-secondary"><i class="fas fa-bullseye"></i> Target</button>
+        <button id="website-toggle-diff-btn" class="action-btn-secondary"><i class="fas fa-chart-line"></i> Difference</button>
+        <button id="website-toggle-camera-btn" class="action-btn-secondary"><i class="fas fa-video"></i> Camera</button>
         <button id="collapse-all-panels-btn" class="action-btn-secondary"><i class="fas fa-compress-alt"></i> Collapse</button>
         <button id="expand-all-panels-btn" class="action-btn-secondary"><i class="fas fa-expand-alt"></i> Expand</button>
         <button id="submit-btn" class="action-btn-primary" disabled><i class="fas fa-check-circle"></i> SUBMIT & CHECK</button>

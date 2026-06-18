@@ -116,11 +116,9 @@ function initRoomInviteNotifications() {
     if (!window.CURRENT_PROFILE || !window.io || window.roomInviteSocket) return;
     try {
         window.roomInviteSocket = window.io({
-            transports: ['polling'],
             reconnection: true,
             reconnectionAttempts: 5,
-            timeout: 20000,
-            upgrade: false
+            timeout: 20000
         });
         window.roomInviteSocket.on('room_invite', (data) => {
             const title = data.challenge_title || 'New match invite';
@@ -136,7 +134,9 @@ function initRoomInviteNotifications() {
         window.roomInviteSocket.on('maintenance_notice', (data) => {
             const when = data?.maintenance_at ? ` Maintenance: ${data.maintenance_at}.` : '';
             const release = data?.release_at ? ` Release: ${data.release_at}.` : '';
-            showToast(`${data?.title || 'Scheduled maintenance'}: ${data?.message || ''}${when}${release}`, 'warning');
+            const releaseName = data?.release_name || data?.release_version;
+            const releaseText = releaseName ? ` Update: ${releaseName}.` : '';
+            showToast(`${data?.title || 'Scheduled maintenance'}: ${data?.message || ''}${when}${release}${releaseText}`, 'warning');
         });
     } catch (e) {}
 }

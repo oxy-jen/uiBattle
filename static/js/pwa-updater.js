@@ -235,17 +235,21 @@
     function showUpdatePanel(release) {
         latestRelease = release;
         const panel = ensurePanel();
+        const releaseTitle = release.release_name || release.version || '';
+        const releaseDescription = release.release_description || 'A new version is ready. The app has been improved and can refresh when you choose.';
+        const backupWarning = release.backup_warning || 'Before updating, back up anything important and save active work.';
         panel.innerHTML = `
             <div class="pwa-update-head">
                 <div>
                     <span class="pwa-update-kicker">Update available</span>
-                    <h3>UI Battle Arena ${escapeText(release.version || '')}</h3>
+                    <h3>${escapeText(releaseTitle)}</h3>
                 </div>
                 <button class="pwa-update-close" type="button" aria-label="Dismiss update for now">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <p class="pwa-update-copy">A new version is ready. The app has been improved and can refresh safely when you choose.</p>
+            <p class="pwa-update-copy">${escapeText(releaseDescription)}</p>
+            <p class="pwa-update-copy"><strong>Back up first:</strong> ${escapeText(backupWarning)}</p>
             <div class="pwa-update-changelog" aria-label="What's new">
                 <strong>What's new</strong>
                 ${changelogHtml(release.changelog)}
@@ -354,6 +358,8 @@
 
     async function activateUpdate() {
         if (!latestRelease?.version) return;
+        const backupWarning = latestRelease.backup_warning || 'Before updating, back up anything important and save active work.';
+        if (!window.confirm(`Update to ${latestRelease.release_name || latestRelease.version}?\n\n${backupWarning}`)) return;
         storageSet(PENDING_VERSION_KEY, latestRelease.version);
         storageRemove(LATER_VERSION_KEY);
         storageRemove(LATER_AT_KEY);

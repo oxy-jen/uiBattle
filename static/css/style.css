@@ -7225,6 +7225,585 @@ body.website-panel-fullscreen {
     color: var(--text-primary);
 }
 
+/* Website arena app workspace */
+.website-tool-arena.website-arena-mode:not(.spectator-mode) {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+    grid-template-rows: 58px minmax(0, 1fr) 64px;
+    background:
+        radial-gradient(circle at top left, rgba(124, 58, 237, 0.22), transparent 34%),
+        linear-gradient(180deg, #060914 0%, #0b1120 100%);
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-header {
+    grid-template-columns: minmax(230px, 0.85fr) minmax(420px, 1.5fr) minmax(250px, 0.95fr);
+    gap: 8px;
+    padding: 8px 10px;
+    min-height: 0;
+    background: rgba(6, 9, 20, 0.96);
+}
+
+.website-app-brand,
+.website-app-metrics,
+.website-app-actions {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+}
+
+.website-app-brand {
+    gap: 18px;
+    color: #e5e7eb;
+}
+
+.website-app-brand strong {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 20px;
+    letter-spacing: 0;
+}
+
+.website-app-brand strong i {
+    color: #a78bfa;
+}
+
+.website-app-brand span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #cbd5e1;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.website-app-metrics {
+    justify-content: center;
+    gap: 8px;
+}
+
+.website-app-stat,
+.website-app-timer {
+    min-width: 74px;
+    min-height: 42px;
+    display: grid;
+    align-content: center;
+    gap: 2px;
+    padding: 6px 10px;
+    border: 1px solid rgba(99, 102, 241, 0.28);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.8);
+}
+
+.website-app-stat-wide {
+    min-width: 124px;
+}
+
+.website-app-stat span,
+.website-app-timer span {
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.website-app-stat strong,
+.website-app-timer strong {
+    color: #f8fafc;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.website-app-stat-wide strong {
+    color: #4ade80;
+}
+
+.website-app-actions {
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.website-player-compact {
+    max-width: 108px;
+    display: inline-grid;
+    gap: 1px;
+    color: #e5e7eb;
+    font-size: 11px;
+}
+
+.website-player-compact b,
+.website-player-compact small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.website-player-compact small {
+    color: #38bdf8;
+}
+
+.website-exit-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 40px;
+    padding: 0 14px;
+    text-decoration: none;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-player-card,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-clock-card {
+    min-height: 0;
+    padding: 7px 10px;
+    border-radius: 8px;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-clock-card {
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    text-align: left;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-clock-card strong {
+    font-size: clamp(18px, 2.2vw, 26px);
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-clock-card span,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-clock-card em,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-player-card small {
+    font-size: 11px;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main.sidebar-collapsed,
+.website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .website-tool-main {
+    --editor-width: clamp(420px, 44vw, 640px);
+    --sidebar-width: clamp(300px, 24vw, 420px);
+    grid-template-columns: minmax(400px, var(--editor-width)) minmax(460px, 1fr) 0;
+    grid-template-areas: "editor center sidebar";
+    gap: 8px;
+    padding: 8px;
+    min-height: 0;
+    overflow: hidden;
+    background: transparent;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .website-tool-main {
+    grid-template-columns: minmax(380px, 36vw) minmax(460px, 1fr) minmax(300px, var(--sidebar-width));
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-tool-main,
+.website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-tool-main.sidebar-collapsed {
+    grid-template-columns: 46px minmax(380px, var(--editor-width)) minmax(440px, 1fr) 0;
+    grid-template-areas: "rail editor center sidebar";
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open.chat-open .website-tool-main {
+    grid-template-columns: 46px minmax(360px, 34vw) minmax(440px, 1fr) minmax(300px, var(--sidebar-width));
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-file-rail,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-code-workbench,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-preview-station,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .right-sidebar {
+    border: 1px solid rgba(99, 102, 241, 0.28);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.88);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-file-rail {
+    display: none;
+    padding: 8px 5px;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-file-rail {
+    display: flex;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-code-workbench {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-arena-sidebar {
+    display: none;
+    max-height: 164px;
+    overflow: auto;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-arena-sidebar {
+    display: block;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .editor-tabs,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-toolbar,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .editor-statusbar {
+    flex: 0 0 auto;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .editor-container {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-preview-station {
+    padding: 8px;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "output target";
+    overflow: hidden;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-preview-station .panel-row {
+    display: contents;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .output-panel {
+    grid-area: output;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .target-panel {
+    grid-area: target;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .diff-panel {
+    grid-area: diff;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .cam-panel {
+    grid-area: camera;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode):not(.website-diff-open) .diff-panel,
+.website-tool-arena.website-arena-mode:not(.spectator-mode):not(.website-camera-open) .cam-panel {
+    display: none;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode).website-diff-open .website-preview-station {
+    grid-template-rows: minmax(0, 1fr) minmax(180px, 36vh);
+    grid-template-areas:
+        "output target"
+        "diff diff";
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode).website-camera-open .website-preview-station {
+    grid-template-rows: minmax(0, 1fr) minmax(160px, 30vh);
+    grid-template-areas:
+        "output target"
+        "camera camera";
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode).website-diff-open.website-camera-open .website-preview-station {
+    grid-template-rows: minmax(0, 1fr) minmax(180px, 34vh);
+    grid-template-areas:
+        "output target"
+        "diff camera";
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .panel {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .surface-zoom-viewport,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .diff-canvas,
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .slider-diff-container {
+    min-height: 0;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 0;
+    padding: 8px 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: rgba(6, 9, 20, 0.98);
+    scrollbar-width: thin;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-actions button {
+    flex: 0 0 auto;
+    min-height: 40px;
+    max-width: 190px;
+}
+
+.website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-actions .active {
+    border-color: rgba(56, 189, 248, 0.7);
+    color: #e0f2fe;
+    background: rgba(14, 116, 144, 0.28);
+}
+
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half.expand-output,
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half.expand-target,
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half.expand-diff,
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half.expand-camera {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(50vh, 1fr) minmax(170px, 0.42fr);
+}
+
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half.expand-output {
+    grid-template-areas:
+        "output output"
+        "target diff";
+}
+
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half.expand-target {
+    grid-template-areas:
+        "target target"
+        "output diff";
+}
+
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half.expand-diff {
+    grid-template-areas:
+        "diff diff"
+        "output target";
+}
+
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half.expand-camera {
+    grid-template-areas:
+        "camera camera"
+        "output target";
+}
+
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-full.expand-camera {
+    grid-template-areas: "camera";
+}
+
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-full.expand-camera .cam-panel {
+    display: flex !important;
+    border-radius: 0;
+    min-height: 100vh;
+}
+
+.arena-root.website-arena-mode:not(.spectator-mode) .center-panel.website-focus-half .cam-panel {
+    display: flex;
+    position: relative;
+    inset: auto;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    border-radius: 8px;
+}
+
+@media (max-width: 980px) {
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) {
+        height: auto;
+        overflow: auto;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-header {
+        grid-template-columns: 1fr;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main.sidebar-collapsed,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .website-tool-main {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "editor"
+            "center";
+        overflow: visible;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-tool-main,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-tool-main.sidebar-collapsed,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open.chat-open .website-tool-main {
+        grid-template-columns: 44px minmax(0, 1fr);
+        grid-template-areas:
+            "rail editor"
+            "rail center";
+        overflow: visible;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-preview-station,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-diff-open .website-preview-station,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-camera-open .website-preview-station,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-diff-open.website-camera-open .website-preview-station {
+        min-height: 760px;
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(280px, 1fr) minmax(280px, 1fr) minmax(220px, auto) minmax(180px, auto);
+        grid-template-areas:
+            "output"
+            "target"
+            "diff"
+            "camera";
+    }
+}
+
+@media (max-width: 1366px) {
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) {
+        grid-template-rows: 54px minmax(0, 1fr) 58px;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-header {
+        grid-template-columns: minmax(190px, 0.72fr) minmax(340px, 1.34fr) minmax(180px, 0.72fr);
+        padding: 7px 8px;
+    }
+
+    .website-app-brand {
+        gap: 12px;
+    }
+
+    .website-app-brand strong {
+        font-size: 17px;
+    }
+
+    .website-app-brand span {
+        font-size: 12px;
+    }
+
+    .website-app-metrics {
+        gap: 6px;
+    }
+
+    .website-app-stat,
+    .website-app-timer {
+        min-width: 62px;
+        min-height: 38px;
+        padding: 5px 8px;
+    }
+
+    .website-app-stat-wide {
+        min-width: 88px;
+    }
+
+    .website-app-stat strong,
+    .website-app-timer strong {
+        font-size: 15px;
+    }
+
+    .website-player-compact {
+        display: none;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main.sidebar-collapsed,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .website-tool-main {
+        --editor-width: clamp(390px, 42vw, 560px);
+        grid-template-columns: minmax(380px, var(--editor-width)) minmax(390px, 1fr) 0;
+        gap: 6px;
+        padding: 6px;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .right-sidebar {
+        position: fixed;
+        top: 62px;
+        right: 8px;
+        bottom: 66px;
+        z-index: 90;
+        width: min(360px, calc(100vw - 24px));
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .website-tool-main {
+        grid-template-columns: minmax(380px, var(--editor-width)) minmax(390px, 1fr) 0;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-actions {
+        min-height: 58px;
+        padding: 7px 8px;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-actions button,
+    .website-exit-link {
+        min-height: 38px;
+        padding-inline: 11px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 1240px) {
+    .website-app-stat:nth-of-type(5),
+    .website-app-stat:nth-of-type(4) {
+        display: none;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main.sidebar-collapsed,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .website-tool-main {
+        --editor-width: clamp(360px, 42vw, 500px);
+        grid-template-columns: minmax(350px, var(--editor-width)) minmax(360px, 1fr) 0;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-tool-main,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-tool-main.sidebar-collapsed,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open.chat-open .website-tool-main {
+        grid-template-columns: 44px minmax(340px, var(--editor-width)) minmax(360px, 1fr) 0;
+    }
+}
+
+@media (max-width: 1120px) {
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-header {
+        grid-template-columns: minmax(180px, 0.8fr) minmax(300px, 1.2fr) auto;
+    }
+
+    .website-app-stat-wide {
+        min-width: 76px;
+    }
+
+    .website-app-stat-wide .website-player-meter,
+    .website-app-brand span {
+        display: none;
+    }
+
+    .website-app-actions .action-btn-secondary {
+        width: 40px;
+        padding-inline: 0;
+        font-size: 0;
+    }
+
+    .website-app-actions .action-btn-secondary i {
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 980px) {
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) {
+        height: auto;
+        min-height: 100dvh;
+        overflow: auto;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-header {
+        grid-template-columns: 1fr;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode) .website-tool-main.sidebar-collapsed,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .website-tool-main {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "editor"
+            "center";
+        overflow: visible;
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-tool-main,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open .website-tool-main.sidebar-collapsed,
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).website-tools-open.chat-open .website-tool-main {
+        grid-template-columns: 44px minmax(0, 1fr);
+        grid-template-areas:
+            "rail editor"
+            "rail center";
+    }
+
+    .website-tool-arena.website-arena-mode:not(.spectator-mode).chat-open .right-sidebar {
+        top: 8px;
+        right: 8px;
+        bottom: 74px;
+    }
+}
+
 :root[data-theme="light"] .muted,
 :root[data-theme="light"] small,
 :root[data-theme="light"] .stat-label,
