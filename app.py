@@ -955,6 +955,47 @@ def ensure_schema_upgrades():
     if schema_upgrades_ready:
         return
     db.create_all()
+    if db.engine.dialect.name == 'postgresql':
+        postgres_additions = [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'local'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_secret VARCHAR(64)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_recovery_hashes TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS leaderboard_unlocked_at TIMESTAMP",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS leaderboard_awarded BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS leaderboard_awarded_at TIMESTAMP",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS leaderboard_awarded_by INTEGER",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS leaderboard_award_reason VARCHAR(200)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS leaderboard_award_details TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS leaderboard_award_color VARCHAR(20)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS builder_xp INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS builder_level VARCHAR(40) DEFAULT 'Bronze Builder'",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS challenge_type VARCHAR(30) DEFAULT 'image'",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS target_html TEXT",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS target_css TEXT",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS target_js TEXT",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS starter_html TEXT",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS starter_css TEXT",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS starter_js TEXT",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS html_locked BOOLEAN DEFAULT TRUE",
+            "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS website_config TEXT",
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_flagged BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS flag_reason VARCHAR(160)",
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS flagged_by INTEGER",
+            "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS competition_id INTEGER",
+            "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS wave_id INTEGER",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS score_details TEXT",
+            "ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS certificate_settings TEXT",
+            "ALTER TABLE award_cards ADD COLUMN IF NOT EXISTS certificate_payload TEXT"
+        ]
+        for ddl in postgres_additions:
+            db.session.execute(text(ddl))
+        db.session.commit()
+        schema_upgrades_ready = True
+        return
     if db.engine.dialect.name != 'sqlite':
         schema_upgrades_ready = True
         return
@@ -4401,8 +4442,14 @@ def dashboard():
     ensure_schema_upgrades()
     user = get_current_user()
     rooms = Room.query.filter(Room.status != 'ended').order_by(Room.created_at.desc()).all()
-    leaderboard_rows = build_leaderboard_rows()
-    top_players = [row['user'] for row in leaderboard_rows[:10]]
+    current_record = sync_user_competition_state(user)
+    db.session.commit()
+    top_players = User.query.filter_by(role='player').order_by(
+        User.best_accuracy.desc(),
+        User.total_wins.desc(),
+        User.matches_played.desc(),
+        User.username.asc()
+    ).limit(10).all()
     recent_matches = Submission.query.filter_by(user_id=user.id).order_by(Submission.submitted_at.desc()).limit(5).all()
     
     room_data = []
@@ -4420,8 +4467,10 @@ def dashboard():
             'player2': room.player2.username if room.player2 else 'Open'
         })
     
-    rank = next((i+1 for i, row in enumerate(leaderboard_rows) if row['user'].id == user.id), None)
-    current_record = next((row['record'] for row in leaderboard_rows if row['user'].id == user.id), calculate_player_record(user))
+    rank = User.query.filter(
+        User.role == 'player',
+        User.best_accuracy > (user.best_accuracy or 0)
+    ).count() + 1
     
     return render_template('dashboard.html', 
                          user=user, 
