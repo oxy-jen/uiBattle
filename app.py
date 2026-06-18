@@ -714,6 +714,10 @@ def google_oauth_configured():
 def google_redirect_uri():
     return app.config.get('GOOGLE_REDIRECT_URI') or url_for('google_callback', _external=True)
 
+def google_login_error(message):
+    flash(message, 'warning')
+    return redirect(url_for('login_page', google_error=message))
+
 def complete_login(user):
     session.pop('pending_2fa_user_id', None)
     session.pop('pending_email_otp_user_id', None)
@@ -3938,9 +3942,10 @@ def register():
 @app.route('/auth/google')
 def google_login():
     if not google_oauth_configured():
-        return redirect(url_for('login_page'))
+        return google_login_error('Google login is not configured on the server.')
     state = secrets.token_urlsafe(24)
     session['google_oauth_state'] = state
+    session.modified = True
     params = {
         'client_id': app.config['GOOGLE_CLIENT_ID'],
         'redirect_uri': google_redirect_uri(),
@@ -3954,12 +3959,12 @@ def google_login():
 @app.route('/auth/google/callback')
 def google_callback():
     if not google_oauth_configured():
-        return redirect(url_for('login_page'))
+        return google_login_error('Google login is not configured on the server.')
     if request.args.get('state') != session.pop('google_oauth_state', None):
-        return redirect(url_for('login_page'))
+        return google_login_error('Google login session expired. Try again, and make sure cookies are enabled.')
     code = request.args.get('code')
     if not code:
-        return redirect(url_for('login_page'))
+        return google_login_error(request.args.get('error_description') or request.args.get('error') or 'Google did not return a login code.')
 
     try:
         token_data = fetch_json_url(app.config['GOOGLE_TOKEN_URL'], {
@@ -3978,12 +3983,12 @@ def google_callback():
         )
     except Exception:
         app.logger.exception('Google OAuth failed')
-        return redirect(url_for('login_page'))
+        return google_login_error('Google login failed while contacting Google. Check redirect URI, client secret, and Render logs.')
 
     google_sub = google_user.get('sub')
     email = (google_user.get('email') or '').lower()
     if not google_sub or not email:
-        return redirect(url_for('login_page'))
+        return google_login_error('Google did not return a verified account email.')
 
     user = User.query.filter_by(google_sub=google_sub).first()
     if not user:
@@ -4015,7 +4020,7 @@ def google_callback():
         if payload and status == 200:
             return redirect(url_for('login_page', two_factor='1', admin_email_code='1'))
         app.logger.warning('Admin Google login email verification could not start for user %s: %s', user.id, payload)
-        return redirect(url_for('login_page'))
+        return google_login_error('Admin Google login needs email verification, but the code could not be sent.')
 
     if user.two_factor_enabled:
         session.clear()
@@ -6895,6 +6900,15 @@ def room_list():
         }
         for r in rooms
     ])
+
+@app.route('/api/public-stats')
+def public_stats_api():
+    ensure_schema_upgrades()
+    return jsonify({
+        'rooms': Room.query.filter(Room.status != 'ended').count(),
+        'players': User.query.filter_by(role='player').count(),
+        'challenges': Challenge.query.filter_by(is_active=True).count()
+    })
 
 @app.route('/static/uploads/<filename>')
 def uploaded_file(filename):

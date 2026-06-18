@@ -30,6 +30,13 @@
         </div>
         
         <div class="login-right">
+            {% set oauth_error = request.args.get('google_error') %}
+            {% if oauth_error %}
+            <div class="auth-help-panel auth-error-panel">
+                <strong>Google login could not finish</strong>
+                <span>{{ oauth_error }}</span>
+            </div>
+            {% endif %}
             <div class="form-tabs">
                 <button class="form-tab active" data-form="login">LOGIN</button>
                 <button class="form-tab" data-form="register">REGISTER</button>
@@ -169,18 +176,12 @@
 <script>
 async function loadStats() {
     try {
-        const res = await fetch('/room/list');
-        const rooms = await res.json();
-        document.getElementById('stat-rooms').textContent = rooms.length || 0;
+        const res = await fetch('/api/public-stats');
+        const stats = await res.json();
+        document.getElementById('stat-rooms').textContent = stats.rooms || 0;
+        document.getElementById('stat-players').textContent = stats.players || 0;
+        document.getElementById('stat-challenges').textContent = stats.challenges || "{{ challenge_count|default(0) }}";
     } catch(e) {}
-    
-    try {
-        const res = await fetch('/api/leaderboard');
-        const players = await res.json();
-        document.getElementById('stat-players').textContent = players.length || 0;
-    } catch(e) {}
-    
-    document.getElementById('stat-challenges').textContent = "{{ challenge_count|default(0) }}";
 }
 
 loadStats();
