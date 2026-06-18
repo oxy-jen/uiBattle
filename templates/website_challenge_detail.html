@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="website-challenge-page">
+    <nav class="navbar">
+        <div class="nav-brand"><i class="fas fa-window-restore"></i><span>{{ competition.name }}</span></div>
+        <div class="nav-right">
+            <a href="{{ url_for('website_challenges') }}" class="logout-btn"><i class="fas fa-arrow-left"></i></a>
+        </div>
+    </nav>
+
+    <section class="website-challenge-hero">
+        <div>
+            <h1>{{ competition.challenge.title if competition.challenge else competition.name }}</h1>
+            <p>{{ competition.challenge.description if competition.challenge else 'Submit a complete website before the deadline.' }}</p>
+        </div>
+        <div class="builder-level-card">
+            <span>Final Score</span>
+            <strong>40% Vote · 30% Auto · 30% Judge</strong>
+        </div>
+    </section>
+
+    <section class="website-challenge-layout">
+        <div class="website-submit-panel">
+            <header>
+                <h2><i class="fas fa-upload"></i> Your Submission</h2>
+                <span>{{ current_entry.status|title if current_entry else 'Not joined' }}</span>
+            </header>
+            <dl class="website-challenge-facts">
+                <div><dt>Start</dt><dd>{{ competition.start_at or 'Open now' }}</dd></div>
+                <div><dt>Deadline</dt><dd>{{ competition.end_at or 'To be announced' }}</dd></div>
+                <div><dt>Prize</dt><dd>{{ settings.get('prize') or 'Optional' }}</dd></div>
+                <div><dt>Level</dt><dd>{{ user.builder_level or 'Bronze Builder' }}</dd></div>
+            </dl>
+            {% if not current_entry %}
+            <button class="btn-primary" id="join-website-challenge"><i class="fas fa-user-plus"></i> Join Challenge</button>
+            {% endif %}
+            <form id="website-entry-form" enctype="multipart/form-data">
+                <label>Live URL <input name="live_url" type="url" required placeholder="https://your-site.example" value="{{ current_entry.live_url if current_entry else '' }}"></label>
+                <label>GitHub URL <input name="github_url" type="url" placeholder="https://github.com/user/project" value="{{ current_entry.github_url if current_entry else '' }}"></label>
+                <label>Screenshots <input name="screenshots" type="file" accept="image/*" multiple></label>
+                <label>Description <textarea name="description" rows="5" placeholder="Explain your concept, responsive choices, accessibility, SEO, and key features.">{{ current_entry.description if current_entry else '' }}</textarea></label>
+                <button class="btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Submit Website</button>
+            </form>
+        </div>
+
+        <div class="website-vote-panel">
+            <header>
+                <h2><i class="fas fa-scale-balanced"></i> Community Vote</h2>
+                <span>Design · Responsiveness · Creativity</span>
+            </header>
+            {% if vote_pair %}
+            <div class="vote-pair" data-entry-a="{{ vote_pair[0].id }}" data-entry-b="{{ vote_pair[1].id }}">
+                {% for entry in vote_pair %}
+                <article>
+                    <strong>{{ entry.user.username }}</strong>
+                    <p>{{ entry.description or 'No description provided yet.' }}</p>
+                    <a href="{{ entry.live_url }}" target="_blank" rel="noopener"><i class="fas fa-up-right-from-square"></i> Open live site</a>
+                    <button class="btn-secondary" data-vote-winner="{{ entry.id }}"><i class="fas fa-check"></i> Vote This Better</button>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="section-subtitle">No fresh voting pair is available yet. More submitted entries unlock community voting.</p>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="website-ranking-panel">
+        <header>
+            <h2><i class="fas fa-ranking-star"></i> Rankings</h2>
+            <span>{{ rankings|length }} participants</span>
+        </header>
+        <div class="website-ranking-table">
+            <table>
+                <thead><tr><th>#</th><th>Builder</th><th>Community</th><th>Auto</th><th>Judge</th><th>Final</th><th>Links</th>{% if user.role == 'admin' %}<th>Judge</th>{% endif %}</tr></thead>
+                <tbody>
+                    {% for entry in rankings %}
+                    <tr>
+                        <td>#{{ loop.index }}</td>
+                        <td>{{ entry.user.username }}</td>
+                        <td>{{ "%.1f"|format(entry.community_score or 0) }}</td>
+                        <td>{{ "%.1f"|format(entry.automated_score or 0) }}</td>
+                        <td>{{ "%.1f"|format(entry.judge_score or 0) }}</td>
+                        <td><strong>{{ "%.1f"|format(entry.final_score or 0) }}</strong></td>
+                        <td><a href="{{ entry.live_url or '#' }}" target="_blank" rel="noopener">Live</a>{% if entry.github_url %} · <a href="{{ entry.github_url }}" target="_blank" rel="noopener">GitHub</a>{% endif %}</td>
+                        {% if user.role == 'admin' %}
+                        <td>
+                            <form class="judge-entry-form" data-entry-id="{{ entry.id }}">
+                                <input name="creativity" type="number" min="0" max="100" placeholder="Creativity">
+                                <input name="requirements" type="number" min="0" max="100" placeholder="Req">
+                                <input name="ux" type="number" min="0" max="100" placeholder="UX">
+                                <button class="btn-secondary" type="submit">Save</button>
+                            </form>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8">No submissions yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<script>
+const competitionId = {{ competition.id }};
+document.getElementById('join-website-challenge')?.addEventListener('click', async () => {
+    const res = await fetch(`/website-challenges/${competitionId}/join`, {method: 'POST'});
+    const data = await res.json();
+    if (data.success) location.reload();
+    else showToast(data.error || 'Could not join challenge', 'error');
+});
+
+document.getElementById('website-entry-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const res = await fetch(`/website-challenges/${competitionId}/submit`, {method: 'POST', body: new FormData(event.currentTarget)});
+    const data = await res.json();
+    if (data.success) {
+        showToast('Website submitted', 'success');
+        setTimeout(() => location.reload(), 800);
+    } else {
+        showToast(data.error || 'Submission failed', 'error');
+    }
+});
+
+document.querySelectorAll('[data-vote-winner]').forEach((button) => {
+    button.addEventListener('click', async () => {
+        const pair = button.closest('.vote-pair');
+        const res = await fetch(`/website-challenges/${competitionId}/vote`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                entry_a_id: pair.dataset.entryA,
+                entry_b_id: pair.dataset.entryB,
+                winner_id: button.dataset.voteWinner,
+                criteria: {design: true, responsiveness: true, creativity: true}
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Vote saved', 'success');
+            setTimeout(() => location.reload(), 700);
+        } else {
+            showToast(data.error || 'Vote failed', 'error');
+        }
+    });
+});
+
+document.querySelectorAll('.judge-entry-form').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const payload = Object.fromEntries(new FormData(form).entries());
+        const res = await fetch(`/admin/website-challenges/${form.dataset.entryId}/judge`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Judge score saved', 'success');
+            setTimeout(() => location.reload(), 700);
+        } else {
+            showToast(data.error || 'Could not save score', 'error');
+        }
+    });
+});
+</script>
+{% endblock %}

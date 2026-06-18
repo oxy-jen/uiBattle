@@ -73,7 +73,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 from models import (
     db, User, Challenge, Room, Submission, ChatMessage,
     Tournament, TournamentParticipant, TournamentMatch, MatchResult, AdminAction, AwardCard, RoomAccess,
-    Competition, CompetitionWave, CompetitionAdminAssignment, AdminTask, DisputeCase, AppSetting
+    Competition, CompetitionWave, CompetitionAdminAssignment, AdminTask, DisputeCase, AppSetting,
+    WebsiteChallengeEntry, WebsiteChallengeVote
 )
 from moderation_terms import (
     BAD_LANGUAGE_TERMS,
@@ -971,7 +972,9 @@ def ensure_schema_upgrades():
         'leaderboard_awarded_by': 'ALTER TABLE users ADD COLUMN leaderboard_awarded_by INTEGER',
         'leaderboard_award_reason': 'ALTER TABLE users ADD COLUMN leaderboard_award_reason VARCHAR(200)',
         'leaderboard_award_details': 'ALTER TABLE users ADD COLUMN leaderboard_award_details TEXT',
-        'leaderboard_award_color': 'ALTER TABLE users ADD COLUMN leaderboard_award_color VARCHAR(20)'
+        'leaderboard_award_color': 'ALTER TABLE users ADD COLUMN leaderboard_award_color VARCHAR(20)',
+        'builder_xp': 'ALTER TABLE users ADD COLUMN builder_xp INTEGER DEFAULT 0',
+        'builder_level': "ALTER TABLE users ADD COLUMN builder_level VARCHAR(40) DEFAULT 'Bronze Builder'"
     }
     for column, ddl in user_additions.items():
         if column not in user_columns:
@@ -1705,12 +1708,127 @@ def parse_bool_value(value, default=False):
         return default
     return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
 
+BUILDER_LEVELS = [
+    (0, 'Bronze Builder'),
+    (250, 'Silver Builder'),
+    (700, 'Gold Builder'),
+    (1400, 'Platinum Builder'),
+    (2400, 'Diamond Builder'),
+    (3800, 'Master Builder'),
+    (5600, 'Arena Legend')
+]
+
+def builder_level_for_xp(xp):
+    total = int(xp or 0)
+    level = BUILDER_LEVELS[0][1]
+    for threshold, name in BUILDER_LEVELS:
+        if total >= threshold:
+            level = name
+    return level
+
+def normalize_external_url(value):
+    raw = (value or '').strip()[:1000]
+    if not raw:
+        return ''
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+        return ''
+    return raw
+
+def website_competition_settings(competition):
+    try:
+        notes = json.loads(competition.notes or '{}') if competition and competition.notes else {}
+    except (TypeError, ValueError):
+        notes = {}
+    return notes if isinstance(notes, dict) else {}
+
+def website_automated_score(live_url, github_url='', screenshot_count=0, description=''):
+    live_url = normalize_external_url(live_url)
+    github_url = normalize_external_url(github_url)
+    score = 0
+    details = {}
+    details['live_url'] = 25 if live_url else 0
+    details['secure_url'] = 15 if live_url.startswith('https://') else 8 if live_url else 0
+    details['screenshots'] = min(20, int(screenshot_count or 0) * 7)
+    details['description'] = min(15, len((description or '').strip()) // 20)
+    details['repository'] = 10 if github_url else 0
+    details['seo_basics'] = 15 if any(word in (description or '').lower() for word in ['seo', 'responsive', 'accessibility', 'performance', 'mobile']) else 8
+    for value in details.values():
+        score += value
+    return min(100, round(score, 1)), details
+
+def recalculate_website_entry_score(entry):
+    if not entry:
+        return 0
+    community = float(entry.community_score or 0)
+    automated = float(entry.automated_score or 0)
+    judge = float(entry.judge_score or 0)
+    entry.final_score = round((community * 0.4) + (automated * 0.3) + (judge * 0.3), 1)
+    return entry.final_score
+
+def award_builder_xp(entry):
+    if not entry or not entry.user or entry.xp_awarded:
+        return 0
+    xp = max(25, int(round(50 + float(entry.final_score or 0) * 2)))
+    entry.xp_awarded = xp
+    entry.user.builder_xp = int(entry.user.builder_xp or 0) + xp
+    entry.user.builder_level = builder_level_for_xp(entry.user.builder_xp)
+    if entry.final_score and entry.final_score > (entry.user.best_accuracy or 0):
+        entry.user.best_accuracy = float(entry.final_score)
+    return xp
+
+def update_website_community_scores(competition_id):
+    entries = WebsiteChallengeEntry.query.filter_by(competition_id=competition_id).all()
+    entry_ids = {entry.id for entry in entries}
+    if not entry_ids:
+        return
+    totals = {entry.id: {'wins': 0, 'matches': 0} for entry in entries}
+    votes = WebsiteChallengeVote.query.filter_by(competition_id=competition_id).all()
+    for vote in votes:
+        if vote.entry_a_id in entry_ids:
+            totals[vote.entry_a_id]['matches'] += 1
+        if vote.entry_b_id in entry_ids:
+            totals[vote.entry_b_id]['matches'] += 1
+        if vote.winner_id in entry_ids:
+            totals[vote.winner_id]['wins'] += 1
+    for entry in entries:
+        matches = totals[entry.id]['matches']
+        entry.community_score = round((totals[entry.id]['wins'] / matches) * 100, 1) if matches else 0.0
+        recalculate_website_entry_score(entry)
+
+def serialize_website_entry(entry):
+    screenshots = []
+    try:
+        screenshots = json.loads(entry.screenshots or '[]')
+    except (TypeError, ValueError):
+        screenshots = []
+    return {
+        'id': entry.id,
+        'user': entry.user.username if entry.user else 'Unknown',
+        'live_url': entry.live_url,
+        'github_url': entry.github_url,
+        'screenshots': screenshots,
+        'description': entry.description or '',
+        'status': entry.status,
+        'community_score': round(entry.community_score or 0, 1),
+        'automated_score': round(entry.automated_score or 0, 1),
+        'judge_score': round(entry.judge_score or 0, 1),
+        'final_score': round(entry.final_score or 0, 1),
+        'xp_awarded': entry.xp_awarded or 0,
+        'submitted_at': entry.submitted_at
+    }
+
+def website_challenge_rankings(competition_id):
+    entries = WebsiteChallengeEntry.query.filter_by(competition_id=competition_id).all()
+    return sorted(entries, key=lambda item: (item.final_score or 0, item.judge_score or 0, item.community_score or 0, item.submitted_at or datetime.min), reverse=True)
+
 def competition_stage_label(value):
     return str(value or 'registration').replace('_', ' ').title()
 
 def challenge_usage_to_format(value):
     usage = value or 'single_room'
     return {
+        'async_website': 'async_website',
         'challenge_only': 'challenge_only',
         'single_room': 'single_room',
         'bulk_rooms': 'bulk_rooms',
@@ -3326,6 +3444,8 @@ def clear_created_platform_data():
     }, synchronize_session=False)
 
     counts = {
+        'website_challenge_votes': WebsiteChallengeVote.query.delete(synchronize_session=False),
+        'website_challenge_entries': WebsiteChallengeEntry.query.delete(synchronize_session=False),
         'admin_actions': AdminAction.query.delete(synchronize_session=False),
         'match_results': MatchResult.query.delete(synchronize_session=False),
         'tournament_participants': TournamentParticipant.query.delete(synchronize_session=False),
@@ -4314,6 +4434,182 @@ def dashboard():
                          global_rank=rank,
                          leaderboard_unlocked=user_has_leaderboard_access(user, current_record))
 
+@app.route('/website-challenges')
+@login_required
+def website_challenges():
+    ensure_schema_upgrades()
+    user = get_current_user()
+    competitions = Competition.query.filter_by(format='async_website').order_by(Competition.created_at.desc()).all()
+    cards = []
+    for competition in competitions:
+        entry = WebsiteChallengeEntry.query.filter_by(competition_id=competition.id, user_id=user.id).first()
+        rankings = website_challenge_rankings(competition.id)
+        cards.append({
+            'competition': competition,
+            'settings': website_competition_settings(competition),
+            'entry': entry,
+            'entries_count': len(rankings),
+            'leader': rankings[0] if rankings else None
+        })
+    return render_template('website_challenges.html', user=user, cards=cards)
+
+@app.route('/website-challenges/<int:competition_id>')
+@login_required
+def website_challenge_detail(competition_id):
+    ensure_schema_upgrades()
+    user = get_current_user()
+    competition = db.session.get(Competition, competition_id)
+    if not competition or competition.format != 'async_website':
+        flash('Website challenge not found.', 'warning')
+        return redirect(url_for('website_challenges'))
+    current_entry = WebsiteChallengeEntry.query.filter_by(competition_id=competition.id, user_id=user.id).first()
+    rankings = website_challenge_rankings(competition.id)
+    submitted_entries = [entry for entry in rankings if entry.status == 'submitted' and entry.live_url]
+    vote_pair = None
+    if len(submitted_entries) >= 2:
+        voted_pairs = {
+            tuple(sorted([vote.entry_a_id, vote.entry_b_id]))
+            for vote in WebsiteChallengeVote.query.filter_by(competition_id=competition.id, voter_id=user.id).all()
+        }
+        for i, entry_a in enumerate(submitted_entries):
+            for entry_b in submitted_entries[i + 1:]:
+                if user.id in {entry_a.user_id, entry_b.user_id}:
+                    continue
+                key = tuple(sorted([entry_a.id, entry_b.id]))
+                if key not in voted_pairs:
+                    vote_pair = (entry_a, entry_b)
+                    break
+            if vote_pair:
+                break
+    return render_template(
+        'website_challenge_detail.html',
+        user=user,
+        competition=competition,
+        settings=website_competition_settings(competition),
+        current_entry=current_entry,
+        rankings=rankings,
+        vote_pair=vote_pair,
+        serialized_entries=[serialize_website_entry(entry) for entry in rankings]
+    )
+
+@app.route('/website-challenges/<int:competition_id>/join', methods=['POST'])
+@login_required
+def join_website_challenge(competition_id):
+    user = get_current_user()
+    competition = db.session.get(Competition, competition_id)
+    if not competition or competition.format != 'async_website':
+        return jsonify({'success': False, 'error': 'Website challenge not found'}), 404
+    entry = WebsiteChallengeEntry.query.filter_by(competition_id=competition.id, user_id=user.id).first()
+    if not entry:
+        entry = WebsiteChallengeEntry(
+            competition_id=competition.id,
+            challenge_id=competition.challenge_id,
+            user_id=user.id,
+            status='joined'
+        )
+        db.session.add(entry)
+        db.session.commit()
+    return jsonify({'success': True, 'entry_id': entry.id})
+
+@app.route('/website-challenges/<int:competition_id>/submit', methods=['POST'])
+@login_required
+def submit_website_challenge(competition_id):
+    user = get_current_user()
+    competition = db.session.get(Competition, competition_id)
+    if not competition or competition.format != 'async_website':
+        return jsonify({'success': False, 'error': 'Website challenge not found'}), 404
+    live_url = normalize_external_url(request.form.get('live_url'))
+    github_url = normalize_external_url(request.form.get('github_url'))
+    description = (request.form.get('description') or '').strip()[:2000]
+    if not live_url:
+        return jsonify({'success': False, 'error': 'A valid live URL is required'}), 400
+    screenshots = []
+    screenshot_files = [image_file for image_file in request.files.getlist('screenshots')[:6] if image_file and image_file.filename]
+    if screenshot_files:
+        upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'website_challenges')
+        os.makedirs(upload_dir, exist_ok=True)
+    for image_file in screenshot_files:
+        if not allowed_site_media_file(image_file.filename) or image_file.filename.rsplit('.', 1)[1].lower() in {'mp4', 'webm', 'mov'}:
+            return jsonify({'success': False, 'error': 'Screenshots must be image files'}), 400
+        ext = secure_filename(image_file.filename).rsplit('.', 1)[1].lower()
+        filename = f"website_challenge_{uuid.uuid4().hex}.{ext}"
+        image_file.save(os.path.join(upload_dir, filename))
+        screenshots.append(url_for('static', filename=f'uploads/website_challenges/{filename}'))
+    entry = WebsiteChallengeEntry.query.filter_by(competition_id=competition.id, user_id=user.id).first()
+    if not entry:
+        entry = WebsiteChallengeEntry(competition_id=competition.id, challenge_id=competition.challenge_id, user_id=user.id)
+        db.session.add(entry)
+    existing_screenshots = []
+    try:
+        existing_screenshots = json.loads(entry.screenshots or '[]')
+    except (TypeError, ValueError):
+        existing_screenshots = []
+    all_screenshots = (screenshots or existing_screenshots)[:6]
+    auto_score, auto_details = website_automated_score(live_url, github_url, len(all_screenshots), description)
+    entry.live_url = live_url
+    entry.github_url = github_url
+    entry.description = description
+    entry.screenshots = json.dumps(all_screenshots)
+    entry.status = 'submitted'
+    entry.automated_score = auto_score
+    entry.submitted_at = datetime.now(timezone.utc)
+    recalculate_website_entry_score(entry)
+    db.session.commit()
+    return jsonify({'success': True, 'entry': serialize_website_entry(entry)})
+
+@app.route('/website-challenges/<int:competition_id>/vote', methods=['POST'])
+@login_required
+def vote_website_challenge(competition_id):
+    user = get_current_user()
+    data = request.get_json(silent=True) or {}
+    winner_id = parse_positive_int(data.get('winner_id'), 0, 1)
+    entry_a_id = parse_positive_int(data.get('entry_a_id'), 0, 1)
+    entry_b_id = parse_positive_int(data.get('entry_b_id'), 0, 1)
+    if winner_id not in {entry_a_id, entry_b_id} or entry_a_id == entry_b_id:
+        return jsonify({'success': False, 'error': 'Invalid vote pair'}), 400
+    entries = WebsiteChallengeEntry.query.filter(
+        WebsiteChallengeEntry.competition_id == competition_id,
+        WebsiteChallengeEntry.id.in_([entry_a_id, entry_b_id])
+    ).all()
+    if len(entries) != 2 or any(entry.user_id == user.id for entry in entries):
+        return jsonify({'success': False, 'error': 'You cannot vote on this pair'}), 400
+    pair = sorted([entry_a_id, entry_b_id])
+    existing = WebsiteChallengeVote.query.filter_by(competition_id=competition_id, voter_id=user.id).filter(
+        WebsiteChallengeVote.entry_a_id.in_(pair),
+        WebsiteChallengeVote.entry_b_id.in_(pair)
+    ).first()
+    if existing:
+        return jsonify({'success': False, 'error': 'You already voted on this pair'}), 400
+    vote = WebsiteChallengeVote(
+        competition_id=competition_id,
+        voter_id=user.id,
+        entry_a_id=pair[0],
+        entry_b_id=pair[1],
+        winner_id=winner_id,
+        criteria=json.dumps(data.get('criteria') or {})
+    )
+    db.session.add(vote)
+    update_website_community_scores(competition_id)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/admin/website-challenges/<int:entry_id>/judge', methods=['POST'])
+@admin_required
+def admin_judge_website_entry(entry_id):
+    entry = db.session.get(WebsiteChallengeEntry, entry_id)
+    if not entry:
+        return jsonify({'success': False, 'error': 'Entry not found'}), 404
+    data = request.get_json(silent=True) or {}
+    scores = [
+        max(0, min(100, float(data.get(key) or 0)))
+        for key in ['creativity', 'requirements', 'ux']
+    ]
+    entry.judge_score = round(sum(scores) / len(scores), 1)
+    recalculate_website_entry_score(entry)
+    award_builder_xp(entry)
+    db.session.commit()
+    return jsonify({'success': True, 'entry': serialize_website_entry(entry), 'builder_level': entry.user.builder_level if entry.user else ''})
+
 # ========== ADMIN ROUTES ==========
 @app.route('/admin')
 @admin_required
@@ -5028,6 +5324,10 @@ def export_data():
         serialize_competition(competition)
         for competition in Competition.query.order_by(Competition.created_at.desc()).all()
     ]
+    website_entry_data = [
+        serialize_website_entry(entry)
+        for entry in WebsiteChallengeEntry.query.order_by(WebsiteChallengeEntry.updated_at.desc()).all()
+    ]
     admin_actions = [
         {
             'id': action.id,
@@ -5042,7 +5342,7 @@ def export_data():
         }
         for action in AdminAction.query.order_by(AdminAction.timestamp.desc()).all()
     ]
-    return jsonify({'users': user_data, 'rooms': room_data, 'challenges': challenge_data, 'competitions': competition_data, 'tournaments': tournament_data, 'admin_actions': admin_actions})
+    return jsonify({'users': user_data, 'rooms': room_data, 'challenges': challenge_data, 'competitions': competition_data, 'website_entries': website_entry_data, 'tournaments': tournament_data, 'admin_actions': admin_actions})
 
 @app.route('/admin/maintenance/clear-data', methods=['POST'])
 @admin_required
@@ -5102,8 +5402,10 @@ def create_challenge():
 
     if challenge_type not in {'image', 'html', 'website_arena'}:
         return jsonify({'success': False, 'error': 'Invalid challenge type'}), 400
-    if launch_mode not in {'challenge_only', 'single_room', 'bulk_rooms', 'auto_pair_live', 'qualification', 'bracket', 'qualifier_bracket'}:
+    if launch_mode not in {'challenge_only', 'single_room', 'bulk_rooms', 'auto_pair_live', 'qualification', 'bracket', 'qualifier_bracket', 'async_website'}:
         return jsonify({'success': False, 'error': 'Invalid launch mode'}), 400
+    if launch_mode == 'async_website':
+        challenge_type = 'website_arena'
     if not title:
         return jsonify({'success': False, 'error': 'Challenge name is required'}), 400
     if share_with_email and launch_mode == 'single_room' and not email_configured():
@@ -5180,6 +5482,8 @@ def create_challenge():
                 website_config = json.loads(raw_website_config)
             except (TypeError, ValueError):
                 return jsonify({'success': False, 'error': 'Invalid website setup'}), 400
+            if launch_mode == 'async_website':
+                website_config['target_mode'] = 'brief'
 
         target_mode = str(website_config.get('target_mode') or 'live').strip().lower() if challenge_type == 'website_arena' else 'live'
         website_file = request.files.get('target_image') if challenge_type == 'website_arena' else None
@@ -5221,6 +5525,14 @@ def create_challenge():
     wave = None
     should_create_competition = launch_mode not in {'single_room', 'challenge_only'} or bool(competition_name)
     if should_create_competition:
+        competition_notes = None
+        if launch_mode == 'async_website':
+            competition_notes = json.dumps({
+                'kind': 'async_website',
+                'prize': (request.form.get('prize') or '').strip()[:200],
+                'weights': {'community': 40, 'automated': 30, 'judge': 30},
+                'requirements': [line.strip() for line in re.split(r'[\n,]+', description or '') if line.strip()][:20]
+            })
         competition = create_competition_record(
             competition_name or f'{title} Competition',
             challenge_id=new_challenge.id,
@@ -5239,7 +5551,8 @@ def create_challenge():
             allowed_attempts=allowed_attempts,
             tie_break_rule=tie_break_rule,
             advance_rule=advance_rule or 'top_32',
-            fair_play_strictness=fair_play_strictness
+            fair_play_strictness=fair_play_strictness,
+            notes=competition_notes
         )
         if launch_mode in {'bulk_rooms', 'auto_pair_live', 'qualification', 'qualifier_bracket'}:
             wave = create_wave_record(
@@ -5316,6 +5629,11 @@ def create_challenge():
         )
         rooms_created = Room.query.join(TournamentMatch, TournamentMatch.room_id == Room.id).filter(TournamentMatch.tournament_id == tournament.id).all()
         new_room = rooms_created[0] if rooms_created else None
+    elif launch_mode == 'async_website':
+        new_room = None
+        if competition:
+            competition.status = 'registration'
+            competition.stage = 'registration'
     elif launch_mode == 'challenge_only':
         new_room = None
 

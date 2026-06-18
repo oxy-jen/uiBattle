@@ -105,8 +105,14 @@
             <div class="website-arena-sidebar" id="website-arena-sidebar">
                 <section class="website-workbench-section active" data-workbench-panel="files">
                     <div class="website-arena-sidebar-head">
-                        <span><i class="fas fa-folder-tree"></i> Pages</span>
+                        <span><i class="fas fa-folder-tree"></i> Project</span>
+                        <div class="website-file-actions">
+                            <button type="button" id="website-new-file-btn" title="New file"><i class="fas fa-file-circle-plus"></i></button>
+                            <button type="button" id="website-new-folder-btn" title="New folder"><i class="fas fa-folder-plus"></i></button>
+                            <button type="button" id="website-upload-asset-btn" title="Upload image asset"><i class="fas fa-image"></i></button>
+                        </div>
                     </div>
+                    <input type="file" id="website-asset-upload-input" accept="image/*,.svg,.webp,.png,.jpg,.jpeg,.gif" multiple hidden>
                     <div class="website-page-list" id="website-page-list"></div>
                 </section>
                 <section class="website-workbench-section" data-workbench-panel="requirements">

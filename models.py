@@ -27,6 +27,8 @@ class User(db.Model):
     leaderboard_award_reason = db.Column(db.String(200), nullable=True)
     leaderboard_award_details = db.Column(db.Text, nullable=True)
     leaderboard_award_color = db.Column(db.String(20), nullable=True)
+    builder_xp = db.Column(db.Integer, default=0)
+    builder_level = db.Column(db.String(40), default='Bronze Builder')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def set_password(self, password):
@@ -43,6 +45,8 @@ class User(db.Model):
             'matches_played': self.matches_played,
             'best_accuracy': round(self.best_accuracy, 1),
             'total_wins': self.total_wins,
+            'builder_xp': self.builder_xp or 0,
+            'builder_level': self.builder_level or 'Bronze Builder',
             'leaderboard_unlocked': bool(self.leaderboard_unlocked_at or self.leaderboard_awarded)
         }
 
@@ -374,6 +378,53 @@ class Submission(db.Model):
     user = db.relationship('User', backref='submissions')
     room = db.relationship('Room', backref='submissions')
     challenge = db.relationship('Challenge', backref='submissions')
+
+class WebsiteChallengeEntry(db.Model):
+    __tablename__ = 'website_challenge_entries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    competition_id = db.Column(db.Integer, db.ForeignKey('competitions.id'), nullable=False)
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    live_url = db.Column(db.String(1000), nullable=True)
+    github_url = db.Column(db.String(1000), nullable=True)
+    screenshots = db.Column(db.Text, nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(30), default='joined')
+    community_score = db.Column(db.Float, default=0.0)
+    automated_score = db.Column(db.Float, default=0.0)
+    judge_score = db.Column(db.Float, default=0.0)
+    final_score = db.Column(db.Float, default=0.0)
+    xp_awarded = db.Column(db.Integer, default=0)
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+    submitted_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    competition = db.relationship('Competition', backref='website_entries')
+    challenge = db.relationship('Challenge', backref='website_entries')
+    user = db.relationship('User', backref='website_challenge_entries')
+
+    __table_args__ = (
+        db.UniqueConstraint('competition_id', 'user_id', name='uq_website_entry_competition_user'),
+    )
+
+class WebsiteChallengeVote(db.Model):
+    __tablename__ = 'website_challenge_votes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    competition_id = db.Column(db.Integer, db.ForeignKey('competitions.id'), nullable=False)
+    voter_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    entry_a_id = db.Column(db.Integer, db.ForeignKey('website_challenge_entries.id'), nullable=False)
+    entry_b_id = db.Column(db.Integer, db.ForeignKey('website_challenge_entries.id'), nullable=False)
+    winner_id = db.Column(db.Integer, db.ForeignKey('website_challenge_entries.id'), nullable=False)
+    criteria = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    competition = db.relationship('Competition', backref='website_votes')
+    voter = db.relationship('User', foreign_keys=[voter_id], backref='website_challenge_votes')
+    entry_a = db.relationship('WebsiteChallengeEntry', foreign_keys=[entry_a_id])
+    entry_b = db.relationship('WebsiteChallengeEntry', foreign_keys=[entry_b_id])
+    winner = db.relationship('WebsiteChallengeEntry', foreign_keys=[winner_id])
 
 class ChatMessage(db.Model):
     __tablename__ = 'chat_messages'

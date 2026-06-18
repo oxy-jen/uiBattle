@@ -293,6 +293,7 @@
                                     <option value="challenge_only">Challenge only - no room yet</option>
                                     <option value="bulk_rooms">Bulk 1v1 rooms</option>
                                     <option value="auto_pair_live">Auto-pair live rooms</option>
+                                    <option value="async_website">Website challenge - deadline submissions</option>
                                     <option value="qualification">Qualification stage</option>
                                     <option value="bracket">Bracket tournament</option>
                                     <option value="qualifier_bracket">Qualifier + bracket</option>
@@ -360,6 +361,11 @@
                                 <label>End time</label>
                                 <input type="datetime-local" id="end-at" name="end_at">
                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Prize <span class="optional-label">optional</span></label>
+                            <input type="text" id="challenge-prize" name="prize" maxlength="200" placeholder="Certificate, cash prize, featured winner, mentorship">
+                            <small class="help-text">Used by website challenge submissions with community voting, automated checks, and judge scoring.</small>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
@@ -1252,6 +1258,9 @@
                                 <span>{{ competition.format|replace('_', ' ')|title }} · {{ competition.status|upper }}</span>
                             </div>
                             <a class="btn-secondary" href="#section-create"><i class="fas fa-plus"></i> New Challenge</a>
+                            {% if competition.format == 'async_website' %}
+                            <a class="btn-secondary" href="{{ url_for('website_challenge_detail', competition_id=competition.id) }}"><i class="fas fa-window-restore"></i> Manage Submissions</a>
+                            {% endif %}
                         </header>
                         <div class="competition-meta">
                             <span><i class="fas fa-bullseye"></i> {{ competition.challenge.title if competition.challenge else 'No challenge' }}</span>
@@ -4627,7 +4636,8 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
     });
 
     const formData = new FormData();
-    const challengeType = document.getElementById('challenge-type').value;
+    const launchMode = document.getElementById('launch-mode').value;
+    const challengeType = launchMode === 'async_website' ? 'website_arena' : document.getElementById('challenge-type').value;
     const title = document.getElementById('title').value.trim();
     if (!title) {
         showToast('Challenge name is required', 'error');
@@ -4651,6 +4661,7 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
     formData.append('players_per_wave', document.getElementById('players-per-wave').value);
     formData.append('start_at', document.getElementById('start-at').value);
     formData.append('end_at', document.getElementById('end-at').value);
+    formData.append('prize', document.getElementById('challenge-prize')?.value || '');
     formData.append('auto_start', document.getElementById('auto-start').checked ? 'true' : 'false');
     formData.append('auto_submit', document.getElementById('auto-submit').checked ? 'true' : 'false');
     formData.append('allowed_attempts', document.getElementById('allowed-attempts').value);
@@ -4660,7 +4671,6 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
     formData.append('pairing_method', document.getElementById('pairing-method')?.value || 'ordered');
     formData.append('share_with_email', document.getElementById('share-with-email').checked ? 'true' : 'false');
     formData.append('invite_message', document.getElementById('invite-message').value);
-    const launchMode = document.getElementById('launch-mode').value;
     if (['bulk_rooms', 'qualification', 'bracket', 'qualifier_bracket'].includes(launchMode)) {
         const selectedPlayers = Array.from(document.getElementById('bulk-participants').selectedOptions).map(option => option.value);
         const roomMode = document.getElementById('room-mode').value;
@@ -4685,6 +4695,9 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
         const starterHtml = adminStarterHtmlEditor ? adminStarterHtmlEditor.getValue().trim() : '';
         const websiteConfig = challengeType === 'website_arena' ? collectWebsiteConfig() : null;
         const websiteScreenshot = document.getElementById('website-target-screenshot')?.files?.[0] || null;
+        if (launchMode === 'async_website' && websiteConfig) {
+            websiteConfig.target_mode = 'brief';
+        }
         const targetMode = websiteConfig?.target_mode || 'live';
         if (challengeType !== 'website_arena' && !targetHtml) {
             showToast('Please add target HTML for the rendered target', 'error');
@@ -4695,15 +4708,15 @@ document.getElementById('create-challenge-form').addEventListener('submit', asyn
                 showToast('Add at least one website page name', 'error');
                 return;
             }
-            if (targetMode === 'live' && !targetHtml) {
+            if (targetMode === 'live' && launchMode !== 'async_website' && !targetHtml) {
                 showToast('Live website targets need target HTML/CSS/JS.', 'error');
                 return;
             }
-            if (targetMode === 'screenshot' && !websiteScreenshot) {
+            if (targetMode === 'screenshot' && launchMode !== 'async_website' && !websiteScreenshot) {
                 showToast('Screenshot target mode needs a website target screenshot.', 'error');
                 return;
             }
-            if (targetMode === 'hybrid' && !targetHtml && !websiteScreenshot) {
+            if (targetMode === 'hybrid' && launchMode !== 'async_website' && !targetHtml && !websiteScreenshot) {
                 showToast('Hybrid target mode needs target HTML or a screenshot.', 'error');
                 return;
             }

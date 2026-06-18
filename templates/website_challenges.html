@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="website-challenge-page">
+    <nav class="navbar">
+        <div class="nav-brand"><i class="fas fa-window-restore"></i><span>WEBSITE CHALLENGES</span></div>
+        <div class="nav-right">
+            <a href="{{ url_for('dashboard') }}" class="logout-btn"><i class="fas fa-arrow-left"></i></a>
+        </div>
+    </nav>
+
+    <section class="website-challenge-hero">
+        <div>
+            <h1>Deadline Website Competitions</h1>
+            <p>Build full websites, submit live links before the deadline, vote in head-to-head comparisons, and climb builder levels.</p>
+        </div>
+        <div class="builder-level-card">
+            <span>{{ user.builder_level or 'Bronze Builder' }}</span>
+            <strong>{{ user.builder_xp or 0 }} XP</strong>
+        </div>
+    </section>
+
+    <section class="website-challenge-grid">
+        {% for card in cards %}
+        {% set competition = card.competition %}
+        <article class="website-challenge-card">
+            <header>
+                <div>
+                    <h2>{{ competition.challenge.title if competition.challenge else competition.name }}</h2>
+                    <span>{{ competition.status|replace('_', ' ')|title }} · {{ competition.challenge.difficulty if competition.challenge else 'Medium' }}</span>
+                </div>
+                <strong>{{ card.entries_count }} entries</strong>
+            </header>
+            <p>{{ competition.challenge.description if competition.challenge else 'Website design challenge' }}</p>
+            <dl>
+                <div><dt>Start</dt><dd>{{ competition.start_at or 'Open now' }}</dd></div>
+                <div><dt>Deadline</dt><dd>{{ competition.end_at or 'To be announced' }}</dd></div>
+                <div><dt>Prize</dt><dd>{{ card.settings.get('prize') or 'Optional' }}</dd></div>
+                <div><dt>Your status</dt><dd>{{ card.entry.status|title if card.entry else 'Not joined' }}</dd></div>
+            </dl>
+            {% if card.leader %}
+            <div class="website-challenge-leader">
+                <i class="fas fa-crown"></i>
+                <span>Leading: {{ card.leader.user.username }} · {{ "%.1f"|format(card.leader.final_score or 0) }}%</span>
+            </div>
+            {% endif %}
+            <a href="{{ url_for('website_challenge_detail', competition_id=competition.id) }}" class="btn-primary">
+                <i class="fas fa-arrow-right"></i> Open Challenge
+            </a>
+        </article>
+        {% else %}
+        <div class="website-empty-state">
+            <i class="fas fa-folder-open"></i>
+            <h2>No website challenges yet</h2>
+            <p>When an admin posts a deadline-based website challenge, it will appear here.</p>
+        </div>
+        {% endfor %}
+    </section>
+</main>
+{% endblock %}

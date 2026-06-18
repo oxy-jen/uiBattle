@@ -14,6 +14,9 @@ let previewBroadcastTimer = null;
 let lastSavedCodeHash = null;
 let lastSavedScore = null;
 let lastRightClickReportAt = 0;
+let websiteProject = null;
+let websiteProjectActivePath = 'index.html';
+let websiteProjectHydrating = false;
 
 const LIVE_DIFF_DELAY = 180;
 const LIVE_SAVE_INTERVAL = 1000;
@@ -48,6 +51,7 @@ const IS_OBSERVER_ROLE = USER_ROLE === 'admin' || USER_ROLE === 'spectator';
 const CAN_PUBLISH_MEDIA = IS_PLAYER_ROLE || USER_ROLE === 'admin';
 const INITIAL_SCORES = arenaConfig.initialScores || {};
 const SCORE_CACHE_KEY = `arena_${ROOM_ID}_${CURRENT_USERNAME}_score_cache`;
+const WEBSITE_PROJECT_KEY = `arena_${ROOM_ID}_${CURRENT_USERNAME}_website_project`;
 const PLAYER_INSPECT_WARNING = 'Players MUST NOT RIGHT CLICK OR THEY ARE DISQUALIFIED. Inspect and source shortcuts are prohibited during arena matches.';
 const COLOR_PROPERTY_RE = /(^|[-\s])(color|background|background-color|border|border-color|box-shadow|text-shadow|outline|fill|stroke)$/i;
 const EDITOR_SHORTCUT_GROUPS = [
@@ -803,6 +807,17 @@ function initEditors() {
     if (savedCss) cssEditor.setValue(savedCss);
     if (savedJs) jsEditor.setValue(savedJs);
 
+    if (CHALLENGE_TYPE === 'website_arena') {
+        const hadSavedProject = !!localStorage.getItem(WEBSITE_PROJECT_KEY);
+        loadWebsiteProject();
+        if (!hadSavedProject && websiteProject?.files) {
+            if (websiteProject.files['index.html']) websiteProject.files['index.html'].content = htmlEditor.getValue();
+            if (websiteProject.files['style.css']) websiteProject.files['style.css'].content = cssEditor.getValue();
+            if (websiteProject.files['script.js']) websiteProject.files['script.js'].content = jsEditor.getValue();
+        }
+        setWebsiteProjectActiveFile(websiteProjectActivePath);
+    }
+
     const cachedScore = readScoreCache();
     const currentHash = stableCodeHash();
     if (cachedScore.hash === currentHash && Number.isFinite(Number(cachedScore.accuracy))) {
@@ -929,12 +944,317 @@ function getPlayerInspectGuardScript() {
     <\/script>`;
 }
 
+function isWebsiteProjectMode() {
+    return CHALLENGE_TYPE === 'website_arena' && !!websiteProject;
+}
+
+function normalizeProjectPath(value) {
+    let path = String(value || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+    path = path.replace(/\/+/g, '/');
+    const parts = [];
+    path.split('/').forEach((part) => {
+        if (!part || part === '.') return;
+        if (part === '..') return;
+        parts.push(part);
+    });
+    return parts.join('/');
+}
+
+function getProjectFileKind(path, entry = null) {
+    if (entry?.folder) return 'folder';
+    const ext = normalizeProjectPath(path).split('.').pop().toLowerCase();
+    if (['html', 'htm'].includes(ext)) return 'html';
+    if (ext === 'css') return 'css';
+    if (ext === 'js') return 'js';
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'ico'].includes(ext)) return 'asset';
+    return 'text';
+}
+
+function getEditorForProjectKind(kind) {
+    if (kind === 'css') return cssEditor;
+    if (kind === 'js') return jsEditor;
+    return htmlEditor;
+}
+
+function getTabForProjectKind(kind) {
+    if (kind === 'css') return 'css';
+    if (kind === 'js') return 'js';
+    return 'html';
+}
+
+function seedWebsiteProjectFiles() {
+    const files = {};
+    const configured = Array.isArray(WEBSITE_CONFIG.allowed_files) ? WEBSITE_CONFIG.allowed_files : [];
+    const configuredPaths = configured
+        .map((file) => normalizeProjectPath(file))
+        .filter((path) => path && (path.includes('/') || /\.[a-z0-9]+$/i.test(path)));
+    const allowed = configuredPaths.length ? configuredPaths : ['index.html', 'style.css', 'script.js'];
+    allowed.forEach((file) => {
+        const path = normalizeProjectPath(file);
+        if (!path) return;
+        if (!/\.[a-z0-9]+$/i.test(path)) {
+            files[`${path.replace(/\/+$/, '')}/`] = { folder: true, content: '', updatedAt: Date.now() };
+            return;
+        }
+        files[path] = {
+            content: path.endsWith('.html') ? (STARTER_HTML || '') : path.endsWith('.css') ? (STARTER_CSS || '') : path.endsWith('.js') ? (STARTER_JS || '') : '',
+            updatedAt: Date.now()
+        };
+    });
+    if (!files['index.html']) files['index.html'] = { content: STARTER_HTML || '', updatedAt: Date.now() };
+    if (!files['style.css']) files['style.css'] = { content: STARTER_CSS || '', updatedAt: Date.now() };
+    if (!files['script.js']) files['script.js'] = { content: STARTER_JS || '', updatedAt: Date.now() };
+    return files;
+}
+
+function loadWebsiteProject() {
+    if (CHALLENGE_TYPE !== 'website_arena') return null;
+    try {
+        const saved = JSON.parse(localStorage.getItem(WEBSITE_PROJECT_KEY) || 'null');
+        if (saved && saved.files && typeof saved.files === 'object') {
+            websiteProject = {
+                files: saved.files,
+                activePath: normalizeProjectPath(saved.activePath || 'index.html') || 'index.html'
+            };
+        }
+    } catch (error) {
+        websiteProject = null;
+    }
+    if (!websiteProject) {
+        websiteProject = { files: seedWebsiteProjectFiles(), activePath: 'index.html' };
+    }
+    websiteProjectActivePath = websiteProject.activePath || 'index.html';
+    if (!websiteProject.files[websiteProjectActivePath]) websiteProjectActivePath = 'index.html';
+    return websiteProject;
+}
+
+function saveWebsiteProject() {
+    if (!websiteProject) return;
+    websiteProject.activePath = websiteProjectActivePath;
+    try {
+        localStorage.setItem(WEBSITE_PROJECT_KEY, JSON.stringify(websiteProject));
+    } catch (error) {
+        showToast('Project is too large for browser storage. Remove unused assets.', 'warning');
+    }
+}
+
+function syncActiveWebsiteProjectFile() {
+    if (!isWebsiteProjectMode() || websiteProjectHydrating) return;
+    const entry = websiteProject.files[websiteProjectActivePath];
+    if (!entry || entry.folder || getProjectFileKind(websiteProjectActivePath, entry) === 'asset') return;
+    const editor = getEditorForProjectKind(getProjectFileKind(websiteProjectActivePath, entry));
+    if (!editor) return;
+    entry.content = editor.getValue();
+    entry.updatedAt = Date.now();
+}
+
+function setWebsiteProjectActiveFile(path) {
+    if (!isWebsiteProjectMode()) return;
+    const nextPath = normalizeProjectPath(path);
+    const entry = websiteProject.files[nextPath];
+    if (!entry || entry.folder) return;
+    const kind = getProjectFileKind(nextPath, entry);
+    if (kind === 'asset') {
+        showToast(`${nextPath} is available for img src and CSS url().`, 'info');
+        return;
+    }
+    syncActiveWebsiteProjectFile();
+    websiteProjectActivePath = nextPath;
+    const tab = getTabForProjectKind(kind);
+    const editor = getEditorForProjectKind(kind);
+    websiteProjectHydrating = true;
+    switchTab(tab);
+    editor.setOption('mode', kind === 'html' ? 'htmlmixed' : kind === 'css' ? 'css' : kind === 'js' ? 'javascript' : 'text/plain');
+    editor.setValue(entry.content || '');
+    websiteProjectHydrating = false;
+    editor.refresh();
+    editor.focus();
+    renderWebsiteProjectFiles();
+    saveWebsiteProject();
+    updateCursorPosition();
+}
+
+function renameWebsiteProjectPath(path) {
+    if (!isWebsiteProjectMode()) return;
+    const oldPath = normalizeProjectPath(path);
+    const entry = websiteProject.files[oldPath];
+    if (!entry) return;
+    syncActiveWebsiteProjectFile();
+    const raw = window.prompt('Rename path', oldPath);
+    let newPath = normalizeProjectPath(raw);
+    if (!newPath) return;
+    if (entry.folder) newPath = `${newPath.replace(/\/+$/, '')}/`;
+    if (newPath === oldPath) return;
+    if (websiteProject.files[newPath]) {
+        showToast('A file or folder already exists at that path.', 'warning');
+        return;
+    }
+    const nextFiles = {};
+    Object.keys(websiteProject.files).forEach((currentPath) => {
+        if (entry.folder && currentPath.startsWith(oldPath)) {
+            nextFiles[`${newPath}${currentPath.slice(oldPath.length)}`] = websiteProject.files[currentPath];
+        } else if (currentPath === oldPath) {
+            nextFiles[newPath] = websiteProject.files[currentPath];
+        } else {
+            nextFiles[currentPath] = websiteProject.files[currentPath];
+        }
+    });
+    websiteProject.files = nextFiles;
+    if (websiteProjectActivePath === oldPath || (entry.folder && websiteProjectActivePath.startsWith(oldPath))) {
+        websiteProjectActivePath = entry.folder ? `${newPath}${websiteProjectActivePath.slice(oldPath.length)}` : newPath;
+    }
+    saveWebsiteProject();
+    renderWebsiteProjectFiles();
+    setWebsiteProjectActiveFile(websiteProjectActivePath);
+    updatePreview();
+}
+
+async function deleteWebsiteProjectPath(path) {
+    if (!isWebsiteProjectMode()) return;
+    const targetPath = normalizeProjectPath(path);
+    const entry = websiteProject.files[targetPath];
+    if (!entry) return;
+    const label = entry.folder ? `${targetPath} and its files` : targetPath;
+    const confirmed = typeof showConfirm === 'function'
+        ? await showConfirm(`Delete ${label}?`, 'Delete project item')
+        : window.confirm(`Delete ${label}?`);
+    if (!confirmed) return;
+    syncActiveWebsiteProjectFile();
+    Object.keys(websiteProject.files).forEach((currentPath) => {
+        if (currentPath === targetPath || (entry.folder && currentPath.startsWith(targetPath))) {
+            delete websiteProject.files[currentPath];
+        }
+    });
+    const nextEditable = Object.keys(websiteProject.files)
+        .filter((currentPath) => {
+            const currentEntry = websiteProject.files[currentPath];
+            const kind = getProjectFileKind(currentPath, currentEntry);
+            return currentEntry && !currentEntry.folder && kind !== 'asset';
+        })
+        .sort()[0];
+    if (!nextEditable) {
+        websiteProject.files['index.html'] = { content: '', updatedAt: Date.now() };
+        websiteProjectActivePath = 'index.html';
+    } else if (targetPath === websiteProjectActivePath || !websiteProject.files[websiteProjectActivePath]) {
+        websiteProjectActivePath = nextEditable;
+    }
+    saveWebsiteProject();
+    renderWebsiteProjectFiles();
+    setWebsiteProjectActiveFile(websiteProjectActivePath);
+    updatePreview();
+}
+
+function getWebsiteProjectMainPath(kind) {
+    if (!isWebsiteProjectMode()) return '';
+    const paths = Object.keys(websiteProject.files).filter((path) => getProjectFileKind(path, websiteProject.files[path]) === kind);
+    if (!paths.length) return '';
+    if (kind === 'html' && paths.includes('index.html')) return 'index.html';
+    if (kind === 'css' && paths.includes('style.css')) return 'style.css';
+    if (kind === 'js' && paths.includes('script.js')) return 'script.js';
+    return paths.sort()[0];
+}
+
+function getWebsiteProjectFileContent(path) {
+    return websiteProject?.files?.[path]?.content || '';
+}
+
+function getWebsiteProjectBundle(kind) {
+    if (!isWebsiteProjectMode()) return '';
+    syncActiveWebsiteProjectFile();
+    const paths = Object.keys(websiteProject.files)
+        .filter((path) => getProjectFileKind(path, websiteProject.files[path]) === kind)
+        .sort((a, b) => {
+            const main = kind === 'css' ? 'style.css' : kind === 'js' ? 'script.js' : 'index.html';
+            if (a === main) return -1;
+            if (b === main) return 1;
+            return a.localeCompare(b);
+        });
+    return paths.map((path) => {
+        const content = getWebsiteProjectFileContent(path);
+        return kind === 'html' ? content : `\n/* ${path} */\n${content}`;
+    }).join('\n');
+}
+
+function getArenaHtmlCode() {
+    if (isWebsiteProjectMode()) {
+        const path = getWebsiteProjectMainPath('html');
+        syncActiveWebsiteProjectFile();
+        return path ? getWebsiteProjectFileContent(path) : '';
+    }
+    return htmlEditor?.getValue() || '';
+}
+
+function getArenaCssCode() {
+    return isWebsiteProjectMode() ? getWebsiteProjectBundle('css') : (cssEditor?.getValue() || '');
+}
+
+function getArenaJsCode() {
+    return isWebsiteProjectMode() ? getWebsiteProjectBundle('js') : (jsEditor?.getValue() || '');
+}
+
+function resolveWebsiteProjectUrl(rawUrl) {
+    if (!isWebsiteProjectMode()) return rawUrl;
+    const value = String(rawUrl || '').trim();
+    if (!value || /^(data:|blob:|https?:|mailto:|tel:|#)/i.test(value)) return rawUrl;
+    const suffixMatch = value.match(/([?#].*)$/);
+    const suffix = suffixMatch ? suffixMatch[1] : '';
+    const clean = normalizeProjectPath(value.replace(/[?#].*$/, ''));
+    const direct = websiteProject.files[clean];
+    if (direct && getProjectFileKind(clean, direct) === 'asset' && direct.content) return direct.content;
+    const basename = clean.split('/').pop();
+    const match = Object.keys(websiteProject.files).find((path) => {
+        const entry = websiteProject.files[path];
+        return getProjectFileKind(path, entry) === 'asset' && path.split('/').pop() === basename;
+    });
+    return match && websiteProject.files[match].content ? websiteProject.files[match].content + suffix : rawUrl;
+}
+
+function rewriteWebsiteProjectAssetUrls(source) {
+    return String(source || '')
+        .replace(/\b(src|href|poster)=["']([^"']+)["']/gi, (match, attr, url) => `${attr}="${resolveWebsiteProjectUrl(url)}"`)
+        .replace(/url\((['"]?)([^'")]+)\1\)/gi, (match, quote, url) => `url("${resolveWebsiteProjectUrl(url)}")`);
+}
+
+function buildWebsiteProjectDocument() {
+    syncActiveWebsiteProjectFile();
+    const mainPath = getWebsiteProjectMainPath('html');
+    let html = mainPath ? getWebsiteProjectFileContent(mainPath) : getArenaHtmlCode();
+    const css = rewriteWebsiteProjectAssetUrls(getWebsiteProjectBundle('css'));
+    const js = getWebsiteProjectBundle('js');
+    html = rewriteWebsiteProjectAssetUrls(html)
+        .replace(/<link\b[^>]*href=["'][^"']+\.css(?:[?#][^"']*)?["'][^>]*>/gi, '')
+        .replace(/<script\b[^>]*src=["'][^"']+\.js(?:[?#][^"']*)?["'][^>]*>\s*<\/script>/gi, '');
+    const guardScript = getPlayerInspectGuardScript();
+    return `<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>${css}</style>
+    </head>
+    <body>
+        ${html}
+        ${guardScript}
+        <script>${js}<\/script>
+    </body>
+    </html>`;
+}
+
 function updatePreview() {
     if (!htmlEditor || !cssEditor || !jsEditor) return;
 
-    const html = htmlEditor.getValue();
-    const css = cssEditor.getValue();
-    const js = jsEditor.getValue();
+    if (isWebsiteProjectMode()) {
+        const frame = getElement('output-frame');
+        if (frame) {
+            frame.srcdoc = buildWebsiteProjectDocument();
+            frame.addEventListener('load', () => scheduleLiveDiffCheck(90), { once: true });
+        }
+        return;
+    }
+
+    const html = getArenaHtmlCode();
+    const css = getArenaCssCode();
+    const js = getArenaJsCode();
     const guardScript = getPlayerInspectGuardScript();
     
     const doc = `<!DOCTYPE html>
@@ -960,9 +1280,9 @@ function updatePreview() {
 function getScorableCode() {
     if (!htmlEditor || !cssEditor || !jsEditor) return '';
     if (isHtmlLikeChallenge() && HTML_LOCKED) {
-        return `${cssEditor.getValue()}\n${jsEditor.getValue()}`.trim();
+        return `${getArenaCssCode()}\n${getArenaJsCode()}`.trim();
     }
-    return `${htmlEditor.getValue()}\n${cssEditor.getValue()}\n${jsEditor.getValue()}`.trim();
+    return `${getArenaHtmlCode()}\n${getArenaCssCode()}\n${getArenaJsCode()}`.trim();
 }
 
 function hasPlayerAttempted() {
@@ -1086,11 +1406,15 @@ async function captureFrameFullSurface(frame, width, height) {
 }
 
 function saveArenaToLocal() {
-    if (!HTML_LOCKED || CHALLENGE_TYPE !== 'html') {
-        window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_html`, htmlEditor.getValue());
+    if (isWebsiteProjectMode()) {
+        syncActiveWebsiteProjectFile();
+        saveWebsiteProject();
     }
-    window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_css`, cssEditor.getValue());
-    window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_js`, jsEditor.getValue());
+    if (!HTML_LOCKED || CHALLENGE_TYPE !== 'html') {
+        window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_html`, getArenaHtmlCode());
+    }
+    window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_css`, getArenaCssCode());
+    window.saveToLocal(`arena_${ROOM_ID}_${CURRENT_USERNAME}_js`, getArenaJsCode());
 }
 
 // Tab switching
@@ -1236,9 +1560,9 @@ async function saveAndBroadcastScore(accuracy, { live = false } = {}) {
         body: JSON.stringify({
             room_id: ROOM_ID,
             challenge_id: CHALLENGE_ID || null,
-            html_code: htmlEditor.getValue(),
-            css_code: cssEditor.getValue(),
-            js_code: jsEditor.getValue(),
+            html_code: getArenaHtmlCode(),
+            css_code: getArenaCssCode(),
+            js_code: getArenaJsCode(),
             accuracy: accuracy,
             code_hash: codeHash
         })
@@ -1276,9 +1600,9 @@ function stableCodeHash() {
     const text = JSON.stringify({
         room: ROOM_ID,
         challenge: CHALLENGE_ID,
-        html: normalizeForOutput(htmlEditor?.getValue(), 'html'),
-        css: normalizeForOutput(cssEditor?.getValue(), 'css'),
-        js: normalizeForOutput(jsEditor?.getValue(), 'js')
+        html: normalizeForOutput(getArenaHtmlCode(), 'html'),
+        css: normalizeForOutput(getArenaCssCode(), 'css'),
+        js: normalizeForOutput(getArenaJsCode(), 'js')
     });
     let hash = 2166136261;
     for (let i = 0; i < text.length; i += 1) {
@@ -1296,6 +1620,112 @@ function readScoreCache() {
     }
 }
 
+function renderWebsiteProjectFiles() {
+    if (!isWebsiteProjectMode()) return;
+    const pageList = getElement('website-page-list');
+    if (!pageList) return;
+    const iconForKind = {
+        folder: 'fa-folder',
+        html: 'fa-file-code',
+        css: 'fa-file-lines',
+        js: 'fa-file-code',
+        asset: 'fa-image',
+        text: 'fa-file-lines'
+    };
+    const paths = Object.keys(websiteProject.files).sort((a, b) => {
+        const entryA = websiteProject.files[a];
+        const entryB = websiteProject.files[b];
+        const folderA = !!entryA.folder;
+        const folderB = !!entryB.folder;
+        if (folderA !== folderB) return folderA ? -1 : 1;
+        return a.localeCompare(b);
+    });
+    pageList.innerHTML = paths.map((path) => {
+        const entry = websiteProject.files[path];
+        const kind = getProjectFileKind(path, entry);
+        const isActive = path === websiteProjectActivePath;
+        const name = path.endsWith('/') ? path.slice(0, -1).split('/').pop() : path.split('/').pop();
+        const label = kind === 'asset' ? 'image asset' : kind === 'folder' ? 'folder' : kind.toUpperCase();
+        return `
+            <div class="website-project-row${isActive ? ' active' : ''}${kind === 'folder' ? ' is-folder' : ''}" title="${escapeHtml(path)}">
+                <button type="button" class="website-page-chip website-project-file" data-project-path="${escapeHtml(path)}">
+                    <i class="fas ${iconForKind[kind] || iconForKind.text}"></i><span>${escapeHtml(name)}</span><small>${escapeHtml(label)}</small>
+                </button>
+                <button type="button" class="website-project-mini-btn" data-project-rename="${escapeHtml(path)}" title="Rename"><i class="fas fa-pen"></i></button>
+                <button type="button" class="website-project-mini-btn danger" data-project-delete="${escapeHtml(path)}" title="Delete"><i class="fas fa-trash"></i></button>
+            </div>
+        `;
+    }).join('');
+    pageList.querySelectorAll('[data-project-path]').forEach((button) => {
+        button.addEventListener('click', () => setWebsiteProjectActiveFile(button.dataset.projectPath || ''));
+    });
+    pageList.querySelectorAll('[data-project-rename]').forEach((button) => {
+        button.addEventListener('click', () => renameWebsiteProjectPath(button.dataset.projectRename || ''));
+    });
+    pageList.querySelectorAll('[data-project-delete]').forEach((button) => {
+        button.addEventListener('click', () => deleteWebsiteProjectPath(button.dataset.projectDelete || ''));
+    });
+}
+
+function createWebsiteProjectFile() {
+    if (!isWebsiteProjectMode()) return;
+    const raw = window.prompt('New file path, for example pages/about.html or assets/logo.svg');
+    const path = normalizeProjectPath(raw);
+    if (!path) return;
+    if (path.endsWith('/')) {
+        showToast('Use the folder button to create folders.', 'warning');
+        return;
+    }
+    if (websiteProject.files[path]) {
+        showToast('A file already exists at that path.', 'warning');
+        return;
+    }
+    const kind = getProjectFileKind(path);
+    websiteProject.files[path] = { content: kind === 'html' ? '<section>\n  \n</section>' : '', updatedAt: Date.now() };
+    setWebsiteProjectActiveFile(path);
+    saveWebsiteProject();
+    renderWebsiteProjectFiles();
+}
+
+function createWebsiteProjectFolder() {
+    if (!isWebsiteProjectMode()) return;
+    const raw = window.prompt('New folder path, for example assets or pages');
+    const path = normalizeProjectPath(raw).replace(/\/?$/, '/');
+    if (!path || path === '/') return;
+    if (websiteProject.files[path]) {
+        showToast('That folder already exists.', 'warning');
+        return;
+    }
+    websiteProject.files[path] = { folder: true, content: '', updatedAt: Date.now() };
+    saveWebsiteProject();
+    renderWebsiteProjectFiles();
+}
+
+function uploadWebsiteProjectAssets(files) {
+    if (!isWebsiteProjectMode() || !files?.length) return;
+    Array.from(files).forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const safeName = String(file.name || 'asset').replace(/[^a-zA-Z0-9._-]+/g, '-');
+            const path = normalizeProjectPath(`assets/${safeName}`);
+            if (!websiteProject.files['assets/']) {
+                websiteProject.files['assets/'] = { folder: true, content: '', updatedAt: Date.now() };
+            }
+            websiteProject.files[path] = {
+                content: String(reader.result || ''),
+                mime: file.type || '',
+                size: file.size || 0,
+                updatedAt: Date.now()
+            };
+            saveWebsiteProject();
+            renderWebsiteProjectFiles();
+            updatePreview();
+            showToast(`${safeName} uploaded. Use src="${path}" or url("${path}").`, 'success');
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 function initWebsiteArenaWorkspace() {
     if (CHALLENGE_TYPE !== 'website_arena') return;
     const root = document.querySelector('.website-tool-arena');
@@ -1305,13 +1735,9 @@ function initWebsiteArenaWorkspace() {
     const previewSizes = getElement('website-preview-size-row');
     const targetMode = getElement('website-target-mode-label');
     const assetList = getElement('website-asset-list');
-    const pageNames = Array.isArray(WEBSITE_CONFIG.page_names) && WEBSITE_CONFIG.page_names.length ? WEBSITE_CONFIG.page_names : ['Home'];
     const sections = Array.isArray(WEBSITE_CONFIG.required_sections) ? WEBSITE_CONFIG.required_sections : [];
     const sizes = Array.isArray(WEBSITE_CONFIG.preview_sizes) ? WEBSITE_CONFIG.preview_sizes : ['desktop', 'tablet', 'mobile'];
     const assets = Array.isArray(WEBSITE_CONFIG.allowed_assets) ? WEBSITE_CONFIG.allowed_assets : [];
-    const files = Array.isArray(WEBSITE_CONFIG.allowed_files) && WEBSITE_CONFIG.allowed_files.length
-        ? WEBSITE_CONFIG.allowed_files
-        : ['index.html', 'style.css', 'script.js'];
     const sizeWidths = {
         desktop: '100%',
         laptop: '1180px',
@@ -1322,16 +1748,15 @@ function initWebsiteArenaWorkspace() {
     if (targetMode) {
         targetMode.textContent = String(WEBSITE_CONFIG.target_mode || 'hybrid').replace(/_/g, ' ');
     }
-    if (pageList) {
-        pageList.innerHTML = pageNames.map((name, index) => {
-            const fileName = files[index] || `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'page'}.html`;
-            return `
-            <button type="button" class="website-page-chip${index === 0 ? ' active' : ''}" data-page-index="${index}" title="${escapeHtml(fileName)}">
-                <i class="fas fa-file-code"></i><span>${escapeHtml(name)}</span><small>${escapeHtml(fileName)}</small>
-            </button>
-        `;
-        }).join('');
-    }
+    if (pageList) renderWebsiteProjectFiles();
+    getElement('website-new-file-btn')?.addEventListener('click', createWebsiteProjectFile);
+    getElement('website-new-folder-btn')?.addEventListener('click', createWebsiteProjectFolder);
+    const assetInput = getElement('website-asset-upload-input');
+    getElement('website-upload-asset-btn')?.addEventListener('click', () => assetInput?.click());
+    assetInput?.addEventListener('change', () => {
+        uploadWebsiteProjectAssets(assetInput.files);
+        assetInput.value = '';
+    });
     if (requirements) {
         requirements.innerHTML = sections.length
             ? sections.map((section) => `<span><i class="fas fa-check"></i>${escapeHtml(section)}</span>`).join('')
@@ -2322,7 +2747,13 @@ function initMediaSettings() {
 async function resetCode() {
     const confirmed = await showConfirm('Reset your code? This cannot be undone.', 'Reset code');
     if (!confirmed) return;
-    if (isHtmlLikeChallenge() && HTML_LOCKED) {
+    if (CHALLENGE_TYPE === 'website_arena') {
+        websiteProject = { files: seedWebsiteProjectFiles(), activePath: 'index.html' };
+        websiteProjectActivePath = 'index.html';
+        saveWebsiteProject();
+        setWebsiteProjectActiveFile('index.html');
+        showToast('Website project reset to the starter files.', 'info');
+    } else if (isHtmlLikeChallenge() && HTML_LOCKED) {
         // Only reset CSS and JS
         cssEditor.setValue(STARTER_CSS || '');
         jsEditor.setValue(STARTER_JS || '');
@@ -2356,9 +2787,10 @@ async function forfeit() {
 
 function buildCompiledPreviewHtml() {
     if (!htmlEditor || !cssEditor || !jsEditor) return '';
-    const html = htmlEditor.getValue();
-    const css = cssEditor.getValue();
-    const js = jsEditor.getValue();
+    if (isWebsiteProjectMode()) return buildWebsiteProjectDocument();
+    const html = getArenaHtmlCode();
+    const css = getArenaCssCode();
+    const js = getArenaJsCode();
     const guardScript = getPlayerInspectGuardScript();
     return `<!DOCTYPE html><html><head><style>${css}</style></head><body>${html}${guardScript}<script>${js}<\/script></body></html>`;
 }
@@ -2369,9 +2801,9 @@ function broadcastCodePreview() {
         room_id: ROOM_ID,
         username: CURRENT_USERNAME,
         compiled_html: buildCompiledPreviewHtml(),
-        html_code: htmlEditor.getValue(),
-        css_code: cssEditor.getValue(),
-        js_code: jsEditor.getValue()
+        html_code: getArenaHtmlCode(),
+        css_code: getArenaCssCode(),
+        js_code: getArenaJsCode()
     });
 }
 
