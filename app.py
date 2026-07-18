@@ -42,6 +42,14 @@ if database_url.startswith('postgres://'):
     database_url = 'postgresql://' + database_url[len('postgres://'):]
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': int(os.environ.get('DB_POOL_RECYCLE_SECONDS', '280') or 280),
+}
+if database_url.startswith(('postgresql://', 'postgresql+psycopg2://')):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args'] = {
+        'sslmode': os.environ.get('POSTGRES_SSLMODE', 'require')
+    }
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', '0').strip() == '1'
@@ -7518,14 +7526,14 @@ def get_user_stats_api(user_id):
 # ========== SOCKET.IO EVENTS ==========
 @socketio.on('connect')
 def handle_connect():
-    print(f"Ã¢Å“â€¦ Client connected: {request.sid}")
+    print(f"Client connected: {request.sid}")
     user = socket_current_user()
     if user:
         join_room(f"user_{user.username}")
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print(f"Ã¢ÂÅ’ Client disconnected: {request.sid}")
+    print(f"Client disconnected: {request.sid}")
     info = connected_users.pop(request.sid, None)
     if info:
         room_id = info.get('room_id')
@@ -8343,7 +8351,6 @@ def api_challenge_status(room_id):
 # ========== MAIN ==========
 def initialize_runtime_database(create_dev_admin=False):
     with app.app_context():
-        db.create_all()
         ensure_schema_upgrades()
         migrate_profile_store_file_to_db()
         refresh_builtin_site_content()
