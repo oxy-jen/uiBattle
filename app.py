@@ -124,6 +124,7 @@ LEADERBOARD_STREAK_TARGET = 5
 LEADERBOARD_API_CACHE_TTL = 30
 leaderboard_api_cache = {'expires_at': 0, 'payload': None}
 schema_upgrades_ready = False
+database_startup_error = None
 CARD_TEMPLATES = [
     {'id': 'champion', 'name': 'Champion Crest', 'icon': 'fa-trophy', 'layout': 'classic', 'shape': 'rounded', 'primary': '#f59e0b', 'secondary': '#111827'},
     {'id': 'loyalty', 'name': 'Loyalty Star', 'icon': 'fa-star', 'layout': 'badge', 'shape': 'ticket', 'primary': '#22d3ee', 'secondary': '#0f172a'},
@@ -3585,7 +3586,24 @@ from urllib.parse import urljoin, urlparse
 
 @app.before_request
 def ensure_runtime_schema():
-    ensure_schema_upgrades()
+    if request.path.startswith('/static/') or request.path in {
+        '/healthz',
+        '/pwa/health',
+        '/robots.txt',
+        '/manifest.webmanifest',
+        '/service-worker.js',
+    }:
+        return None
+
+    try:
+        ensure_schema_upgrades()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        app.logger.exception('Database is not available while preparing request')
+        return (
+            'Database connection failed. Check the Render DATABASE_URL and Postgres service status.',
+            503,
+        )
 
     csrf_response = verify_csrf_request()
     if csrf_response:
@@ -4445,6 +4463,15 @@ def pwa_health():
     })
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
+
+
+@app.route('/healthz')
+def healthz():
+    return jsonify({
+        'ok': True,
+        'database_ready': schema_upgrades_ready,
+        'database_startup_error': database_startup_error
+    })
 
 
 @app.route('/service-worker.js')
@@ -8380,7 +8407,16 @@ def initialize_runtime_database(create_dev_admin=False):
             else:
                 print("No admin user exists. Set ADMIN_EMAIL and ADMIN_PASSWORD before starting the app to create one.")
 
-initialize_runtime_database(create_dev_admin=False)
+try:
+    initialize_runtime_database(create_dev_admin=False)
+except SQLAlchemyError as exc:
+    database_startup_error = str(exc)
+    try:
+        with app.app_context():
+            db.session.rollback()
+    except RuntimeError:
+        pass
+    app.logger.exception('Database initialization skipped because the database is not available')
 
 # ========== MAIN ==========
 if __name__ == '__main__':
